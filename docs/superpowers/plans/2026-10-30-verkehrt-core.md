@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-30-verkehrt-design.md`
 
-**Plan series:** This is plan 1 of 3. Plan 2 adds AVX2 and AVX-512 kernels, kernel property tests against the scalar reference, benchmarks against native Rust baselines, and crossover measurements. Plan 3 is the NEON batch with a Mac hand-off. This plan ships only scalar kernels, so `--isa avx2` falls back to scalar and the trace says so.
+**Plan series:** This is plan 1 of 3. Plan 2 adds AVX2 and AVX-512 kernels (portable Rust compiled per ISA first, intrinsics only where measurement shows a gap), kernel property tests against the scalar reference, benchmarks against native Rust and corgi, and crossover measurements. Plan 3 is the NEON batch with a Mac hand-off. This plan ships only scalar kernels, so `--isa avx2` falls back to scalar and the trace says so.
 
 ## Global constraints
 
@@ -26,6 +26,7 @@
 * Indices, counts, lengths are `i64`.
 * Errors carry a source location (line and column). Runtime errors carry the span of the statement that failed.
 * Comments: no em-dashes, no structuring semicolons. Doc comments state contracts, reasoning goes inline.
+* Nothing may prevent tile-at-a-time execution later (spec, "Tile-at-a-time execution"): every kernel declares its class, elementwise kernels run over slices into a caller-provided destination, and reductions are state, update, and finish.
 * Deferred from the spec, by design of this plan: tuples and `let (a, b)` (no v1 primitive returns a tuple), output-buffer reuse at reference count 1 (plan 2, it only matters for SIMD throughput), near-miss reporting (spec defers it).
 
 ## Review focus
@@ -140,7 +141,7 @@ fn display_formats() {
 * Consumes: `Span`, `Error`, `Scalar`, `ScalarType`.
 * Produces:
   * `pub fn parse(src: &str) -> Result<ast::Program, Error>`
-  * `ast::Program { pub items: Vec<Item> }`, `enum Item { Fn(FnDef), Let(LetStmt), Print(Expr, Span), Expr(Expr, Span) }`
+  * `ast::Program { pub items: Vec<Item> }`, `enum Item { Fn(FnDef), Let(LetStmt), Input(String, TypeExpr, Span), Export(LetStmt), Print(Expr, Span), Expr(Expr, Span) }` (`Export` reuses `LetStmt` with `ty: None`)
   * `FnDef { name: String, params: Vec<(String, TypeExpr)>, ret: TypeExpr, body: Block, span: Span }`
   * `LetStmt { name: String, ty: Option<TypeExpr>, value: Expr, span: Span }`
   * `TypeExpr { elem: ScalarType, array: bool }`
@@ -155,6 +156,7 @@ Grammar decisions (my calls where the spec is silent):
 * `and`, `or`, `not`, `min`, `max`, and the rest are ordinary calls, not infix operators.
 * A sequence of the same arithmetic operator folds left. Mixing two different binary operators without parentheses, or any chain of two comparisons, is a parse error whose message tells the user to add parentheses.
 * `b"` is reserved: lexing it is a parse error ("byte strings are not supported yet").
+* `input name: type;` declares an input, and `export name = expr;` binds a result that `execute` returns. Both are top-level only.
 
 - [ ] **Step 1: Write the failing tests** in `src/syntax/tests.rs`. Cases, each asserting the AST shape (helper `fn expr(src) -> ExprKind` parsing `src` as a single expression statement) or the error kind and message fragment:
   * `a + b + c` parses as `Binary(Add, Binary(Add, a, b), c)`.
@@ -169,6 +171,7 @@ Grammar decisions (my calls where the spec is silent):
   * Whole program: `fn dot(x: f64[], y: f64[]) -> f64 { sum(x * y) }\nlet d = dot(a, b);\nprint(d);` gives three items with the right kinds and the `FnDef` param types `f64[]`.
   * `let x: f64[] = load_f64("x.bin");` gives `LetStmt` with `ty` `f64[]` and a `Str` argument.
   * `b"abc"` fails with `ErrorKind::Parse`.
+  * `input x: f64[]; export s = sum(x);` gives `Input("x", f64[])` and `Export` items.
   * Missing `;` reports the line and column of the next token.
 
 - [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --lib syntax`. Expected: FAIL to compile.
@@ -194,7 +197,8 @@ Grammar decisions (my calls where the spec is silent):
   * `pub enum Isa { Scalar, Avx2, Avx512, Neon }`, `Isa::detect() -> Isa` (best available), `Isa::is_available(self) -> bool`, `Isa::from_name(&str) -> Option<Isa>`, `fn name(self)`.
   * `pub type KernelFn = fn(&[Value]) -> Result<Value, String>` (the `String` is the runtime error message, the executor adds the span).
   * `pub enum InputSpec { Array(ScalarType), Scalar(ScalarType), Either(ScalarType), Str }`. `Either` accepts an array or a scalar, used for elementwise operands, where at least one operand must be an array for an array kernel.
-  * `pub struct KernelDef { pub name: String, pub op: Option<Op>, pub inputs: Vec<InputSpec>, pub output: ValueType, pub cost: u64, pub commutative: bool, pub pattern: Option<FusedPattern>, pub impls: [Option<KernelFn>; 4] }` (`impls` indexed by `Isa as usize`, `Scalar` always `Some`). `FusedPattern` is defined in Task 7. Until then declare `pub type FusedPattern = ();` and leave every `pattern` as `None`.
+  * `pub enum KernelClass { Elementwise, Reduction, Selection, Whole }`.
+  * `pub struct KernelDef { pub name: String, pub class: KernelClass, pub op: Option<Op>, pub inputs: Vec<InputSpec>, pub output: ValueType, pub cost: u64, pub commutative: bool, pub pattern: Option<FusedPattern>, pub impls: [Option<KernelFn>; 4] }` (`impls` indexed by `Isa as usize`, `Scalar` always `Some`). `FusedPattern` is defined in Task 7. Until then declare `pub type FusedPattern = ();` and leave every `pattern` as `None`.
   * `pub struct KernelId(pub u32)`, `pub struct Registry`, `Registry::new() -> Registry` (builds all kernels, no global state), `fn lookup(&self, op: Op, args: &[ValueType]) -> Option<KernelId>`, `fn get(&self, id: KernelId) -> &KernelDef`, `fn by_name(&self, name: &str) -> Option<KernelId>`, `fn iter(&self) -> impl Iterator<Item = (KernelId, &KernelDef)>`, `fn select_impl(&self, id: KernelId, isa: Isa) -> (KernelFn, Isa)` (falls back to scalar, returns the variant actually used).
 * Naming: single-op kernel names are `{op}_{type}` (`add_f64`, `gt_f64`, `select_f64`, `not_bool`), with scalar-only kernels named `{op}_{type}_s` (`add_u64_s`) and casts `cast_{from}_{to}` (`cast_i32_f64`). Names must be valid egglog identifiers.
 * Lookup rule: an operation whose argument types include an array resolves to the array kernel (only for the v1 array types), an all-scalar operation resolves to the `_s` kernel (every scalar type).
@@ -212,10 +216,11 @@ Type rules for this task: `Add Sub Mul Min Max` numeric, `Div Sqrt` float, `Neg 
   * `cast_f64_i32([NaN, 1e10, -1e10, -1.9])` is `[0, i32::MAX, i32::MIN, -1]`, `cast_i64_i32([1 << 32 + 5])` wraps to `[5]`, `cast_bool_i64([true, false])` is `[1, 0]`.
   * `gt_f64([1.0, NaN], 0.0)` is `[true, false]`, `select_f64([true, false], [1.0, 2.0], [3.0, 4.0])` is `[1.0, 4.0]`, `select_f64` with a broadcast else `0.0` works.
   * Every `KernelDef` name is unique and matches `^[a-z][a-z0-9_]*$`.
+  * Tiling equivalence: calling `binary_into` for `add_f64` over ranges `0..37`, `37..100`, `100..1000` into one destination gives the same bytes as one call over `0..1000`.
 
 - [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --lib kernels`. Expected: FAIL to compile.
 
-- [ ] **Step 3: Implement** `src/ops.rs`, `src/kernels/mod.rs`, and `src/kernels/scalar/elementwise.rs`. Generate per-type kernels with `macro_rules!` over a generic `fn binary<T: Elem, U: Elem>(args, f: impl Fn(T, T) -> U)` helper that handles the array-array, array-scalar, and scalar-array forms and the length check. `Isa::detect` uses `is_x86_feature_detected!("avx512f")` (plus `avx512bw`, `avx512vl`, `avx512vbmi2`) and `"avx2"` under `cfg(target_arch = "x86_64")`, and `Neon` under `cfg(target_arch = "aarch64")`.
+- [ ] **Step 3: Implement** `src/ops.rs`, `src/kernels/mod.rs`, and `src/kernels/scalar/elementwise.rs`. Generate per-type kernels with `macro_rules!`. The core of each elementwise kernel is a slice function `fn binary_into<T: Elem, U: Elem>(a: Operand<T>, b: Operand<T>, out: &mut [U], f: impl Fn(T, T) -> U)` where `Operand<T>` is `Slice(&[T])` or `Splat(T)`, writing exactly `out.len()` rows. The `KernelFn` wrapper checks lengths, allocates the output, and calls it once over the whole range. A tiled executor later calls the same slice function per tile. `Isa::detect` uses `is_x86_feature_detected!("avx512f")` (plus `avx512bw`, `avx512vl`, `avx512vbmi2`) and `"avx2"` under `cfg(target_arch = "x86_64")`, and `Neon` under `cfg(target_arch = "aarch64")`.
 
 - [ ] **Step 4: Run** the tests. Expected: PASS.
 
@@ -232,7 +237,7 @@ Type rules for this task: `Add Sub Mul Min Max` numeric, `Div Sqrt` float, `Neg 
 **Interfaces:**
 * Consumes: Task 3 registry types.
 * Produces:
-  * `pub fn canonical_sum<T: Float>(xs: &[T]) -> T` and `pub fn canonical_product<T: Float>(xs: &[T]) -> T` in `reduce.rs`, implementing the spec's order exactly (identity `0.0` resp. `1.0` per accumulator). Plan 2 SIMD kernels are tested against these. `Float` is a small local trait implemented for `f32` and `f64`.
+  * `pub struct CanonicalSum<T> { acc: [T; 16] }` with `fn new() -> Self`, `fn update(&mut self, block: &[T])` (requires `block.len() % 16 == 0`, panics otherwise), and `fn finish(self, tail: &[T]) -> T` (requires `tail.len() < 16`): pairwise combine, then the tail added to `acc[0]` in order. `CanonicalProduct<T>` is the same with identity `1.0` and `*`. `pub fn canonical_sum<T: Float>(xs: &[T]) -> T` and `canonical_product` split `xs` at `b = n - n % 16` and call these. This is the state, update, and finish form that tiling needs. Plan 2 SIMD kernels are tested against these. `Float` is a small local trait implemented for `f32` and `f64`.
   * `pub fn splitmix64(x: u64) -> u64` in `construct.rs`.
   * Kernels: `reduce_{add,mul,min,max}_{t}` (numeric), `reduce_{and,or,xor}_bool`, `count`, `any`, `all` (on `bool[]`, `count` returns `i64`), `argmin_{t}`, `argmax_{t}`, `compress_{t}` (`T[]`, `bool[]`), `where` (`bool[]` to `i64[]`), `iota` (`i64` to `i64[]`), `fill_{t}` (`i64`, `T`), `rand_i64`, `rand_f64`, `load_{t}` (`str` to `T[]`, numeric v1 types), `length_{t}`.
   * Costs: reductions `w`, `count`/`any`/`all` `1`, argmin/argmax `w`, `compress` `2w + 1`, `where` `9`, `iota`/`rand_*` `8`, `fill` `w`, `load` `w`, `length` `0`.
@@ -240,6 +245,7 @@ Type rules for this task: `Add Sub Mul Min Max` numeric, `Div Sqrt` float, `Neg 
 - [ ] **Step 1: Write the failing tests:**
   * `canonical_sum` on 35 elements equals a hand-written reference that follows the spec's bullets literally (accumulators `acc[j]` over `j, j+16`, below `b = 32`, pairwise `+8, +4, +2, +1` combine, then elements 32..35 added to `acc[0]`), compared with `to_bits`. Use values like `1e16, 1.0, -1e16, ...` so the order changes the result, and assert that a naive left fold gives a different value for the same input.
   * `canonical_sum(&[])` is `0.0`, `canonical_product(&[])` is `1.0`.
+  * Tiling equivalence: for 1000 random `f64` values, `CanonicalSum` updated with `xs[0..64]`, `xs[64..384]`, and `xs[384..992]` (lengths 64, 320, 608, all multiples of 16), then finished with `xs[992..]`, equals `canonical_sum(&xs)` by bits.
   * `reduce_add_i32([i32::MAX, 1])` is `Scalar::I64(2147483648)`, `reduce_add_u8([200, 100])` is `Scalar::U64(300)`, `reduce_add_i64([i64::MAX, 1])` wraps to `i64::MIN`.
   * `reduce_min_f64([1.0, NaN, 0.0])` is NaN, `reduce_min_f64([0.0, -0.0])` is `-0.0` by bits, `reduce_min_f64([])` is `Err` containing `empty`.
   * `argmin_f64([3.0, 1.0, 1.0])` is `1`, `argmin_f64([3.0, NaN, NaN])` is `1`, `argmin_f64([0.0, -0.0])` is `1`, `argmax_f64([])` is `Err`.
@@ -446,6 +452,8 @@ Egglog program per statement (my call: drive egglog through its text interface, 
 * Produces:
   * `pub struct Options { pub isa: Option<Isa>, pub show_plan: bool, pub trace: bool, pub stats: bool }` (`Default`: all off, ISA detected).
   * `pub struct Interpreter`, `Interpreter::new(opts: Options) -> Result<Interpreter, Error>` (`ErrorKind::Usage` when the requested ISA is not available on this CPU), `fn run(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error>` (whole program, `Mode::Run`), `fn eval_repl(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error>` (`Mode::Repl`, an expression statement prints its value to `out`), `fn bind(&mut self, name: &str, value: Value)`, `fn get(&self, name: &str) -> Option<Value>`, `fn write_stats(&self, diag: &mut dyn Write)`.
+  * `fn prepare(&self, src: &str) -> Result<Prepared, Error>`: parse, check, lower (`Mode::Run`), and plan once. Undeclared names are errors, `input` declarations give the types.
+  * `pub struct Prepared` (`Send + Sync`), `fn execute(&self, interp: &Interpreter, inputs: &[(&str, Value)], diag: &mut dyn Write) -> Result<Vec<(String, Value)>, Error>`: checks that each declared input is supplied with its declared type (`ErrorKind::Usage` otherwise), runs the plan, and returns the exports in source order. `print` inside a prepared program writes to `diag`.
 
 Behavior:
 * `run` parses, checks, lowers, and plans every statement before executing any, so all type errors come before any kernel runs. Then statements execute in source order.
@@ -468,7 +476,9 @@ Behavior:
     * `Options { isa: Some(Isa::Neon), .. }` on x86 returns `ErrorKind::Usage`.
     * `eval_repl("let x = [1.0];")` then `eval_repl("sum(x);")` prints `1.0` to `out`.
     * `bind("x", Value::Array(...))` then `run("print(sum(x));")` uses the bound array without copying (assert the data pointer of `get("x")` equals the original).
-    * `fn assert_send<T: Send>() {}` called with `Interpreter`.
+    * `fn assert_send<T: Send>() {}` called with `Interpreter`, and `Send + Sync` asserted for `Prepared`.
+    * `prepare("input x: f64[]; input y: f64[]; export d = sum(x * y);")` executed twice with different inputs returns `d` for each, and with `show_plan` the plan line containing `dot_f64` is written once, at `prepare`, not per `execute`.
+    * `execute` with `x` missing, or `x` given as `i64[]`, returns `ErrorKind::Usage`.
 
 - [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --test programs`. Expected: FAIL.
 

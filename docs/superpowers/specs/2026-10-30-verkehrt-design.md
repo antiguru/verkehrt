@@ -20,7 +20,7 @@ The problem catalog below drives which primitives exist and in what order.
 
 ## Non-goals
 
-* Generating code for arbitrary fused expressions. Fusion exists only where a prebuilt kernel's pattern matches, and everything else runs as one memory pass per primitive, so memory bandwidth is the cost model.
+* Generating code for fused expressions. Fusion comes from prebuilt kernels whose patterns match and, later, from executing chains of kernels a tile at a time. Until tiling exists, everything outside a fused kernel runs as one memory pass per primitive, so memory bandwidth is the cost model.
 * Fast execution of small arrays. Dispatch dominates there, and that is an accepted, documented limit.
 * Object orientation, mutation, and general recursion over elements.
 * Multithreading. Verkehrt is single-threaded by design, because the intended long-term host is a dataflow system such as Timely or Differential Dataflow, which supplies parallelism through its workers. Each worker would run its own interpreter instance over its own batches.
@@ -69,6 +69,20 @@ This is instruction selection where the instructions are whole-array kernels. Th
 * **Crate.** The `egglog` crate (3.x) is the default choice, picked over its predecessor `egg` at the user's suggestion. It fits this design: a kernel pattern becomes a rule that unions `(Sum (Mul x y))` with `(Dot x y)`, type conditions become Datalog guards, and each kernel constructor carries its cost. The kernel library's patterns can therefore live in one egglog rule file next to the kernel implementations. If embedding egglog from Rust turns out awkward for typed patterns, the builder may fall back to `egg` and record why.
 
 Fusion is legal only because of the semantics decisions below: with the canonical summation order and no FMA, a fused `dot` computes exactly the same bits as `*` followed by `sum`.
+### Tile-at-a-time execution
+
+Executing a chain of kernels over cache-sized tiles (around 1024 rows, as in X100, Polars, and the plan for corgi) is a planned extension, not part of the first version.
+Each kernel still runs as written, but over one tile at a time into a reused destination buffer, so intermediates stay in L1 and a chain costs about one memory pass.
+It is an execution strategy for the same plan, not code generation, and it complements pattern fusion: fused kernels remove passes where a pattern exists, and tiling shrinks the cost of the passes that remain.
+Nothing in the design may prevent it, which fixes these first-version decisions:
+
+* Every kernel declares a class: elementwise (output row `i` depends only on input rows `i`), reduction, selection (data-dependent output length, as in `compress` and `where`), or whole-array (everything else, such as a later `sort`).
+* Elementwise kernels are implemented over slices into a caller-provided destination, with the allocating call as a thin wrapper, so the same code runs on a tile.
+* Reductions are implemented as state, update, and finish, so a reduction can consume tiles. The canonical float order survives tiling when every tile except the last has a length that is a multiple of 16, because the 16 accumulators are the state and the tail is added at finish.
+* Selection kernels append to a growing output, so they also run per tile.
+* Array views make a tile of an input a zero-copy slice, and length checks happen before execution, so no error depends on tile boundaries.
+* The ordering rules already leave the executor free to interleave statements.
+
 Reporting near misses, such as `sum(cast_f64(x) * y)` almost matching `dot`, is the next step after the first version, because near misses mark the edge of the "good code" map.
 
 ### Higher-order functions by lifting
@@ -260,8 +274,10 @@ These outputs answer whether a given program runs well and why, which is the que
 * NEON kernels ship in the first version. They are tested and benchmarked on Apple M1 and M5 machines (`aarch64-apple-darwin`), so the code must build on macOS as well as Linux. The x86 machine has no aarch64 emulator installed, so aarch64 verification happens only on the Macs. The Macs are not reachable over SSH. Instead, the user checks out the repository on a Mac and starts a separate agent session there, so NEON work must be planned as self-contained batches with a written hand-off (branch, commands to run, expected results) that a session on the Mac can execute without this conversation's context.
 * SVE is deferred. Apple Silicon does not implement SVE (M4 and later have SME, whose streaming mode is a separate programming model), so SVE kernels need other hardware or an emulator before they can be tested.
 * Each kernel is tested against the scalar reference kernel with property tests that cover lengths 0 to a few hundred (tails), misaligned slices, and special float values. Results must be bit-identical.
-* Benchmarks compare each tier 1 program against a plain Rust loop compiled with `-C target-cpu=native`, which serves as the "good code" baseline. The baseline is fused, because the point is to measure what the interpreter loses against good compiled code. Float sum baselines use the canonical 16-accumulator order so they can vectorize and compute the same result. Filter benchmarks use uniformly random data at 1%, 50%, and 99% selectivity (my call).
+* SIMD kernels start as portable Rust compiled once per ISA (for example through `#[target_feature]` copies) and measured. Hand-written intrinsics replace a kernel only where measurement shows a gap against the baseline. Corgi measures its autovectorized streaming kernels at 1.00x a Rust loop because they are memory-bound, so intrinsics are expected to pay mostly for compress, sorting networks, compute-bound kernels, and data that fits in cache.
+* Benchmarks compare each tier 1 program against a plain Rust loop compiled with `-C target-cpu=native`, which serves as the "good code" baseline, and against the same program in corgi as a second reference. The baseline is fused, because the point is to measure what the interpreter loses against good compiled code. Float sum baselines use the canonical 16-accumulator order so they can vectorize and compute the same result. Filter benchmarks use uniformly random data at 1%, 50%, and 99% selectivity (my call).
 * Entry points: `verkehrt run file.vk` and `verkehrt repl`.
+* Embedding compiles once and executes many times, as DDIR does with corgi graphs. A program declares its inputs with `input name: type;` and its results with `export name = expr;`. `prepare` parses, checks, lowers, and plans once, and `execute` runs the prepared plan on a set of input arrays and returns the exports, with no re-parsing or re-planning.
 * The interpreter is a library crate, and the command-line tool is a thin binary on top of it. The library has no global mutable state, an interpreter instance is `Send`, and arrays pass in and out as shared buffers without copying. These constraints keep embedding into a Timely or Differential operator possible later, but the first version builds no such integration.
 
 ## Success for the first version
