@@ -12,7 +12,7 @@ use verkehrt::kernels::{
 };
 use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
-/// Row counts of every checked call, around the vector widths of AVX2 and AVX-512.
+/// Row counts of every checked call, around the vector widths of AVX2, AVX-512, and NEON.
 const LENGTHS: [usize; 15] = [0, 1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 63, 64, 65, 300];
 /// A row count long enough for every tile below plus a rest.
 const TILED_LEN: usize = 1000;
@@ -528,8 +528,9 @@ fn neon_auto_resolves_to_scalar() {
     }
 }
 
-/// NEON has intrinsics entries for the selections only. The other kernels have neither an
-/// intrinsics nor an auto entry, so the intrinsics backend resolves them to scalar.
+/// NEON has intrinsics entries for the selections and the float extreme reductions. The other
+/// kernels have neither an intrinsics nor an auto entry, so the intrinsics backend resolves
+/// them to scalar.
 #[cfg(target_arch = "aarch64")]
 #[test]
 fn neon_intrinsics_resolve_for_selections() {

@@ -24,7 +24,12 @@ pub(crate) fn ones(bits: u64) -> usize {
 /// The invoking module provides the vector steps, all compiled for `$features`:
 /// * a trait `Lanes: Elem` with `const LANES: usize` and the unsafe methods `keep(mask:
 ///   *const u8) -> u64`, `load(src: *const Self) -> V`, and `compress(v: V, keep: u64, dst:
-///   *mut Self) -> usize` for its vector type `V`, with the contracts of the AVX2 `Lanes`,
+///   *mut Self) -> usize` for its vector type `V`. `keep` reads `LANES` bool bytes at `mask`
+///   and sets bit `j` when byte `j` is nonzero, `load` reads the `LANES` rows at `src`, and
+///   `compress` stores the lanes of `v` whose bit in `keep` is set, in lane order, to the front
+///   of the `LANES` rows at `dst`, returns their count, ignores bits of `keep` at `LANES` and
+///   above, and leaves the other rows at `dst` unspecified. Each needs its pointer valid for
+///   the rows it reads or writes,
 /// * a trait `Compare: Lanes + PartialOrd` with `unsafe fn compare<const C: usize>(v: V, c:
 ///   Self) -> u64`, the keep mask of `v[j] <cmp> c` with the predicate of `Cmp::test`,
 /// * `fn first_indices(first: i64) -> V`, the vector of `i64` rows `first + j` for each lane

@@ -242,7 +242,8 @@ unsafe fn shuffle_store<T>(v: uint8x16_t, shuffle: &[u8; 16], dst: *mut T) {
 ///
 /// # Safety
 ///
-/// `dst` must be valid for writing 64 bytes, and the CPU must support NEON.
+/// `dst` must be valid for writing 64 bytes, and the CPU must support NEON. `PER` rows of `T`
+/// must fill one vector, `size_of::<T>() * PER == 16`, and a mismatch fails to compile.
 #[inline]
 #[target_feature(enable = "neon")]
 unsafe fn compress_quad<T, const PER: usize>(
@@ -251,6 +252,8 @@ unsafe fn compress_quad<T, const PER: usize>(
     table: &[[u8; 16]],
     dst: *mut T,
 ) -> usize {
+    // The bound argument below holds only when `PER` rows are one 16-byte vector.
+    const { assert!(size_of::<T>() * PER == 16) };
     // The survivors before each vector. With 2 lanes per vector one `PREFIX` entry counts
     // all 8 bits. With 4 lanes the low byte counts the first two vectors and the high byte
     // the last two, which start after all survivors of the low byte.
