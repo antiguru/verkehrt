@@ -1075,7 +1075,8 @@ fn variant_entry_counts_are_stable() {
     // recorded before the architecture layer existed.
     #[cfg(target_arch = "x86_64")]
     assert_eq!(counts, [509, 231, 29, 231, 31, 0, 0]);
-    // NEON has no entries yet, and its auto slot stays empty by design.
+    // NEON intrinsics cover 6 compress kernels, `where`, and 24 fused filters. Its auto
+    // slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [509, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(counts, [509, 0, 0, 0, 0, 0, 31]);
 }

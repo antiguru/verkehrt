@@ -527,3 +527,33 @@ fn neon_auto_resolves_to_scalar() {
         assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
     }
 }
+
+/// NEON has intrinsics entries for the selections only. The other kernels have neither an
+/// intrinsics nor an auto entry, so the intrinsics backend resolves them to scalar.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_intrinsics_resolve_for_selections() {
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let intrinsics = Variant {
+        isa: Isa::Neon,
+        backend: Backend::Intrinsics,
+    };
+    for name in ["add_f64", "reduce_add_f64", "dot_f64"] {
+        let id = reg.by_name(name).unwrap();
+        assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
+    }
+    let mut selections = vec!["where".to_string()];
+    for t in ["f64", "f32", "i64", "i32", "u8", "bool"] {
+        selections.push(format!("compress_{t}"));
+    }
+    for t in ["f64", "f32", "i64", "i32"] {
+        for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
+            selections.push(format!("filter_{cmp}_{t}"));
+        }
+    }
+    for name in &selections {
+        let id = reg.by_name(name).unwrap();
+        assert_eq!(dispatch.variant_used(id), intrinsics, "{name}");
+    }
+}

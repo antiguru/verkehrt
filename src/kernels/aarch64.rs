@@ -8,11 +8,22 @@
 //! (for example `"dotprod,fp16,rdm"`) is one invocation of `crate::kernels::auto::auto_backend`
 //! plus an `is_aarch64_feature_detected!` check in `Isa::is_available`.
 //!
+//! `compress` holds the hand-written NEON intrinsics entries of the selections.
+//!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
 
-use crate::kernels::{ElementwiseBody, KernelImpl, ReductionBody, SelectionBody};
+use crate::kernels::{
+    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, SelectionBody, Variant,
+};
 use crate::value::Elem;
+
+mod compress;
+
+const NEON_INTRINSICS: Variant = Variant {
+    isa: Isa::Neon,
+    backend: Backend::Intrinsics,
+};
 
 /// Adds the ISA variants of an elementwise body to its table.
 pub(crate) fn add_elementwise<B: ElementwiseBody>(_impls: &mut [Option<KernelImpl>]) {}
@@ -25,14 +36,21 @@ pub(crate) fn add_selection<S: SelectionBody>(_impls: &mut [Option<KernelImpl>])
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic
 /// type is `tag::<T, BOOL>()`.
-pub(crate) fn add_compress<T: Elem, const BOOL: bool>(_impls: &mut [Option<KernelImpl>]) {}
+pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
+    impls[NEON_INTRINSICS.index()] =
+        compress::compress_entry::<T, BOOL>().map(KernelImpl::Selection);
+}
 
 /// Adds the intrinsics entries of `where`.
-pub(crate) fn add_where(_impls: &mut [Option<KernelImpl>]) {}
+pub(crate) fn add_where(impls: &mut [Option<KernelImpl>]) {
+    impls[NEON_INTRINSICS.index()] = Some(KernelImpl::Selection(compress::where_entry()));
+}
 
 /// Adds the intrinsics entries of `filter_<cmp>` on rows of type `T`, for comparison number
 /// `C` of `CMPS`.
-pub(crate) fn add_filter<T: Elem, const C: usize>(_impls: &mut [Option<KernelImpl>]) {}
+pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl>]) {
+    impls[NEON_INTRINSICS.index()] = compress::filter_entry::<T, C>().map(KernelImpl::Selection);
+}
 
 /// Adds the intrinsics entries of `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true) on
 /// rows of type `T`.
