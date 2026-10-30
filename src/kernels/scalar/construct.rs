@@ -1,4 +1,4 @@
-//! Scalar reference construction, input, and length kernels.
+//! Scalar reference construction, input, length, and length check kernels.
 
 use crate::kernels::scalar::elementwise::{arity_error, scalar_to};
 use crate::kernels::scalar::reduce::array_arg;
@@ -103,6 +103,20 @@ fn run_length(args: &[Value], ty: ScalarType) -> Result<Value, String> {
     Ok(Value::Scalar(Scalar::I64(n)))
 }
 
+fn run_same_len(args: &[Value], ty: ScalarType) -> Result<Value, String> {
+    let [a, n] = args else {
+        return Err(arity_error(2, args.len()));
+    };
+    let arr = array_arg(a, ty)?;
+    let n = i64_arg(n)?;
+    let len = i64::try_from(arr.len()).map_err(|e| e.to_string())?;
+    if len != n {
+        return Err(format!("length mismatch: {len} vs {n}"));
+    }
+    // Arrays are reference counted, so returning the operand copies nothing.
+    Ok(a.clone())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn add_whole(
     reg: &mut Registry,
@@ -179,6 +193,20 @@ macro_rules! length {
     };
 }
 
+macro_rules! same_len {
+    ($reg:expr, $ty:expr) => {
+        add_whole(
+            $reg,
+            Op::SameLen,
+            format!("same_len_{}", $ty.name()),
+            vec![InputSpec::Array($ty), InputSpec::Scalar(ScalarType::I64)],
+            ValueType::Array($ty),
+            0,
+            |args| run_same_len(args, $ty),
+        )
+    };
+}
+
 pub(crate) fn register(reg: &mut Registry) {
     let i64_s = || InputSpec::Scalar(ScalarType::I64);
     add_whole(
@@ -227,4 +255,10 @@ pub(crate) fn register(reg: &mut Registry) {
     length!(reg, ScalarType::I32);
     length!(reg, ScalarType::U8);
     length!(reg, ScalarType::Bool);
+    same_len!(reg, ScalarType::F64);
+    same_len!(reg, ScalarType::F32);
+    same_len!(reg, ScalarType::I64);
+    same_len!(reg, ScalarType::I32);
+    same_len!(reg, ScalarType::U8);
+    same_len!(reg, ScalarType::Bool);
 }

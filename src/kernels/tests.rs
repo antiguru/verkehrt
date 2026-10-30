@@ -347,7 +347,9 @@ fn kernel_names_are_unique_valid_identifiers() {
                 KernelClass::Reduction
             }
             Some(Op::Compress | Op::Where) => KernelClass::Selection,
-            Some(Op::Iota | Op::Fill | Op::RandI64 | Op::RandF64 | Op::Load(_) | Op::Length) => {
+            Some(
+                Op::Iota | Op::Fill | Op::RandI64 | Op::RandF64 | Op::Load(_) | Op::Length | Op::SameLen,
+            ) => {
                 KernelClass::Whole
             }
             _ => KernelClass::Elementwise,

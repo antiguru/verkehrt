@@ -268,3 +268,27 @@ fn if_with_mask_condition_in_function_and_export() {
     let got = p.execute(&interp, &[("m", mask)], &mut Vec::new()).unwrap();
     assert_eq!(got[0].1, f64s(&[2.0, 1.0]));
 }
+
+#[test]
+fn zip_map_checks_lengths_whatever_the_body() {
+    for (body, want) in [
+        ("|a, b| a", "[1.0, 2.0, 3.0]"),
+        ("|a, b| b", "[4.0, 5.0, 6.0]"),
+        ("|a, b| 1.0", "[1.0, 1.0, 1.0]"),
+        ("|a, b| a + b", "[5.0, 7.0, 9.0]"),
+    ] {
+        let ok = format!("let x = [1.0, 2.0, 3.0];\nlet y = [4.0, 5.0, 6.0];\nprint(zip_map(x, y, {body}));\n");
+        assert_eq!(run_ok(&ok), format!("{want}\n"), "{ok}");
+        let bad = format!("let x = [1.0, 2.0, 3.0];\nlet y = [4.0];\nprint(zip_map(x, y, {body}));\n");
+        let e = run_err(&bad);
+        assert_eq!(e.kind, ErrorKind::Runtime, "{bad}: {e}");
+        assert!(e.message.contains("length mismatch"), "{bad}: {e}");
+        assert_eq!(e.span.unwrap().line, 3, "{bad}: {e}");
+    }
+    // The length checks do not prevent fusion.
+    let src = "let x = [1.0, 2.0];\nlet y = [3.0, 4.0];\nprint(sum(zip_map(x, y, |a, b| a * b)));\n";
+    let (r, out, diag) = run_with(Options { show_plan: true, ..scalar_opts() }, src);
+    r.unwrap();
+    assert_eq!(out, "11.0\n");
+    assert!(diag.contains("dot_f64"), "{diag}");
+}

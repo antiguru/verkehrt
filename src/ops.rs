@@ -51,6 +51,9 @@ pub enum Op {
     /// Load a file as an array of the given element type.
     Load(ScalarType),
     Length,
+    /// The array operand itself when its length equals the `i64` operand, a length
+    /// mismatch error otherwise. Lowering inserts it, it has no source syntax.
+    SameLen,
 }
 
 /// An instruction set a kernel implementation can target.

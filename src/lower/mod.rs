@@ -223,6 +223,11 @@ impl Lowerer<'_> {
                 _ => a,
             })
             .collect();
+        self.op_exact(op, args, span)
+    }
+
+    /// Builds an operation over operands exactly as given, without broadcasting.
+    fn op_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
         let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
         let Some(id) = self.reg.lookup(op, &tys) else {
             let shown: Vec<String> = tys.iter().map(ToString::to_string).collect();
@@ -265,6 +270,15 @@ impl Lowerer<'_> {
             }
             TExprKind::ZipMap(x, y, lam) => {
                 let (x, y) = (self.expr(x)?, self.expr(y)?);
+                // Each parameter reads its array through a check against the other's
+                // length, so a mismatch fails even when the body ignores a parameter. The
+                // checks are arrays to the planner, so fused kernels still match through them.
+                let (lx, ly) = (
+                    self.op(Op::Length, vec![x.clone()], span)?,
+                    self.op(Op::Length, vec![y.clone()], span)?,
+                );
+                let x = self.op_exact(Op::SameLen, vec![x, ly], span)?;
+                let y = self.op_exact(Op::SameLen, vec![y, lx], span)?;
                 self.lift(lam, vec![x, y], span)
             }
             TExprKind::Filter(x, lam) => {

@@ -257,3 +257,19 @@ fn term_equality_ignores_span() {
     set.insert(a);
     assert!(set.contains(&b));
 }
+
+#[test]
+fn zip_map_reads_each_array_through_a_length_check() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a));"),
+        ["bind x = L_c", "bind y = L_c", "print samelen(L_x, length(L_y))"]
+    );
+    assert_eq!(
+        run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a + b));"),
+        [
+            "bind x = L_c",
+            "bind y = L_c",
+            "print add(samelen(L_x, length(L_y)), samelen(L_y, length(L_x)))"
+        ]
+    );
+}
