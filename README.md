@@ -86,7 +86,7 @@ The `intrinsics` backend holds hand-written kernels and exists only where one wa
 |---|---|---|
 | x86-64 | AVX2 | `auto` and `intrinsics` |
 | x86-64 | AVX-512 (F, BW, VL, VBMI2) | `auto` and `intrinsics` |
-| aarch64 | NEON | In progress, kernels run their scalar entries until NEON entries land |
+| aarch64 | NEON | `intrinsics` for compress, `where`, the fused filter, and float min, max, argmin, and argmax, other kernels run their scalar entries, which the baseline build already vectorizes for NEON |
 
 Every variant must return the scalar kernel's result bit for bit, and a NaN result only has to be NaN.
 The property test `tests/isa_variants.rs` checks this for every installed variant, over aligned and misaligned views and lengths around the vector widths.
