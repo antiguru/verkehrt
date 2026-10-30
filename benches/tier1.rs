@@ -148,11 +148,58 @@ fn filter_body(x: &[f64], c: f64) -> Vec<f64> {
     out
 }
 
-// Only the crossover sweep, which needs x86-64, multiplies.
-#[cfg(target_arch = "x86_64")]
+/// Only the crossover sweep multiplies.
 #[inline(always)]
 fn mul_body(x: &[f64], y: &[f64]) -> Vec<f64> {
     x.iter().zip(y).map(|(a, b)| a * b).collect()
+}
+
+/// The minimum of the rows, one running minimum per accumulator so that it vectorizes. Minimum
+/// is order-independent on the NaN-free bench data, so no canonical order is needed.
+#[inline(always)]
+fn min_body(x: &[f64]) -> f64 {
+    let (chunks, tail) = x.as_chunks::<LANES>();
+    let mut acc = [f64::INFINITY; LANES];
+    for c in chunks {
+        for j in 0..LANES {
+            acc[j] = if c[j] < acc[j] { c[j] } else { acc[j] };
+        }
+    }
+    let mut m = f64::INFINITY;
+    for v in acc.into_iter().chain(tail.iter().copied()) {
+        m = if v < m { v } else { m };
+    }
+    m
+}
+
+/// The index of the first minimum, with one running (value, index) pair per accumulator. A
+/// lane replaces its pair only on a strictly smaller row, so it keeps its first minimum. The
+/// merge takes the smaller value and, on equal values, the smaller index, which gives the
+/// first index overall. The bench data is NaN-free.
+#[inline(always)]
+fn argmin_body(x: &[f64]) -> i64 {
+    let (chunks, tail) = x.as_chunks::<LANES>();
+    let mut val = [f64::INFINITY; LANES];
+    let mut idx = [0usize; LANES];
+    for (k, c) in chunks.iter().enumerate() {
+        for j in 0..LANES {
+            let lt = c[j] < val[j];
+            val[j] = if lt { c[j] } else { val[j] };
+            idx[j] = if lt { k * LANES + j } else { idx[j] };
+        }
+    }
+    let mut best = (f64::INFINITY, usize::MAX);
+    let base = chunks.len() * LANES;
+    let pairs = val
+        .into_iter()
+        .zip(idx)
+        .chain(tail.iter().copied().enumerate().map(|(j, v)| (v, base + j)));
+    for (v, i) in pairs {
+        if v < best.0 || (v == best.0 && i < best.1) {
+            best = (v, i);
+        }
+    }
+    i64::try_from(best.1).unwrap()
 }
 
 /// Defines a module with `base`, `avx2`, and `avx512` functions around one shared body. The
@@ -182,7 +229,8 @@ native_fns!(n_sum, sum_body, (x: &[f64]) -> f64);
 native_fns!(n_dot, dot_body, (x: &[f64], y: &[f64]) -> f64);
 native_fns!(n_count, count_body, (x: &[f64], c: f64) -> i64);
 native_fns!(n_filter, filter_body, (x: &[f64], c: f64) -> Vec<f64>);
-#[cfg(target_arch = "x86_64")]
+native_fns!(n_min, min_body, (x: &[f64]) -> f64);
+native_fns!(n_argmin, argmin_body, (x: &[f64]) -> i64);
 native_fns!(n_mul, mul_body, (x: &[f64], y: &[f64]) -> Vec<f64>);
 
 /// Calls the flavor of a function module that a `Checked` names. The availability check
@@ -211,8 +259,10 @@ macro_rules! call_native {
 struct Interp {
     label: String,
     interp: Interpreter,
-    /// Whether it uses the intrinsics backend. Only the selections have intrinsics entries,
-    /// so only the `filter` groups measure these variants.
+    /// Whether it uses the intrinsics backend. On x86-64 only the selections have intrinsics
+    /// entries, so only the `filter` groups measure these variants. On aarch64 the selections
+    /// and the float extremes (`min`, `argmin`) have them. Elsewhere the intrinsics backend
+    /// resolves to the scalar entries, so those groups skip it.
     intrinsics: bool,
 }
 
@@ -243,6 +293,21 @@ fn interpreters() -> Vec<Interp> {
                 intrinsics: backend == Backend::Intrinsics,
             });
         }
+    }
+    // On aarch64 the scalar variant is the baseline build, which the compiler vectorizes with
+    // NEON. The auto slot of NEON is empty, so the only NEON variant is the intrinsics one.
+    #[cfg(target_arch = "aarch64")]
+    if Isa::Neon.is_available() {
+        v.push(Interp {
+            label: "neon-intrinsics".into(),
+            interp: Interpreter::new(Options {
+                isa: Some(Isa::Neon),
+                backend: Backend::Intrinsics,
+                ..Options::default()
+            })
+            .unwrap(),
+            intrinsics: true,
+        });
     }
     v
 }
@@ -315,8 +380,14 @@ fn tier1(c: &mut Criterion) {
     let xv = Value::Array(xa.clone());
     let yv = Value::Array(ya.clone());
     let all_interps = interpreters();
-    // Every workload but `filter` resolves the intrinsics backend to its auto entries.
+    // `sum`, `dot`, and `count` resolve the intrinsics backend to their auto entries, or to
+    // scalar on aarch64, so the intrinsics variants stay out of those groups.
     let interps: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
+    // `min` and `argmin` have intrinsics entries on aarch64 only.
+    let ext_interps: Vec<&Interp> = all_interps
+        .iter()
+        .filter(|it| !it.intrinsics || cfg!(target_arch = "aarch64"))
+        .collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<f64>()).unwrap();
 
@@ -438,6 +509,74 @@ fn tier1(c: &mut Criterion) {
         g.finish();
     }
 
+    // min
+    {
+        let src = "input x: f64[]; export m = reduce(x, min);";
+        let want = n_min::base(x);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_min(x)).to_bits(), want.to_bits());
+        }
+        let mut g = c.benchmark_group("tier1/min");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        for it in &ext_interps {
+            let p = it.interp.prepare(src).unwrap();
+            let ins = [("x", xv.clone())];
+            let got = f64_scalar(&run(&p, &it.interp, &ins));
+            assert_eq!(got.to_bits(), want.to_bits(), "min {}", it.label);
+            g.bench_function(&it.label, |b| {
+                b.iter(|| run(&p, &it.interp, black_box(&ins)))
+            });
+        }
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_min(black_box(x))))
+            });
+        }
+        g.finish();
+    }
+
+    // argmin, the first index of the minimum
+    {
+        let src = "input x: f64[]; export i = argmin(x);";
+        let want = n_argmin::base(x);
+        // The plain forward loop with a strict comparison also returns the first index.
+        let (mut best, mut first) = (f64::INFINITY, 0usize);
+        for (i, &v) in x.iter().enumerate() {
+            if v < best {
+                best = v;
+                first = i;
+            }
+        }
+        assert_eq!(want, i64::try_from(first).unwrap(), "argmin reference");
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_argmin(x)), want);
+        }
+        eprintln!("argmin: first minimum {best:?} at index {want}");
+        let mut g = c.benchmark_group("tier1/argmin");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        for it in &ext_interps {
+            let p = it.interp.prepare(src).unwrap();
+            let ins = [("x", xv.clone())];
+            assert_eq!(
+                i64_scalar(&run(&p, &it.interp, &ins)),
+                want,
+                "argmin {}",
+                it.label
+            );
+            g.bench_function(&it.label, |b| {
+                b.iter(|| run(&p, &it.interp, black_box(&ins)))
+            });
+        }
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_argmin(black_box(x))))
+            });
+        }
+        g.finish();
+    }
+
     // filter at three selectivities
     for (name, cut) in [
         ("filter-1pct", 0.99f64),
@@ -493,7 +632,7 @@ fn tier1(c: &mut Criterion) {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn crossover_group<'a>(
     c: &'a mut Criterion,
     name: &str,
@@ -507,14 +646,17 @@ fn crossover_group<'a>(
     g
 }
 
-/// The sweep compares an x86-64 ISA variant with native code, so other targets skip it.
-#[cfg(not(target_arch = "x86_64"))]
+/// The sweep compares the best ISA variant with native code on x86-64 and aarch64, so other
+/// targets skip it.
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn crossover(_c: &mut Criterion) {
-    eprintln!("crossover: skipped, the sweep needs x86-64");
+    eprintln!("crossover: skipped, the sweep needs x86-64 or aarch64");
 }
 
+/// The ISA and backend of the interpreter in the sweep and the native flavor it is compared
+/// with. On x86-64 that is the best of AVX-512 and AVX2 with the `auto` backend.
 #[cfg(target_arch = "x86_64")]
-fn crossover(c: &mut Criterion) {
+fn crossover_target() -> (Isa, Backend, Checked) {
     let (best, nat) = if Isa::Avx512.is_available() {
         (Isa::Avx512, Native::Avx512)
     } else {
@@ -522,9 +664,27 @@ fn crossover(c: &mut Criterion) {
     };
     assert!(best.is_available(), "the benchmark needs avx2");
     let nat = nat.check().expect("the benchmark needs avx2");
+    (best, Backend::Auto, nat)
+}
+
+/// On aarch64 it is NEON with the intrinsics backend against the baseline-target native loop,
+/// which already is NEON. `sum` and `mul` have no intrinsics entry, so for them the
+/// interpreter runs the scalar entry. `min` has a NEON intrinsics entry.
+#[cfg(target_arch = "aarch64")]
+fn crossover_target() -> (Isa, Backend, Checked) {
+    assert!(Isa::Neon.is_available(), "the benchmark needs neon");
+    let nat = Native::Base
+        .check()
+        .expect("the baseline native always runs");
+    (Isa::Neon, Backend::Intrinsics, nat)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn crossover(c: &mut Criterion) {
+    let (best, backend, nat) = crossover_target();
     let interp = Interpreter::new(Options {
         isa: Some(best),
-        backend: Backend::Auto,
+        backend,
         ..Options::default()
     })
     .unwrap();
@@ -534,6 +694,12 @@ fn crossover(c: &mut Criterion) {
     let mul = interp
         .prepare("input x: f64[]; input y: f64[]; export z = x * y;")
         .unwrap();
+    // Only aarch64 has an intrinsics entry for the minimum, so only it sweeps `min`.
+    let min = cfg!(target_arch = "aarch64").then(|| {
+        interp
+            .prepare("input x: f64[]; export m = reduce(x, min);")
+            .unwrap()
+    });
     let xa = rand_f64(1 << 20, 1);
     let ya = rand_f64(1 << 20, 2);
     for p in 4..=20u32 {
@@ -572,6 +738,22 @@ fn crossover(c: &mut Criterion) {
             b.iter(|| call_native!(nat, n_mul(black_box(x), black_box(y))))
         });
         gm.finish();
+
+        if let Some(min) = &min {
+            let want_min = call_native!(nat, n_min(x));
+            assert_eq!(
+                f64_scalar(&run(min, &interp, &ins1)).to_bits(),
+                want_min.to_bits()
+            );
+            let mut gn = crossover_group(c, "crossover/min", bytes);
+            gn.bench_with_input(criterion::BenchmarkId::new("interp", n), &n, |b, _| {
+                b.iter(|| run(min, &interp, black_box(&ins1)))
+            });
+            gn.bench_with_input(criterion::BenchmarkId::new("native", n), &n, |b, _| {
+                b.iter(|| call_native!(nat, n_min(black_box(x))))
+            });
+            gn.finish();
+        }
     }
 }
 
