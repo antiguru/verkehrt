@@ -171,6 +171,8 @@ fn if_rules() {
     assert_eq!(last_type("let r = if 1.0 < 2.0 { 1.0 } else { 2.0 };"), F64);
     type_err("let r = if 1.0 { 1.0 } else { 2.0 };", "bool");
     type_err("let r = if true { 1.0 } else { 2 };", "branch");
+    assert_eq!(last_type("let m = [true]; let r = if m { 1.0 } else { 2.0 };"), F64A);
+    type_err("let m = [true]; let r = if m { [1i8] } else { [2i8] };", "no kernel for 'if'");
 }
 
 #[test]

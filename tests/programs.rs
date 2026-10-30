@@ -234,3 +234,37 @@ fn failed_repl_input_keeps_old_bindings() {
     interp.eval_repl("let z = [9.0];", &mut Vec::new(), &mut diag).unwrap();
     assert_eq!(interp.get("z").unwrap().to_string(), "[9.0]");
 }
+
+fn run_ok(src: &str) -> String {
+    let (r, out, _) = run_with(Options::default(), src);
+    r.unwrap_or_else(|e| panic!("{src}: {e}"));
+    out
+}
+
+fn run_err(src: &str) -> verkehrt::error::Error {
+    let (r, out, _) = run_with(Options::default(), src);
+    assert_eq!(out, "", "{src}");
+    r.unwrap_err()
+}
+
+#[test]
+fn if_with_mask_condition_is_an_array() {
+    let src = "let m = [true, false, true];\nlet y = if m { 1.0 } else { 2.0 };\nprint(y);\nprint(y + 1.0);\n";
+    assert_eq!(run_ok(src), "[1.0, 2.0, 1.0]\n[2.0, 3.0, 2.0]\n");
+    let src = "let m = [true, false, true];\nlet y: f64 = if m { 1.0 } else { 2.0 };\nprint(sum(y));\n";
+    let e = run_err(src);
+    assert_eq!(e.kind, ErrorKind::Type, "{e}");
+    assert_eq!(e.span.map(|s| (s.line, s.col)), Some((2, 1)), "{e}");
+}
+
+#[test]
+fn if_with_mask_condition_in_function_and_export() {
+    let src = "fn f(m: bool[]) -> f64[] { if m { 1.0 } else { 2.0 } }\n\
+               let m = [true, false];\nprint(f(m) + 1.0);\n";
+    assert_eq!(run_ok(src), "[2.0, 3.0]\n");
+    let interp = Interpreter::new(Options::default()).unwrap();
+    let p = interp.prepare("input m: bool[]; export y = if m { 1.0 } else { 2.0 };").unwrap();
+    let mask = Value::Array(Array::from_bools(&[false, true]));
+    let got = p.execute(&interp, &[("m", mask)], &mut Vec::new()).unwrap();
+    assert_eq!(got[0].1, f64s(&[2.0, 1.0]));
+}

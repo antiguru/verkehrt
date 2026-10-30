@@ -532,7 +532,18 @@ impl<'a> Checker<'a> {
                         span,
                     ));
                 }
-                let ty = t.ty;
+                // A scalar condition picks one branch, so the result has the branch type.
+                // A mask condition selects per element, so the registry's `select` kernel
+                // decides the result type, an array even when both branches are scalars.
+                let ty = if cond.ty == ValueType::Scalar(ScalarType::Bool) {
+                    t.ty
+                } else {
+                    let tys = [cond.ty, t.ty, f.ty];
+                    let Some(id) = self.reg.lookup(Op::Select, &tys) else {
+                        return Err(Error::ty(format!("no kernel for 'if' on {}", join_types(&tys)), span));
+                    };
+                    self.reg.get(id).output
+                };
                 Ok(mk(TExprKind::If(Box::new(cond), Box::new(t), Box::new(f)), ty))
             }
             ExprKind::Lambda(..) => Err(Error::ty(
