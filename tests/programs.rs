@@ -292,3 +292,17 @@ fn zip_map_checks_lengths_whatever_the_body() {
     assert_eq!(out, "11.0\n");
     assert!(diag.contains("dot_f64"), "{diag}");
 }
+
+#[test]
+fn huge_lengths_are_runtime_errors() {
+    for src in [
+        "print(length(iota(9223372036854775807)));",
+        "print(length(fill(4611686018427387904, 1.0)));",
+        "print(length(rand_i64(2305843009213693952, 1)));",
+        "print(length(rand_f64(9223372036854775807, 1)));",
+    ] {
+        let e = run_err(src);
+        assert_eq!(e.kind, ErrorKind::Runtime, "{src}: {e}");
+        assert!(e.message.contains("is too large"), "{src}: {e}");
+    }
+}

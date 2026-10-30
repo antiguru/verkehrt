@@ -249,8 +249,18 @@ impl Array {
         self.bytes()
     }
 
+    /// The byte size of `len` elements of `elem`. Fails with "array of N elements is too
+    /// large" when it exceeds `isize::MAX`, the largest allocation Rust permits.
+    pub fn byte_size(len: usize, elem: ScalarType) -> Result<usize, String> {
+        len.checked_mul(elem.width())
+            .filter(|&b| isize::try_from(b).is_ok())
+            .ok_or_else(|| format!("array of {len} elements is too large"))
+    }
+
+    /// Panics when the size exceeds `isize::MAX` bytes, see `byte_size`.
     fn zeroed(len: usize, elem: ScalarType) -> Vec<Block> {
-        vec![Block([0; 64]); (len * elem.width()).div_ceil(64)]
+        let bytes = Array::byte_size(len, elem).unwrap_or_else(|e| panic!("{e}"));
+        vec![Block([0; 64]); bytes.div_ceil(64)]
     }
 
     pub fn from_vec<T: Elem>(v: Vec<T>) -> Array {
@@ -265,7 +275,15 @@ impl Array {
         })
     }
 
-    /// Allocates a zeroed aligned buffer of `len` elements and lets `f` fill it.
+    /// Like `build`, but fails instead of panicking when `len` elements exceed `isize::MAX`
+    /// bytes. For lengths that come from program values.
+    pub fn try_build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Result<Array, String> {
+        Array::byte_size(len, T::TYPE)?;
+        Ok(Array::build(len, f))
+    }
+
+    /// Allocates a zeroed aligned buffer of `len` elements and lets `f` fill it. Panics
+    /// when `len` elements exceed `isize::MAX` bytes.
     pub fn build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Array {
         let mut blocks = Array::zeroed(len, T::TYPE);
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
@@ -395,6 +413,17 @@ mod tests {
         assert_eq!(Value::Array(Array::from_vec(Vec::<f64>::new())).to_string(), "[]");
         let long = Value::Array(Array::from_vec((0..25i64).collect::<Vec<_>>()));
         assert_eq!(long.to_string(), "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ... 15 more]");
+    }
+
+    #[test]
+    fn byte_size_is_capped_at_isize_max() {
+        assert_eq!(Array::byte_size(3, ScalarType::F64), Ok(24));
+        let half = usize::try_from(isize::MAX).unwrap() / 2 + 1;
+        assert_eq!(Array::byte_size(half, ScalarType::U8), Ok(half));
+        assert!(Array::byte_size(half, ScalarType::I16).is_err());
+        let e = Array::byte_size(usize::MAX, ScalarType::F64).unwrap_err();
+        assert_eq!(e, format!("array of {} elements is too large", usize::MAX));
+        assert!(Array::try_build::<i64>(usize::MAX, |_| {}).is_err());
     }
 
     #[test]

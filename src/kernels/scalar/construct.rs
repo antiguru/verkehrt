@@ -38,11 +38,11 @@ fn run_iota(args: &[Value]) -> Result<Value, String> {
         return Err(arity_error(1, args.len()));
     };
     let n = count_arg(n)?;
-    Ok(Value::Array(Array::build::<i64>(n, |out| {
+    Ok(Value::Array(Array::try_build::<i64>(n, |out| {
         for (i, o) in out.iter_mut().enumerate() {
             *o = i64::try_from(i).expect("row index fits in i64");
         }
-    })))
+    })?))
 }
 
 /// `T` is the storage type of `ty`.
@@ -55,6 +55,8 @@ fn run_fill<T: Elem>(args: &[Value], ty: ScalarType) -> Result<Value, String> {
         Value::Scalar(s) if s.ty() == ty => scalar_to::<T>(s),
         other => return Err(format!("expected {}, got {}", ty.name(), other.ty())),
     };
+    // Checked before the rows are allocated, an oversized `vec!` panics.
+    Array::byte_size(n, ty)?;
     Ok(Value::Array(array_of(vec![v; n], ty)))
 }
 
@@ -65,12 +67,12 @@ fn run_rand<T: Elem>(args: &[Value], f: fn(u64) -> T) -> Result<Value, String> {
     };
     let n = count_arg(n)?;
     let seed = i64_arg(seed)?.cast_unsigned();
-    Ok(Value::Array(Array::build::<T>(n, |out| {
+    Ok(Value::Array(Array::try_build::<T>(n, |out| {
         for (i, o) in out.iter_mut().enumerate() {
             let i = u64::try_from(i).expect("row index fits in u64");
             *o = f(splitmix64(seed.wrapping_add(i)));
         }
-    })))
+    })?))
 }
 
 /// Reads the whole file at the path argument and decodes it as little-endian `T` rows with
