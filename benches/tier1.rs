@@ -140,17 +140,18 @@ native_fns!(n_count, count_body, (x: &[f64], c: f64) -> i64);
 native_fns!(n_filter, filter_body, (x: &[f64], c: f64) -> Vec<f64>);
 native_fns!(n_mul, mul_body, (x: &[f64], y: &[f64]) -> Vec<f64>);
 
-/// Calls the `Native` flavor of a function module.
+/// Calls the `Native` flavor of a function module. The availability check is not repeated
+/// here so that it stays out of timed closures, callers check it once up front.
 macro_rules! call_native {
     ($nat:expr, $m:ident ( $($arg:expr),* )) => {{
-        assert!($nat.available(), "native baseline {:?} is not available", $nat);
         match $nat {
             Native::Base => $m::base($($arg),*),
-            // SAFETY: `available` checked `is_x86_feature_detected!` for avx2 above. The
-            // arguments are ordinary safe references, so only the CPU feature is required.
+            // SAFETY: every `Native` that reaches this macro comes from `natives()` or the
+            // `available` assert in `crossover`, both before any timing, so avx2 was detected.
+            // The arguments are ordinary safe references, so only the CPU feature is required.
             Native::Avx2 => unsafe { $m::avx2($($arg),*) },
-            // SAFETY: `available` checked avx512f, avx512bw, avx512vl, and avx512vbmi2 above.
-            // The arguments are ordinary safe references.
+            // SAFETY: as above, `available` checked avx512f, avx512bw, avx512vl, and
+            // avx512vbmi2. The arguments are ordinary safe references.
             Native::Avx512 => unsafe { $m::avx512($($arg),*) },
         }
     }};
@@ -192,6 +193,7 @@ fn interpreters() -> Vec<Interp> {
 }
 
 fn natives() -> Vec<Native> {
+    // Only available flavors are returned, which is what `call_native!` relies on.
     [Native::Base, Native::Avx2, Native::Avx512]
         .into_iter()
         .filter(|n| n.available())
@@ -260,6 +262,38 @@ fn tier1(c: &mut Criterion) {
     let interps = interpreters();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<f64>()).unwrap();
+
+    // The canonical tail: a length that is not a multiple of 16 for sum and dot.
+    {
+        let n = 10_000_007;
+        let (ta, tb) = (rand_f64(n, 3), rand_f64(n, 4));
+        let (tx, ty) = (ta.as_slice::<f64>(), tb.as_slice::<f64>());
+        assert_ne!(n % LANES, 0);
+        let want_sum = n_sum::base(tx).to_bits();
+        let want_dot = n_dot::base(tx, ty).to_bits();
+        for nat in &nats {
+            assert_eq!(call_native!(*nat, n_sum(tx)).to_bits(), want_sum);
+            assert_eq!(call_native!(*nat, n_dot(tx, ty)).to_bits(), want_dot);
+        }
+        let ins = [
+            ("x", Value::Array(ta.clone())),
+            ("y", Value::Array(tb.clone())),
+        ];
+        for it in &interps {
+            let ps = it
+                .interp
+                .prepare("input x: f64[]; export s = sum(x);")
+                .unwrap();
+            let pd = it
+                .interp
+                .prepare("input x: f64[]; input y: f64[]; export s = sum(x * y);")
+                .unwrap();
+            let got_sum = f64_scalar(&run(&ps, &it.interp, &ins[..1]));
+            assert_eq!(got_sum.to_bits(), want_sum, "tail sum {}", it.label);
+            let got_dot = f64_scalar(&run(&pd, &it.interp, &ins));
+            assert_eq!(got_dot.to_bits(), want_dot, "tail dot {}", it.label);
+        }
+    }
 
     // sum
     {
@@ -355,6 +389,14 @@ fn tier1(c: &mut Criterion) {
     ] {
         let src = format!("input x: f64[]; export f = filter(x, |v| v > {cut:?});");
         let want = n_filter::base(x, cut);
+        // The data is uniform in [0, 1), so `x > cut` keeps about `1 - cut` of the rows.
+        let matched = u32::try_from(want.len()).unwrap();
+        let frac = f64::from(matched) / f64::from(u32::try_from(N).unwrap());
+        assert!(
+            (frac - (1.0 - cut)).abs() < 0.005,
+            "{name}: {matched} matches, fraction {frac}"
+        );
+        eprintln!("{name}: {matched} of {N} rows match ({:.3}%)", frac * 100.0);
         for n in &nats {
             assert_eq!(bits(&call_native!(*n, n_filter(x, cut))), bits(&want));
         }
@@ -413,7 +455,10 @@ fn crossover(c: &mut Criterion) {
     } else {
         (Isa::Avx2, Native::Avx2)
     };
-    assert!(best.is_available(), "the benchmark needs avx2");
+    assert!(
+        best.is_available() && nat.available(),
+        "the benchmark needs avx2"
+    );
     let interp = Interpreter::new(Options {
         isa: Some(best),
         backend: Backend::Auto,
