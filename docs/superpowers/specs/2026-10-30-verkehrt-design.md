@@ -114,6 +114,8 @@ Rules:
 
 * Scalars: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`.
 * Arrays: `T[]` for each scalar type, one-dimensional.
+* Tuples of the above.
+* Function types for top-level functions and lambdas, used only as arguments to higher-order primitives.
 * `f16` and `bf16` are candidates for later. M1 and M5 have native `f16` arithmetic, but the x86 development machine (Zen 5) only converts `f16` (F16C) and only has `bf16` dot products (AVX512_BF16), so they would start as a strain case.
 
 Narrow types are where SIMD gains most: a 512-bit register holds 64 `u8` lanes but only 8 `f64` lanes, and memory traffic shrinks by the same factor.
@@ -122,8 +124,6 @@ They also have the most instruction gaps. x86 has no 8-bit multiply or shift, AV
 **The kernel table is the type system's source of truth.** A primitive applied to an element type that has no kernel is a type error, reported before execution (for example "no kernel for `*` on `i8[]`"). Each pair either has a kernel on every supported ISA, with emulation recorded in the catalog where needed, or is rejected. This matches the language's premise and bounds the work: adding a type to the language costs nothing, and adding kernels for it grows the set of programs that type-check (my call).
 
 Reductions widen their result: `sum` and `reduce(x, add)` over `i8`, `i16`, `i32` return `i64`, and over `u8`, `u16`, `u32` return `u64`, because a `u8` sum that wraps at 256 is useless and widening sums are cheap in SIMD (`vpsadbw` sums `u8` directly). `f32` sums stay `f32`. Elementwise operations stay in their type and wrap (my call).
-* Tuples of the above.
-* Function types for top-level functions and lambdas, used only as arguments to higher-order primitives.
 
 `bool[]` uses one byte per element, 0 or 1 (my call, simplest across ISAs). Packed bitmasks are an interesting catalog experiment because AVX-512 and SVE produce them natively, but they complicate NEON and AVX2 kernels.
 
