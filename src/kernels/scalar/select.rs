@@ -15,16 +15,22 @@ use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
 /// zero fill of the builder and the selection's writes.
 pub(crate) const CHUNK: usize = 2048;
 
+/// Rows of `T` in 64 bytes, the widest vector store of any selection entry.
+pub(crate) const fn vector_rows<T>() -> usize {
+    64 / size_of::<T>()
+}
+
 /// Appends the survivors of `n` rows to `out`, `CHUNK` rows at a time, where `kept` is the
 /// number of survivors among the `n` rows. `chunk(rows, dst)` selects from `rows`, writes
 /// the survivors in order to the front of `dst`, and returns their count. It may write any
-/// value to the rest of `dst`. `dst` has `min(rows.len(), r + 1)` rows, with `r` the
-/// survivors still to come, so a predicated write of every row stays inside it.
+/// value to the rest of `dst`. `dst` has `min(rows.len(), r + vector_rows::<T>())` rows,
+/// with `r` the survivors still to come, so a predicated write of every row and a full
+/// vector store at any survivor count stay inside it.
 ///
 /// The output buffer is reserved once for exactly the rows it can reach, so a selection
-/// into an empty builder neither grows by reallocation nor leaves more than one block of
-/// unused capacity. Panics when a chunk returns more survivors than `dst` holds, which a
-/// wrong `kept` can cause.
+/// into an empty builder neither grows by reallocation nor leaves more than one vector plus
+/// the rounding up to whole blocks of unused capacity. Panics when a chunk returns more
+/// survivors than `dst` holds, which a wrong `kept` can cause.
 #[inline(always)]
 pub(crate) fn append_chunks<T: Elem>(
     out: &mut ArrayBuilder,
@@ -32,13 +38,15 @@ pub(crate) fn append_chunks<T: Elem>(
     kept: usize,
     mut chunk: impl FnMut(Range<usize>, &mut [T]) -> usize,
 ) {
-    // The spare rows of a chunk end at most one row past the last survivor, and never past
-    // the rows of the tile.
-    out.reserve(kept.saturating_add(1).min(n));
+    // The spare rows of a chunk end at most one vector past the last survivor, and never
+    // past the rows of the tile. With only one row past it, a chunk after the survivors ran
+    // out would leave the vector loops of the entries for their predicated scalar loops.
+    let slack = vector_rows::<T>();
+    out.reserve(kept.saturating_add(slack).min(n));
     let (mut start, mut done) = (0, 0);
     while start < n {
         let rows = CHUNK.min(n - start);
-        let room = rows.min(kept.saturating_sub(done).saturating_add(1));
+        let room = rows.min(kept.saturating_sub(done).saturating_add(slack));
         let dst = out.spare_rows::<T>(room);
         let got = chunk(start..start + rows, dst);
         out.commit(got);

@@ -850,10 +850,11 @@ fn selections_span_chunks() {
     }
 }
 
-/// A selection counts its survivors and reserves exactly for them, so the array keeps at
-/// most one block (64 bytes) of capacity past its rows, without a shrink copy.
+/// A selection counts its survivors and reserves for them plus one vector (64 bytes) of
+/// room for vector stores, so the array keeps at most that vector plus the rounding up to
+/// whole 64-byte blocks of capacity past its rows, without a shrink copy.
 #[test]
-fn selection_retains_at_most_one_block_of_slack() {
+fn selection_retains_at_most_one_vector_of_slack() {
     let reg = Registry::new();
     let n = 10_000;
     let xs: Vec<f64> = (0..n)
@@ -867,11 +868,81 @@ fn selection_retains_at_most_one_block_of_slack() {
         assert_eq!(kept.len(), keep);
         let bytes = kept.len() * size_of::<f64>();
         assert!(
-            kept.buffer_capacity_bytes() <= bytes.next_multiple_of(64) + 64,
+            kept.buffer_capacity_bytes() <= (bytes + 64).next_multiple_of(64),
             "{} bytes of capacity for {bytes} bytes of rows",
             kept.buffer_capacity_bytes()
         );
     }
+}
+
+/// Once the survivors of a tile run out, every chunk still gets a vector of room past them,
+/// so the entries keep their vector loops instead of the predicated scalar loop.
+#[test]
+fn append_chunks_keeps_a_vector_of_room_past_the_survivors() {
+    use super::scalar::select::{CHUNK, append_chunks, predicated};
+    let n = 3 * CHUNK + 5;
+    let kept = 10;
+    let mut out = ArrayBuilder::new(ScalarType::F64);
+    let mut rooms = Vec::new();
+    append_chunks::<f64>(&mut out, n, kept, |rows, dst| {
+        rooms.push((rows.len(), dst.len()));
+        let xs = rows.map(|i| (f64::from(u32::try_from(i).unwrap()), i < kept));
+        predicated(xs, dst)
+    });
+    assert_eq!(rooms.len(), 4);
+    for (rows, room) in rooms {
+        assert!(
+            room >= rows.min(8),
+            "{room} rows of room for a chunk of {rows}"
+        );
+    }
+    let want: Vec<f64> = (0..10).map(f64::from).collect();
+    assert_eq!(out.finish().as_slice::<f64>(), want);
+}
+
+/// Survivors packed at the front and none after, through every variant this CPU runs.
+#[test]
+fn selections_with_a_dense_prefix_and_an_empty_suffix() {
+    use super::scalar::select::CHUNK;
+    let reg = Registry::new();
+    let n = 3 * CHUNK + 5;
+    let prefix = CHUNK + 100;
+    // Falling values, so `x > cut` keeps exactly the first `prefix` rows.
+    let xs: Vec<f64> = (0..n)
+        .map(|i| f64::from(u32::try_from(n - i).unwrap()))
+        .collect();
+    let cut = f64::from(u32::try_from(n - prefix).unwrap());
+    let mask: Vec<bool> = (0..n).map(|i| i < prefix).collect();
+    let idx: Vec<i64> = (0..prefix).map(|i| i64::try_from(i).unwrap()).collect();
+    let mut checked = 0;
+    for isa in [Isa::Scalar, Isa::Avx2, Isa::Avx512] {
+        if !isa.is_available() {
+            continue;
+        }
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            let dispatch = reg.resolve(isa, backend);
+            let run = |name: &str, args: &[Value]| {
+                let id = reg.by_name(name).unwrap();
+                arr(dispatch.call(&reg, id, args).unwrap())
+            };
+            let compressed = run("compress_f64", &[f64s(&xs), bools(&mask)]);
+            assert_eq!(
+                compressed.as_slice::<f64>(),
+                &xs[..prefix],
+                "{isa:?} {backend:?}"
+            );
+            let filtered = run("filter_gt_f64", &[f64s(&xs), f64_s(cut)]);
+            assert_eq!(
+                filtered.as_slice::<f64>(),
+                &xs[..prefix],
+                "{isa:?} {backend:?}"
+            );
+            let indices = run("where", &[bools(&mask)]);
+            assert_eq!(indices.as_slice::<i64>(), idx, "{isa:?} {backend:?}");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 2);
 }
 
 #[test]

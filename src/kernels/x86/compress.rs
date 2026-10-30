@@ -3,9 +3,9 @@
 //!
 //! Each entry parses its arguments with the scalar entry's helpers, so it fails exactly when
 //! the scalar entry fails. It counts the survivors of the tile first, then appends through
-//! `append_chunks`, which reserves exactly that many rows. Within a chunk it selects a vector
-//! of rows at a time while a whole vector store fits in the chunk's spare rows, and finishes
-//! the rest with the portable predicated loop.
+//! `append_chunks`, which reserves that many rows plus one vector. Within a chunk it selects
+//! a vector of rows at a time while a whole vector store fits in the chunk's spare rows, and
+//! finishes the rest with the portable predicated loop.
 
 use crate::kernels::SelectionFn;
 use crate::value::{Elem, ScalarType};

@@ -123,7 +123,12 @@ fn input_strategy(ty: ScalarType, special: bool) -> BoxedStrategy<Input> {
         ScalarType::I32 => input_of(any::<i32>().boxed(), Scalar::I32),
         ScalarType::U8 => input_of(any::<u8>().boxed(), Scalar::U8),
         ScalarType::Bool => (
-            vec(any::<bool>(), BUF_LEN),
+            // A dense prefix of true rows and an empty suffix runs the chunks after the last
+            // survivor of a selection, which keep a vector of room past it.
+            prop_oneof![
+                3 => vec(any::<bool>(), BUF_LEN),
+                1 => (0..=BUF_LEN).prop_map(|cut| (0..BUF_LEN).map(|i| i < cut).collect()),
+            ],
             any::<bool>(),
             any::<bool>(),
             proptest::option::of(any::<Index>()),
