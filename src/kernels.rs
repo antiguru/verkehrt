@@ -8,6 +8,10 @@ pub use crate::ops::Isa;
 use crate::ops::Op;
 use crate::value::{Arg, ArrayBuilder, Scalar, ScalarType, Value, ValueType};
 
+#[cfg(target_arch = "aarch64")]
+mod aarch64;
+mod arch;
+mod auto;
 pub mod dispatch;
 pub mod scalar;
 #[cfg(target_arch = "x86_64")]
@@ -136,28 +140,22 @@ impl KernelImpl {
     /// The table of an elementwise body: its scalar entry, and its ISA variants on targets
     /// that compile them.
     pub(crate) fn elementwise<B: ElementwiseBody>() -> [Option<KernelImpl>; Variant::COUNT] {
-        #[allow(unused_mut)]
         let mut impls = KernelImpl::elementwise_scalar::<B>().scalar_only();
-        #[cfg(target_arch = "x86_64")]
-        x86::add_elementwise::<B>(&mut impls);
+        arch::add_elementwise::<B>(&mut impls);
         impls
     }
 
     /// The table of a reduction body, see `elementwise`.
     pub(crate) fn reduction<R: ReductionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
-        #[allow(unused_mut)]
         let mut impls = KernelImpl::Reduction(scalar_reducer::<R>).scalar_only();
-        #[cfg(target_arch = "x86_64")]
-        x86::add_reduction::<R>(&mut impls);
+        arch::add_reduction::<R>(&mut impls);
         impls
     }
 
     /// The table of a selection body, see `elementwise`.
     pub(crate) fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
-        #[allow(unused_mut)]
         let mut impls = KernelImpl::Selection(scalar_selection::<S>).scalar_only();
-        #[cfg(target_arch = "x86_64")]
-        x86::add_selection::<S>(&mut impls);
+        arch::add_selection::<S>(&mut impls);
         impls
     }
 }

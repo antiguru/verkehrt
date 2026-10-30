@@ -7,6 +7,7 @@
 
 use std::marker::PhantomData;
 
+use crate::kernels::arch;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
     InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
@@ -584,6 +585,18 @@ impl<T: Elem, A: Accum<T> + 'static> ReductionBody for Fold<T, A> {
 /// Registers the reduction `name` that folds one array with accumulator `A` over rows of
 /// storage type `T`. Its input and result types are `A::IN_TYPE` and `A::OUT_TYPE`.
 fn add_reduction<T: Elem, A: Accum<T> + 'static>(reg: &mut Registry, op: Op, name: String) {
+    add_reduction_with::<T, A>(reg, op, name, |_| {});
+}
+
+/// `add_reduction`, where `extend` may add architecture entries to the kernel's table.
+fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
+    reg: &mut Registry,
+    op: Op,
+    name: String,
+    extend: impl FnOnce(&mut [Option<KernelImpl>]),
+) {
+    let mut impls = KernelImpl::reduction::<Fold<T, A>>();
+    extend(&mut impls);
     reg.add(KernelDef {
         name,
         class: KernelClass::Reduction,
@@ -593,7 +606,7 @@ fn add_reduction<T: Elem, A: Accum<T> + 'static>(reg: &mut Registry, op: Op, nam
         cost: u64::try_from(A::IN_TYPE.width()).expect("width fits in u64"),
         commutative: false,
         pattern: None,
-        impls: KernelImpl::reduction::<Fold<T, A>>(),
+        impls,
     });
 }
 
@@ -607,11 +620,21 @@ fn register_numeric<T: Reducible>(reg: &mut Registry) {
     let mul = Op::Reduce(ReduceOp::Mul);
     add_reduction::<T, T::MulAcc>(reg, mul, format!("reduce_mul_{n}"));
     let min = Op::Reduce(ReduceOp::Min);
-    add_reduction::<T, Extreme<T, false>>(reg, min, format!("reduce_min_{n}"));
+    add_reduction_with::<T, Extreme<T, false>>(reg, min, format!("reduce_min_{n}"), |impls| {
+        arch::add_extreme::<T, false>(impls)
+    });
     let max = Op::Reduce(ReduceOp::Max);
-    add_reduction::<T, Extreme<T, true>>(reg, max, format!("reduce_max_{n}"));
-    add_reduction::<T, ArgExtreme<T, false>>(reg, Op::ArgMin, format!("argmin_{n}"));
-    add_reduction::<T, ArgExtreme<T, true>>(reg, Op::ArgMax, format!("argmax_{n}"));
+    add_reduction_with::<T, Extreme<T, true>>(reg, max, format!("reduce_max_{n}"), |impls| {
+        arch::add_extreme::<T, true>(impls)
+    });
+    let argmin = format!("argmin_{n}");
+    add_reduction_with::<T, ArgExtreme<T, false>>(reg, Op::ArgMin, argmin, |impls| {
+        arch::add_arg_extreme::<T, false>(impls)
+    });
+    let argmax = format!("argmax_{n}");
+    add_reduction_with::<T, ArgExtreme<T, true>>(reg, Op::ArgMax, argmax, |impls| {
+        arch::add_arg_extreme::<T, true>(impls)
+    });
 }
 
 /// Bool reductions read the 0/1 byte storage.

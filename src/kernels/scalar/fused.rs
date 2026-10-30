@@ -278,10 +278,8 @@ fn add_fused(
 /// The entries of `filter_<cmp>` for comparison number `C` of `CMPS`: the scalar and auto
 /// entries of its body, plus intrinsics entries where they exist.
 fn filter_impls<T: Reducible, const C: usize>() -> [Option<KernelImpl>; Variant::COUNT] {
-    #[allow(unused_mut)]
     let mut impls = KernelImpl::selection::<Filter<T, C>>();
-    #[cfg(target_arch = "x86_64")]
-    crate::kernels::x86::add_filter::<T, C>(&mut impls);
+    crate::kernels::arch::add_filter::<T, C>(&mut impls);
     impls
 }
 

@@ -41,6 +41,8 @@ A command-line flag forces a variant (`--isa scalar|avx2|avx512|neon`) to compar
 `avx512` means AVX-512 F, BW, VL, and VBMI2, all required. Detection picks AVX2 on a CPU without VBMI2, and `--isa avx512` fails there.
 Each ISA has two backends. The autovectorization backend compiles every kernel's portable body under that ISA's target features and covers every kernel. The intrinsics backend holds hand-written kernels and exists only where one was written. `--backend auto|intrinsics` picks between them (default `intrinsics`, falling back to auto, then scalar), so every hand-written kernel is measured against what the compiler produces from the same semantics.
 
+On aarch64 the auto backend is the baseline build, because NEON is mandatory there and the compiler already vectorizes the portable bodies for it. So no `neon/auto` entries exist, the `neon/auto` slot falls back to scalar, and `--isa neon --backend auto` runs the scalar kernels. An auto backend with optional aarch64 features (for example `dotprod`, `fp16`, `rdm`) is a possible later pivot: one invocation of the shared auto macro plus an `is_aarch64_feature_detected!` check.
+
 ```mermaid
 flowchart LR
   src[Source] --> parse[Parse] --> check[Type check] --> egraph[E-graph and exact rewrites]

@@ -1,10 +1,12 @@
-//! The autovectorization backend: each entry compiles a portable body under
-//! `#[target_feature]`, so the compiler vectorizes the inlined body for that ISA. The bodies
-//! are plain Rust without FMA or reassociation, so the variants compute what the scalar
-//! entries compute.
+//! The autovectorization backend, shared by all architectures: each entry compiles a portable
+//! body under `#[target_feature]`, so the compiler vectorizes the inlined body for that ISA.
+//! The bodies are plain Rust without FMA or reassociation, so the variants compute what the
+//! scalar entries compute.
 
 /// Emits module `$isa` with the auto entries for one instruction set. `$features` must be
 /// the feature string that `Isa::is_available` checks for `$name`.
+// Only x86-64 instantiates it today, see the `aarch64` module doc for the NEON pivot.
+#[allow(unused_macros)]
 macro_rules! auto_backend {
     ($isa:ident, $name:literal, $features:literal) => {
         #[doc = concat!("Auto entries compiled for ", $name, ".")]
@@ -74,5 +76,5 @@ macro_rules! auto_backend {
     };
 }
 
-auto_backend!(avx2, "AVX2", "avx2");
-auto_backend!(avx512, "AVX-512", "avx512f,avx512bw,avx512vl,avx512vbmi2");
+#[allow(unused_imports)]
+pub(crate) use auto_backend;

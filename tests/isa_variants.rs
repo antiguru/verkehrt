@@ -395,10 +395,17 @@ fn check_variant(reg: &Registry, variant: Variant) -> usize {
     checked
 }
 
+/// Whether the ISA has auto entries. NEON does not: on aarch64 the auto backend is the
+/// baseline build, so the `neon/auto` slot is empty and resolves to scalar.
+fn has_auto_entries(isa: Isa) -> bool {
+    matches!(isa, Isa::Avx2 | Isa::Avx512)
+}
+
 /// The ISAs under test that this CPU can run, printing a message for each skipped one.
 fn available_isas() -> Vec<Isa> {
-    [Isa::Avx2, Isa::Avx512]
+    Isa::ALL
         .into_iter()
+        .filter(|isa| *isa != Isa::Scalar)
         .filter(|isa| {
             let ok = isa.is_available();
             if !ok {
@@ -431,7 +438,11 @@ fn isa_variants_match_scalar() {
             "{}: {auto} auto and {intrinsics} intrinsics kernels checked",
             isa.name()
         );
-        assert!(auto > 0, "no auto variants for {}", isa.name());
+        if has_auto_entries(isa) {
+            assert!(auto > 0, "no auto variants for {}", isa.name());
+        } else {
+            assert_eq!(auto, 0, "unexpected auto variants for {}", isa.name());
+        }
     }
 }
 
@@ -447,14 +458,14 @@ fn every_array_kernel_has_auto_variants() {
             KernelClass::Reduction | KernelClass::Selection => true,
             KernelClass::Whole => false,
         };
-        for isa in [Isa::Avx2, Isa::Avx512] {
+        for isa in Isa::ALL.into_iter().filter(|isa| *isa != Isa::Scalar) {
             let variant = Variant {
                 isa,
                 backend: Backend::Auto,
             };
             let has = def.impls[variant.index()].is_some();
             // Variants are compiled for x86-64 only.
-            let expected = wanted && cfg!(target_arch = "x86_64");
+            let expected = wanted && has_auto_entries(isa) && cfg!(target_arch = "x86_64");
             assert_eq!(has, expected, "{} {variant}", def.name);
         }
     }
@@ -463,7 +474,10 @@ fn every_array_kernel_has_auto_variants() {
 #[test]
 fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
     let reg = Registry::new();
-    for isa in available_isas() {
+    for isa in available_isas()
+        .into_iter()
+        .filter(|isa| has_auto_entries(*isa))
+    {
         let auto = Variant {
             isa,
             backend: Backend::Auto,
@@ -499,5 +513,17 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             assert_eq!(by_auto.variant_used(id), auto, "{name}");
             assert_eq!(by_intrinsics.variant_used(id), want, "{name}");
         }
+    }
+}
+
+/// On aarch64 the auto backend is the baseline build, so `neon/auto` resolves to scalar.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_auto_resolves_to_scalar() {
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Neon, Backend::Auto);
+    for name in ["add_f64", "reduce_add_f64", "dot_f64", "compress_f64"] {
+        let id = reg.by_name(name).unwrap();
+        assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
     }
 }

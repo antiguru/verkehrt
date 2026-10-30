@@ -77,3 +77,25 @@ fn repl_continues_after_error() {
         .stdout("3.0\n");
     assert!(stderr_of(&a).contains("error[type]"));
 }
+
+/// On aarch64 the auto backend is the baseline build, so `--backend auto` runs scalar entries.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_auto_runs_the_scalar_entry() {
+    let a = verkehrt()
+        .args([
+            "run",
+            "--isa",
+            "neon",
+            "--backend",
+            "auto",
+            "--trace",
+            "tests/programs/dot.vk",
+        ])
+        .assert()
+        .success()
+        .stdout("32.0\n");
+    let err = stderr_of(&a);
+    let line = err.lines().find(|l| l.contains("dot_f64")).expect(&err);
+    assert!(line.contains("isa=scalar"), "{line}");
+}
