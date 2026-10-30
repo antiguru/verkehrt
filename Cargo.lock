@@ -362,6 +362,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
+name = "corgi"
+version = "0.1.0"
+source = "git+https://github.com/frankmcsherry/WIP?rev=2751e04e8501d47b33219be23049bf4afa7a4428#2751e04e8501d47b33219be23049bf4afa7a4428"
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1951,6 +1956,7 @@ dependencies = [
  "assert_cmd",
  "bytemuck",
  "clap",
+ "corgi",
  "criterion",
  "egglog",
  "proptest",
