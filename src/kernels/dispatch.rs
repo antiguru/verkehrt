@@ -14,13 +14,18 @@ mod tests;
 
 /// One entry per kernel, indexed by `KernelId`, with the variant each was picked as.
 /// Resolving needs no feature detection at call time, so a call is a table lookup.
+///
+/// A dispatch is tied to the registry it was resolved from by that registry's id. `call`
+/// takes the registry for the kernel definitions and rejects any other registry with an
+/// error, so entries are never run against another registry's argument checks.
 pub struct Dispatch {
+    registry: u64,
     entries: Vec<(KernelImpl, Variant)>,
 }
 
 impl Dispatch {
-    pub(crate) fn new(entries: Vec<(KernelImpl, Variant)>) -> Dispatch {
-        Dispatch { entries }
+    pub(crate) fn new(registry: u64, entries: Vec<(KernelImpl, Variant)>) -> Dispatch {
+        Dispatch { registry, entries }
     }
 
     fn slot(&self, id: KernelId) -> (KernelImpl, Variant) {
@@ -41,11 +46,15 @@ impl Dispatch {
     /// the kernel's inputs and unifies array lengths first. Then an elementwise kernel gets
     /// its output allocated and is called once, a reduction is updated once with all rows
     /// (never when there are none), a selection is called once with base 0, and a whole
-    /// kernel is called as is.
+    /// kernel is called as is. Fails when `reg` is not the registry this dispatch was resolved
+    /// from, or when kernels were added to it since.
     pub fn call(&self, reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, String> {
+        if reg.id != self.registry || reg.defs.len() != self.entries.len() {
+            return Err("dispatch was resolved from a different registry".into());
+        }
         let def = reg.get(id);
         match self.entry(id) {
-            // Whole kernels, and the still unmigrated classes that wrap one, check themselves.
+            // Whole kernels check their own arguments.
             KernelImpl::Whole(f) => f(args),
             KernelImpl::Elementwise(f) => {
                 let (call_args, rows) = prepare(def, args)?;

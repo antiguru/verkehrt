@@ -2,6 +2,7 @@
 //! types (an op on a type without a kernel is a type error) and the dispatch table.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use crate::ops::Isa;
 use crate::ops::Op;
@@ -19,16 +20,26 @@ mod tests;
 /// `Rows` argument has exactly `out.len() / width` rows, and the caller guarantees that the
 /// CPU supports the entry's ISA. The `String` is the runtime error message, the executor
 /// adds the span.
+///
+/// `Rows` windows and `out` are aligned for their element type only, because an array view
+/// can start at any row. An entry must not assume 32 or 64 byte alignment. A `Bool` output
+/// must be written as 0 or 1, because later kernels read bool bytes as exactly those values.
 pub type ElementwiseFn = unsafe fn(args: &[Arg], out: &mut [u8]) -> Result<(), String>;
 
 /// Creates the accumulator of a reduction. The caller guarantees that the CPU supports the
 /// entry's ISA.
+///
+/// The `Rows` windows that the accumulator's `update` receives are aligned for their element
+/// type only, as for `ElementwiseFn`. A `Bool` result must be 0 or 1.
 pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
 
 /// The running state of one reduction.
 ///
 /// Every `update` except the last receives a row count that is a multiple of 16, and `finish`
-/// follows the last `update`. An empty input means no `update` at all.
+/// follows the last `update`. An empty input means no `update` at all, and `finish` then
+/// returns the identity, or the empty-array error for `reduce_min`, `reduce_max`, `argmin`,
+/// and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
+/// local index is offset by the rows consumed before it.
 pub trait Reducer: Send {
     fn update(&mut self, args: &[Arg]) -> Result<(), String>;
     fn finish(self: Box<Self>) -> Result<Scalar, String>;
@@ -37,6 +48,11 @@ pub trait Reducer: Send {
 /// A selection entry. It appends the selected rows of this tile to `out`, and `base` is the
 /// tile's first row index in the whole array. The caller guarantees that the CPU supports
 /// the entry's ISA.
+///
+/// Every `Rows` argument has the same number of rows, and the windows are aligned for their
+/// element type only, as for `ElementwiseFn`. Rows appended to a `Bool` builder must be
+/// exactly 0 or exactly 1. The output is the concatenation of the tiles' appends, so a
+/// selection must not depend on how the rows are split into tiles.
 pub type SelectionFn =
     unsafe fn(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String>;
 
@@ -208,25 +224,36 @@ impl KernelDef {
 pub struct KernelId(pub u32);
 
 pub struct Registry {
+    /// Identifies this registry, so that a `Dispatch` can tell which registry it was
+    /// resolved from.
+    id: u64,
     defs: Vec<KernelDef>,
     by_name: HashMap<String, KernelId>,
     by_op: HashMap<Op, Vec<KernelId>>,
 }
 
 impl Registry {
-    /// Builds every kernel. There is no global state, each call returns an independent registry.
+    /// Builds every kernel. There is no global kernel state, each call returns an independent
+    /// registry. Only the registry id comes from a process-wide counter.
     pub fn new() -> Registry {
-        let mut reg = Registry {
-            defs: Vec::new(),
-            by_name: HashMap::new(),
-            by_op: HashMap::new(),
-        };
+        let mut reg = Registry::empty();
         scalar::elementwise::register(&mut reg);
         scalar::reduce::register(&mut reg);
         scalar::select::register(&mut reg);
         scalar::construct::register(&mut reg);
         scalar::fused::register(&mut reg);
         reg
+    }
+
+    /// A registry without kernels.
+    fn empty() -> Registry {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        Registry {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            defs: Vec::new(),
+            by_name: HashMap::new(),
+            by_op: HashMap::new(),
+        }
     }
 
     /// Adds a kernel. Panics on a duplicate name, a missing scalar implementation, or an
@@ -238,10 +265,8 @@ impl Registry {
             def.name
         );
         for imp in def.impls.iter().flatten() {
-            // TODO(task 2): reductions, selections, and fused kernels still register their
-            // whole-array functions. Remove this allowance when they have class entries.
             assert!(
-                imp.fits(def.class) || matches!(imp, KernelImpl::Whole(_)),
+                imp.fits(def.class),
                 "kernel {} has an entry that does not fit its class",
                 def.name
             );
@@ -312,7 +337,7 @@ impl Registry {
                 })
             })
             .collect();
-        Dispatch::new(entries)
+        Dispatch::new(self.id, entries)
     }
 }
 

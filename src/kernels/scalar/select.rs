@@ -1,11 +1,10 @@
 //! Scalar reference selection kernels. Output length depends on the data, so the slice
 //! functions append to a growing output and a tiled executor calls them once per tile.
 
-use crate::kernels::scalar::elementwise::{arity_error, slice_of};
-use crate::kernels::scalar::reduce::array_arg;
+use crate::kernels::scalar::elementwise::{arity_error, rows_arg};
 use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
 use crate::ops::Op;
-use crate::value::{Array, Elem, ScalarType, Value, ValueType};
+use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
 
 /// Appends the rows of `x` whose `mask` byte is nonzero. Both slices must have the same length.
 pub fn compress_append<T: Copy>(x: &[T], mask: &[u8], out: &mut Vec<T>) {
@@ -40,11 +39,20 @@ pub(crate) fn array_of<T: Elem>(rows: Vec<T>, ty: ScalarType) -> Array {
     }
 }
 
-fn run_compress<T: Elem>(args: &[Value], ty: ScalarType) -> Result<Value, String> {
+/// The `compress` entry for rows of type `ty`, whose storage type is `T`. The tile's base
+/// does not matter because the survivors are rows, not indices.
+fn compress_tile<T: Elem>(
+    args: &[Arg],
+    out: &mut ArrayBuilder,
+    ty: ScalarType,
+) -> Result<(), String> {
     let [x, mask] = args else {
         return Err(arity_error(2, args.len()));
     };
-    let (x, mask) = (array_arg(x, ty)?, array_arg(mask, ScalarType::Bool)?);
+    let (x, mask) = (
+        rows_arg::<T>(x, ty)?,
+        rows_arg::<u8>(mask, ScalarType::Bool)?,
+    );
     if x.len() != mask.len() {
         return Err(format!(
             "length mismatch: {} values vs {} mask rows",
@@ -52,19 +60,22 @@ fn run_compress<T: Elem>(args: &[Value], ty: ScalarType) -> Result<Value, String
             mask.len()
         ));
     }
-    let mut out = Vec::new();
-    compress_append(slice_of::<T>(x), mask.as_bool_bytes(), &mut out);
-    Ok(Value::Array(array_of(out, ty)))
+    let mut kept = Vec::new();
+    compress_append(x, mask, &mut kept);
+    out.extend(&kept);
+    Ok(())
 }
 
-fn run_where(args: &[Value]) -> Result<Value, String> {
+/// The `where` entry. `base` makes the tile's row indices global.
+fn where_tile(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String> {
     let [mask] = args else {
         return Err(arity_error(1, args.len()));
     };
-    let mask = array_arg(mask, ScalarType::Bool)?;
-    let mut out = Vec::new();
-    where_append(mask.as_bool_bytes(), 0, &mut out);
-    Ok(Value::Array(Array::from_vec(out)))
+    let mask = rows_arg::<u8>(mask, ScalarType::Bool)?;
+    let mut kept = Vec::new();
+    where_append(mask, base, &mut kept);
+    out.extend(&kept);
+    Ok(())
 }
 
 /// Registers `compress_{name}`. The closure needs constant arguments, see `reduce.rs`.
@@ -81,7 +92,10 @@ macro_rules! compress {
             cost: 2 * u64::try_from($ty.width()).expect("width fits in u64") + 1,
             commutative: false,
             pattern: None,
-            impls: KernelImpl::Whole(|args| run_compress::<$t>(args, $ty)).scalar_only(),
+            impls: KernelImpl::Selection(|args: &[Arg], _base: usize, out: &mut ArrayBuilder| {
+                compress_tile::<$t>(args, out, $ty)
+            })
+            .scalar_only(),
         })
     };
 }
@@ -103,6 +117,6 @@ pub(crate) fn register(reg: &mut Registry) {
         cost: 9,
         commutative: false,
         pattern: None,
-        impls: KernelImpl::Whole(run_where).scalar_only(),
+        impls: KernelImpl::Selection(where_tile).scalar_only(),
     });
 }

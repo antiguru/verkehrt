@@ -163,6 +163,26 @@ fn operand<T: Elem>(arg: &Arg, ty: ScalarType) -> Result<Operand<'_, T>, String>
     }
 }
 
+/// The rows of an argument that must be an array of scalar type `ty`. `T` is its storage type.
+pub(crate) fn rows_arg<T: Elem>(arg: &Arg, ty: ScalarType) -> Result<&[T], String> {
+    debug_assert_eq!(T::TYPE.width(), ty.width());
+    match arg {
+        Arg::Rows(a) if a.elem() == ty => Ok(slice_of(a)),
+        Arg::Rows(a) => Err(format!("expected {}[], got {}", ty.name(), a.ty())),
+        Arg::Splat(s) => Err(format!("expected {}[], got {}", ty.name(), s.ty().name())),
+    }
+}
+
+/// The value of an argument that must be a scalar of type `ty`. `T` is its storage type.
+pub(crate) fn splat_arg<T: Elem>(arg: &Arg, ty: ScalarType) -> Result<T, String> {
+    debug_assert_eq!(T::TYPE.width(), ty.width());
+    match arg {
+        Arg::Splat(s) if s.ty() == ty => Ok(scalar_to(s)),
+        Arg::Splat(s) => Err(format!("expected {}, got {}", ty.name(), s.ty().name())),
+        Arg::Rows(a) => Err(format!("expected {}, got {}", ty.name(), a.ty())),
+    }
+}
+
 /// The destination bytes as rows of `U`. Fails when the bytes are not aligned for `U` or
 /// not a whole number of rows.
 fn out_rows<U: Elem>(out: &mut [u8]) -> Result<&mut [U], String> {

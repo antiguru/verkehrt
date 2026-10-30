@@ -6,18 +6,15 @@
 //! floats, wrapping widened addition for integers). Results are bit-identical to the chain.
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
-use crate::kernels::scalar::elementwise::{Num, arity_error, scalar_from, scalar_to, slice_of};
-use crate::kernels::scalar::reduce::{CanonicalSum, Float, Reducible, array_arg};
-use crate::kernels::scalar::select::array_of;
+use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from, splat_arg};
+use crate::kernels::scalar::reduce::{Accum, Reducible};
 use crate::kernels::{
     Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
-    Registry, WholeFn,
+    Reducer, Registry,
 };
-use crate::value::{Elem, ScalarType, Value, ValueType};
-
-/// Number of accumulators of the canonical sum, which is also its block size.
-const BLOCK: usize = 16;
+use crate::value::{Arg, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
 /// The comparisons that fuse with `count`, `filter`, and `condsum`.
 #[derive(Clone, Copy)]
@@ -54,65 +51,6 @@ impl Cmp {
     }
 }
 
-/// Element types whose per-element values can be summed without materializing them.
-trait Fusable: Reducible {
-    /// The sum of `f(0)..f(n)` exactly as `reduce_add` over the materialized array.
-    fn sum_of(n: usize, f: impl Fn(usize) -> Self) -> Self::Sum;
-}
-
-/// The canonical sum of `f(0)..f(n)`. Blocks of 16 values go through a stack buffer to
-/// `CanonicalSum::update` and the tail of fewer than 16 goes to `finish`.
-fn canonical_of<T: Float>(n: usize, f: impl Fn(usize) -> T) -> T {
-    let blocks = n - n % BLOCK;
-    let mut sum = CanonicalSum::new();
-    let mut buf = [T::ZERO; BLOCK];
-    for start in (0..blocks).step_by(BLOCK) {
-        for (j, slot) in buf.iter_mut().enumerate() {
-            *slot = f(start + j);
-        }
-        sum.update(&buf);
-    }
-    let tail = n - blocks;
-    for (j, slot) in buf.iter_mut().enumerate().take(tail) {
-        *slot = f(blocks + j);
-    }
-    sum.finish(&buf[..tail])
-}
-
-macro_rules! impl_fusable_float {
-    ($($t:ty),*) => {$(
-        impl Fusable for $t {
-            fn sum_of(n: usize, f: impl Fn(usize) -> Self) -> $t { canonical_of(n, f) }
-        }
-    )*};
-}
-
-macro_rules! impl_fusable_int {
-    ($($t:ty => $w:ty),*) => {$(
-        impl Fusable for $t {
-            fn sum_of(n: usize, f: impl Fn(usize) -> Self) -> $w {
-                (0..n).fold(0, |a: $w, i| a.wrapping_add(<$w>::from(f(i))))
-            }
-        }
-    )*};
-}
-
-impl_fusable_float!(f64, f32);
-impl_fusable_int!(i64 => i64, i32 => i64);
-
-/// The rows of an array argument of element type `ty`.
-fn rows<T: Elem>(v: &Value, ty: ScalarType) -> Result<&[T], String> {
-    Ok(slice_of::<T>(array_arg(v, ty)?))
-}
-
-/// A scalar argument of type `ty`.
-fn scalar<T: Elem>(v: &Value, ty: ScalarType) -> Result<T, String> {
-    match v {
-        Value::Scalar(s) if s.ty() == ty => Ok(scalar_to(s)),
-        other => Err(format!("expected {}, got {}", ty.name(), other.ty())),
-    }
-}
-
 fn same_len(a: usize, b: usize) -> Result<(), String> {
     if a == b {
         Ok(())
@@ -121,55 +59,108 @@ fn same_len(a: usize, b: usize) -> Result<(), String> {
     }
 }
 
-fn sum_value<T: Fusable>(sum: T::Sum) -> Value {
-    Value::Scalar(scalar_from(sum, <T::Sum as Elem>::TYPE))
+/// The sum of a computed value per row, in the accumulation of `reduce_add` over the
+/// materialized values (the canonical float order, wrapping widened integer addition). The
+/// values are never stored, `Accum::feed` takes them from a row function.
+fn sum_scalar<T: Reducible>(acc: T::AddAcc) -> Result<Scalar, String> {
+    Ok(scalar_from(acc.finish()?, <T::Sum as Elem>::TYPE))
 }
 
-fn run_dot<T: Fusable>(args: &[Value]) -> Result<Value, String> {
-    let [x, y] = args else {
-        return Err(arity_error(2, args.len()));
-    };
-    let (x, y) = (rows::<T>(x, T::TYPE)?, rows::<T>(y, T::TYPE)?);
-    same_len(x.len(), y.len())?;
-    Ok(sum_value::<T>(T::sum_of(x.len(), |i| Num::mul(x[i], y[i]))))
+/// `dot`: the sum of `x[i] * y[i]`.
+struct Dot<T: Reducible> {
+    acc: T::AddAcc,
 }
 
-fn run_sumsq<T: Fusable>(args: &[Value]) -> Result<Value, String> {
-    let [x] = args else {
-        return Err(arity_error(1, args.len()));
-    };
-    let x = rows::<T>(x, T::TYPE)?;
-    Ok(sum_value::<T>(T::sum_of(x.len(), |i| Num::mul(x[i], x[i]))))
+impl<T: Reducible> Reducer for Dot<T> {
+    fn update(&mut self, args: &[Arg]) -> Result<(), String> {
+        let [x, y] = args else {
+            return Err(arity_error(2, args.len()));
+        };
+        let (x, y) = (rows_arg::<T>(x, T::TYPE)?, rows_arg::<T>(y, T::TYPE)?);
+        same_len(x.len(), y.len())?;
+        self.acc.feed(x.len(), |i| Num::mul(x[i], y[i]))
+    }
+
+    fn finish(self: Box<Self>) -> Result<Scalar, String> {
+        sum_scalar::<T>(self.acc)
+    }
 }
 
-fn run_count<T: Elem + PartialOrd>(args: &[Value], cmp: Cmp) -> Result<Value, String> {
+/// `sumsq`: the sum of `x[i] * x[i]`.
+struct SumSq<T: Reducible> {
+    acc: T::AddAcc,
+}
+
+impl<T: Reducible> Reducer for SumSq<T> {
+    fn update(&mut self, args: &[Arg]) -> Result<(), String> {
+        let [x] = args else {
+            return Err(arity_error(1, args.len()));
+        };
+        let x = rows_arg::<T>(x, T::TYPE)?;
+        self.acc.feed(x.len(), |i| Num::mul(x[i], x[i]))
+    }
+
+    fn finish(self: Box<Self>) -> Result<Scalar, String> {
+        sum_scalar::<T>(self.acc)
+    }
+}
+
+/// `count_<cmp>`: the number of rows with `x[i] <cmp> c`, for comparison number `C` of `CMPS`.
+struct CountCmp<T, const C: usize> {
+    count: usize,
+    _rows: PhantomData<fn() -> T>,
+}
+
+impl<T: Elem + PartialOrd, const C: usize> Reducer for CountCmp<T, C> {
+    fn update(&mut self, args: &[Arg]) -> Result<(), String> {
+        let [x, c] = args else {
+            return Err(arity_error(2, args.len()));
+        };
+        let (x, c) = (rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?);
+        self.count += x.iter().filter(|&&v| CMPS[C].1.test(v, c)).count();
+        Ok(())
+    }
+
+    fn finish(self: Box<Self>) -> Result<Scalar, String> {
+        let n = i64::try_from(self.count).map_err(|e| e.to_string())?;
+        Ok(scalar_from(n, ScalarType::I64))
+    }
+}
+
+/// `condsum_<cmp>`: the sum of `x[i]` where `x[i] <cmp> c` and `e` elsewhere.
+struct CondSum<T: Reducible, const C: usize> {
+    acc: T::AddAcc,
+}
+
+impl<T: Reducible, const C: usize> Reducer for CondSum<T, C> {
+    fn update(&mut self, args: &[Arg]) -> Result<(), String> {
+        let [x, c, e] = args else {
+            return Err(arity_error(3, args.len()));
+        };
+        let x = rows_arg::<T>(x, T::TYPE)?;
+        let (c, e) = (splat_arg::<T>(c, T::TYPE)?, splat_arg::<T>(e, T::TYPE)?);
+        self.acc
+            .feed(x.len(), |i| if CMPS[C].1.test(x[i], c) { x[i] } else { e })
+    }
+
+    fn finish(self: Box<Self>) -> Result<Scalar, String> {
+        sum_scalar::<T>(self.acc)
+    }
+}
+
+/// The `filter_<cmp>` entry for comparison `cmp`: appends the rows with `x[i] <cmp> c`.
+fn filter_tile<T: Elem + PartialOrd>(
+    args: &[Arg],
+    out: &mut ArrayBuilder,
+    cmp: Cmp,
+) -> Result<(), String> {
     let [x, c] = args else {
         return Err(arity_error(2, args.len()));
     };
-    let (x, c) = (rows::<T>(x, T::TYPE)?, scalar::<T>(c, T::TYPE)?);
-    let n = x.iter().filter(|&&v| cmp.test(v, c)).count();
-    let n = i64::try_from(n).map_err(|e| e.to_string())?;
-    Ok(Value::Scalar(scalar_from(n, ScalarType::I64)))
-}
-
-fn run_filter<T: Elem + PartialOrd>(args: &[Value], cmp: Cmp) -> Result<Value, String> {
-    let [x, c] = args else {
-        return Err(arity_error(2, args.len()));
-    };
-    let (x, c) = (rows::<T>(x, T::TYPE)?, scalar::<T>(c, T::TYPE)?);
-    let out: Vec<T> = x.iter().copied().filter(|&v| cmp.test(v, c)).collect();
-    Ok(Value::Array(array_of(out, T::TYPE)))
-}
-
-fn run_condsum<T: Fusable>(args: &[Value], cmp: Cmp) -> Result<Value, String> {
-    let [x, c, e] = args else {
-        return Err(arity_error(3, args.len()));
-    };
-    let x = rows::<T>(x, T::TYPE)?;
-    let (c, e) = (scalar::<T>(c, T::TYPE)?, scalar::<T>(e, T::TYPE)?);
-    Ok(sum_value::<T>(T::sum_of(x.len(), |i| {
-        if cmp.test(x[i], c) { x[i] } else { e }
-    })))
+    let (x, c) = (rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?);
+    let kept: Vec<T> = x.iter().copied().filter(|&v| cmp.test(v, c)).collect();
+    out.extend(&kept);
+    Ok(())
 }
 
 /// Registers one fused kernel. Cost is `w` times `cost_in_widths`, with `w` the element width.
@@ -184,7 +175,7 @@ fn add_fused(
     cost_in_widths: u64,
     lhs: String,
     vars: &[&str],
-    f: WholeFn,
+    imp: KernelImpl,
 ) {
     let w = u64::try_from(ty.width()).expect("width fits in u64");
     reg.add(KernelDef {
@@ -199,13 +190,13 @@ fn add_fused(
             lhs,
             vars: vars.iter().map(|v| (*v).to_string()).collect(),
         }),
-        impls: KernelImpl::Whole(f).scalar_only(),
+        impls: imp.scalar_only(),
     });
 }
 
 /// Registers the comparison kernels for comparison number `C` of `CMPS`. The kernel
 /// closures must coerce to bare function pointers, so `T` and `C` are type-level constants.
-fn register_cmp<T: Fusable, const C: usize>(reg: &mut Registry) {
+fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
     let (cmp_name, _) = CMPS[C];
     let n = T::TYPE.name();
     let cmp = format!("{cmp_name}_{n}");
@@ -221,7 +212,12 @@ fn register_cmp<T: Fusable, const C: usize>(reg: &mut Registry) {
         1,
         format!("(count {mask})"),
         &["?x", "?c"],
-        |args| run_count::<T>(args, CMPS[C].1),
+        KernelImpl::Reduction(|| {
+            Box::new(CountCmp::<T, C> {
+                count: 0,
+                _rows: PhantomData,
+            })
+        }),
     );
     add_fused(
         reg,
@@ -233,7 +229,9 @@ fn register_cmp<T: Fusable, const C: usize>(reg: &mut Registry) {
         2,
         format!("(compress_{n} ?x {mask})"),
         &["?x", "?c"],
-        |args| run_filter::<T>(args, CMPS[C].1),
+        KernelImpl::Selection(|args: &[Arg], _base: usize, out: &mut ArrayBuilder| {
+            filter_tile::<T>(args, out, CMPS[C].1)
+        }),
     );
     add_fused(
         reg,
@@ -249,11 +247,15 @@ fn register_cmp<T: Fusable, const C: usize>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (select_{n} {mask} ?x (Bcast ?e)))"),
         &["?x", "?c", "?e"],
-        |args| run_condsum::<T>(args, CMPS[C].1),
+        KernelImpl::Reduction(|| {
+            Box::new(CondSum::<T, C> {
+                acc: <T::AddAcc as Accum<T>>::new(),
+            })
+        }),
     );
 }
 
-fn register_type<T: Fusable>(reg: &mut Registry) {
+fn register_type<T: Reducible>(reg: &mut Registry) {
     let n = T::TYPE.name();
     let sum_ty = ValueType::Scalar(<T::Sum as Elem>::TYPE);
     add_fused(
@@ -266,7 +268,11 @@ fn register_type<T: Fusable>(reg: &mut Registry) {
         2,
         format!("(reduce_add_{n} (mul_{n} ?x ?y))"),
         &["?x", "?y"],
-        run_dot::<T>,
+        KernelImpl::Reduction(|| {
+            Box::new(Dot::<T> {
+                acc: <T::AddAcc as Accum<T>>::new(),
+            })
+        }),
     );
     add_fused(
         reg,
@@ -278,7 +284,11 @@ fn register_type<T: Fusable>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (mul_{n} ?x ?x))"),
         &["?x"],
-        run_sumsq::<T>,
+        KernelImpl::Reduction(|| {
+            Box::new(SumSq::<T> {
+                acc: <T::AddAcc as Accum<T>>::new(),
+            })
+        }),
     );
     register_cmp::<T, 0>(reg);
     register_cmp::<T, 1>(reg);

@@ -105,11 +105,7 @@ fn lookup_resolves_array_and_scalar_kernels() {
 fn lookup_is_exact_for_non_elementwise_kernels() {
     use ScalarType::*;
     // An empty registry, so the dummy kernels do not collide with the real ones.
-    let mut reg = Registry {
-        defs: Vec::new(),
-        by_name: std::collections::HashMap::new(),
-        by_op: std::collections::HashMap::new(),
-    };
+    let mut reg = Registry::empty();
     fn dummy(_: &[Value]) -> Result<Value, String> {
         Err("unused".into())
     }
@@ -597,6 +593,52 @@ fn canonical_sum_f32_accumulates_in_f32() {
         acc[0] += x;
     }
     assert_eq!(canonical_sum(&xs).to_bits(), acc[0].to_bits());
+}
+
+/// The golden bits below pin the canonical order independently of the code that computes
+/// it. The input has 35 elements, so `b = 32` and the tail is elements 32, 33, 34.
+///
+/// Hand check against the spec's bullets:
+/// * Accumulator 0 holds `1e16 + -1e16 = 0` (elements 0 and 16), so the large pair cancels
+///   exactly. A left fold instead adds 0.1 to 1e16 first, which rounds the small values away,
+///   and ends at 49.56.
+/// * Accumulators 1 to 15 hold `x[j] + x[j + 16]`, for example `0.1 + 1.7` in accumulator 1.
+/// * Pairwise combination then adds accumulator `j + 8` into `j`, then `+ 4`, `+ 2`, `+ 1`.
+/// * The tail adds `0.01`, `0.02`, `0.03` to accumulator 0 in order.
+///
+/// The resulting bits are those of the literal `50.16`. They were computed by an independent
+/// lane-by-lane simulation as well as by `canonical_sum`, and the two agree.
+#[test]
+fn canonical_sum_golden_values() {
+    #[rustfmt::skip]
+    let xs: [f64; 35] = [
+        1e16, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
+        -1e16, 1.7, 1.8, 1.9, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.1, 3.2, 3.3,
+        0.01, 0.02, 0.03,
+    ];
+    assert_eq!(
+        canonical_sum(&xs).to_bits(),
+        f64::from_bits(0x4049_147a_e147_ae14).to_bits()
+    );
+    assert_eq!(xs.iter().fold(0.0, |a, &x| a + x), 49.56);
+
+    // Accumulator 0 holds 2^24 and 1.0 (elements 0 and 16). In `f32` the sum 2^24 + 1 is not
+    // representable and rounds to 2^24 (ties to even), so the 1.0 is lost. The other
+    // accumulators hold exact multiples of 0.25, and the three tail elements are 3.0 each.
+    // With `f64` accumulation the 1.0 survives, the final rounding to `f32` lands on
+    // 16777394 instead of the `f32`-accumulated 16777396, which the assertions pin down.
+    #[rustfmt::skip]
+    let ys: [f32; 35] = [
+        16777216.0, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5,
+        1.0, 0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25, 3.75, 4.25, 4.75, 5.25, 5.75, 6.25, 6.75, 7.25,
+        3.0, 3.0, 3.0,
+    ];
+    let got = canonical_sum(&ys);
+    assert_eq!(got.to_bits(), f32::from_bits(0x4b80_005a).to_bits());
+    let wide: Vec<f64> = ys.iter().map(|&y| f64::from(y)).collect();
+    let in_f64 = canonical_sum(&wide) as f32;
+    assert_eq!(in_f64.to_bits(), f32::from_bits(0x4b80_0059).to_bits());
+    assert_ne!(got.to_bits(), in_f64.to_bits());
 }
 
 #[test]
