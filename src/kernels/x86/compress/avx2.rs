@@ -8,9 +8,9 @@ use std::arch::x86_64::*;
 
 use super::ones;
 use crate::kernels::scalar::elementwise::tag;
-use crate::kernels::scalar::fused::{CMPS, Cmp, filter_args};
+use crate::kernels::scalar::fused::{CMPS, Cmp, count_cmp, filter_args};
 use crate::kernels::scalar::select::{
-    append_chunks, check_row_indices, compress_args, predicated, where_args,
+    append_chunks, check_row_indices, compress_args, count_nonzero, predicated, where_args,
 };
 use crate::value::{Arg, ArrayBuilder, Elem};
 
@@ -290,25 +290,26 @@ impl Compare for i32 {
 }
 
 /// Writes the rows of `x` whose `mask` byte is nonzero to the front of `dst` and returns
-/// their count. Panics unless `mask` has the rows of `x` and `dst` has room for them.
+/// their count. Panics unless `mask` has the rows of `x`, or when `dst` has no room for a
+/// predicated write of the survivors, see `predicated`.
 #[target_feature(enable = "avx2")]
 fn compress_chunk<T: Lanes>(x: &[T], mask: &[u8], dst: &mut [T]) -> usize {
-    // The pointer arithmetic below relies on these lengths, which the entry's caller does
-    // not guarantee, so they are checked here.
+    // The pointer arithmetic below relies on equal lengths, which the entry's caller does not
+    // guarantee, so they are checked here.
     assert!(
-        mask.len() == x.len() && dst.len() >= x.len(),
-        "compress chunk of {} rows with {} mask rows into {} rows",
+        mask.len() == x.len(),
+        "compress chunk of {} rows with {} mask rows",
         x.len(),
-        mask.len(),
-        dst.len()
+        mask.len()
     );
     let n = x.len();
     let (mut i, mut k) = (0, 0);
-    while i + T::LANES <= n {
-        // SAFETY: `i + LANES <= n`, so rows `i..i + LANES` of `x` and `mask` are in bounds.
-        // Each step adds `LANES` to `i` and at most `LANES` to `k`, so `k <= i`, and rows
-        // `k..k + LANES` of `dst` are in bounds because `dst.len() >= n`. This function has
-        // AVX2, the feature of `Lanes`.
+    // A vector step stores a whole vector, so it runs only while one fits in `dst`, and the
+    // predicated loop finishes the rest.
+    while i + T::LANES <= n && k + T::LANES <= dst.len() {
+        // SAFETY: `i + LANES <= n`, so rows `i..i + LANES` of `x` and `mask` are in bounds,
+        // and `k + LANES <= dst.len()`, so rows `k..k + LANES` of `dst` are in bounds. This
+        // function has AVX2, the feature of `Lanes`.
         unsafe {
             let keep = T::keep(mask.as_ptr().add(i));
             let v = T::load(x.as_ptr().add(i));
@@ -320,23 +321,32 @@ fn compress_chunk<T: Lanes>(x: &[T], mask: &[u8], dst: &mut [T]) -> usize {
     k + predicated(rest, &mut dst[k..])
 }
 
+/// The number of rows `v` of `x` with `v <cmp> c`, for comparison number `C` of `CMPS`, with
+/// the compares of `filter_chunk`.
+#[target_feature(enable = "avx2")]
+fn count_rows<T: Compare, const C: usize>(x: &[T], c: T) -> usize {
+    let n = x.len();
+    let (mut i, mut kept) = (0, 0);
+    while i + T::LANES <= n {
+        // SAFETY: `i + LANES <= n`, so rows `i..i + LANES` of `x` are in bounds. This
+        // function has AVX2, the feature of `Compare`.
+        kept += unsafe { ones(T::compare::<C>(T::load(x.as_ptr().add(i)), c)) };
+        i += T::LANES;
+    }
+    kept + count_cmp(&x[i..], CMPS[C].1, c)
+}
+
 /// Writes the rows `v` of `x` with `v <cmp> c` to the front of `dst`, for comparison number
-/// `C` of `CMPS`, and returns their count. Panics unless `dst` has room for the rows of `x`.
+/// `C` of `CMPS`, and returns their count. Panics when `dst` has no room for a predicated
+/// write of the survivors, see `predicated`.
 #[target_feature(enable = "avx2")]
 fn filter_chunk<T: Compare, const C: usize>(x: &[T], c: T, dst: &mut [T]) -> usize {
-    // As in `compress_chunk`, the length the pointer arithmetic relies on is checked here.
-    assert!(
-        dst.len() >= x.len(),
-        "filter chunk of {} rows into {} rows",
-        x.len(),
-        dst.len()
-    );
     let n = x.len();
     let (mut i, mut k) = (0, 0);
-    while i + T::LANES <= n {
+    // As in `compress_chunk`, vector steps run while a whole vector fits in `dst`.
+    while i + T::LANES <= n && k + T::LANES <= dst.len() {
         // SAFETY: as in `compress_chunk`, rows `i..i + LANES` of `x` and rows `k..k + LANES`
-        // of `dst` are in bounds because `i + LANES <= n`, `k <= i`, and `dst.len() >= n`.
-        // This function has AVX2, the feature of `Compare`.
+        // of `dst` are in bounds by the loop condition. This function has AVX2, the feature of `Compare`.
         unsafe {
             let v = T::load(x.as_ptr().add(i));
             let keep = T::compare::<C>(v, c);
@@ -350,17 +360,11 @@ fn filter_chunk<T: Compare, const C: usize>(x: &[T], c: T, dst: &mut [T]) -> usi
 }
 
 /// Writes `first + i` for every row `i` of `mask` whose byte is nonzero to the front of
-/// `dst` and returns their count. Panics unless `dst` has room for a row per mask byte. The
-/// caller guarantees that `first + mask.len()` fits in i64.
+/// `dst` and returns their count. Panics when `dst` has no room for a predicated write of
+/// the survivors, see `predicated`. The caller guarantees that `first + mask.len()` fits in
+/// i64.
 #[target_feature(enable = "avx2")]
 fn where_chunk(mask: &[u8], first: i64, dst: &mut [i64]) -> usize {
-    // As in `compress_chunk`, the length the pointer arithmetic relies on is checked here.
-    assert!(
-        dst.len() >= mask.len(),
-        "where chunk of {} rows into {} rows",
-        mask.len(),
-        dst.len()
-    );
     let n = mask.len();
     let lanes = <i64 as Lanes>::LANES;
     let step = _mm256_set1_epi64x(4);
@@ -370,10 +374,11 @@ fn where_chunk(mask: &[u8], first: i64, dst: &mut [i64]) -> usize {
     // wrap without undefined behavior.
     let mut idx = _mm256_add_epi64(_mm256_set1_epi64x(first), _mm256_setr_epi64x(0, 1, 2, 3));
     let (mut i, mut k) = (0, 0);
-    while i + lanes <= n {
-        // SAFETY: as in `compress_chunk`, bytes `i..i + 4` of `mask` and rows `k..k + 4` of
-        // `dst` are in bounds because `i + 4 <= n`, `k <= i`, and `dst.len() >= n`. This
-        // function has AVX2, the feature of `Lanes`.
+    // As in `compress_chunk`, vector steps run while a whole vector fits in `dst`.
+    while i + lanes <= n && k + lanes <= dst.len() {
+        // SAFETY: as in `compress_chunk`, bytes `i..i + lanes` of `mask` and rows
+        // `k..k + lanes` of `dst` are in bounds by the loop condition. This function has
+        // AVX2, the feature of `Lanes`.
         unsafe {
             let keep = i64::keep(mask.as_ptr().add(i));
             k += i64::compress(idx, keep, dst.as_mut_ptr().add(k));
@@ -387,10 +392,10 @@ fn where_chunk(mask: &[u8], first: i64, dst: &mut [i64]) -> usize {
 }
 
 /// The AVX2 `compress` entry on rows of storage type `T` and type `tag::<T, BOOL>()`.
-// SAFETY: the caller guarantees that the CPU supports AVX2, which `Dispatch` does by calling
-// only entries that `resolve` installed after `is_available` returned true. Memory safety
-// does not depend on the caller: `compress_args` checks that the rows and the mask have the
-// same length, and `compress_chunk` checks the lengths it relies on again.
+// SAFETY: the caller guarantees that the CPU supports AVX2, which `Dispatch` does by
+// calling only entries that `resolve` installed after `is_available` returned true. Memory
+// safety does not depend on the caller: `compress_args` checks that the rows and the mask
+// have the same length, and `compress_chunk` checks the lengths it relies on again.
 #[target_feature(enable = "avx2")]
 pub(super) unsafe fn compress<T: Lanes, const BOOL: bool>(
     args: &[Arg],
@@ -398,16 +403,18 @@ pub(super) unsafe fn compress<T: Lanes, const BOOL: bool>(
     out: &mut ArrayBuilder,
 ) -> Result<(), String> {
     let (x, mask) = compress_args::<T>(args, tag::<T, BOOL>())?;
-    append_chunks(out, x.len(), |start, dst| {
-        let end = start + dst.len();
-        compress_chunk(&x[start..end], &mask[start..end], dst)
+    // The count pass sizes the output exactly. It is the portable count, compiled for this
+    // ISA.
+    append_chunks(out, x.len(), count_nonzero(mask), |rows, dst| {
+        compress_chunk(&x[rows.clone()], &mask[rows], dst)
     });
     Ok(())
 }
 
-/// The AVX2 `filter_<cmp>` entry on rows of type `T`, for comparison number `C` of `CMPS`.
-// SAFETY: as for `compress`, the caller guarantees AVX2, and `filter_chunk` checks the
-// lengths it relies on.
+/// The AVX2 `filter_<cmp>` entry on rows of type `T`, for comparison number `C` of
+/// `CMPS`.
+// SAFETY: as for `compress`, the caller guarantees AVX2, and the chunk functions check the
+// lengths they rely on.
 #[target_feature(enable = "avx2")]
 pub(super) unsafe fn filter<T: Compare, const C: usize>(
     args: &[Arg],
@@ -415,8 +422,8 @@ pub(super) unsafe fn filter<T: Compare, const C: usize>(
     out: &mut ArrayBuilder,
 ) -> Result<(), String> {
     let (x, c) = filter_args::<T>(args)?;
-    append_chunks(out, x.len(), |start, dst| {
-        filter_chunk::<T, C>(&x[start..start + dst.len()], c, dst)
+    append_chunks(out, x.len(), count_rows::<T, C>(x, c), |rows, dst| {
+        filter_chunk::<T, C>(&x[rows], c, dst)
     });
     Ok(())
 }
@@ -432,9 +439,9 @@ pub(super) unsafe fn r#where(
 ) -> Result<(), String> {
     let mask = where_args(args)?;
     check_row_indices(base, mask.len());
-    append_chunks(out, mask.len(), |start, dst| {
-        let first = i64::try_from(base + start).expect("row index fits in i64");
-        where_chunk(&mask[start..start + dst.len()], first, dst)
+    append_chunks(out, mask.len(), count_nonzero(mask), |rows, dst| {
+        let first = i64::try_from(base + rows.start).expect("row index fits in i64");
+        where_chunk(&mask[rows], first, dst)
     });
     Ok(())
 }

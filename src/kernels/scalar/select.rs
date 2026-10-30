@@ -2,6 +2,7 @@
 //! functions append to a growing output and a tiled executor calls them once per tile.
 
 use std::marker::PhantomData;
+use std::ops::Range;
 
 use crate::kernels::scalar::elementwise::{arity_error, rows_arg, tag};
 use crate::kernels::{
@@ -14,31 +15,48 @@ use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
 /// zero fill of the builder and the selection's writes.
 pub(crate) const CHUNK: usize = 2048;
 
-/// Appends the survivors of `n` rows to `out`, `CHUNK` rows at a time. `chunk(start, dst)`
-/// selects from rows `start..start + dst.len()`, writes the survivors in order to the front
-/// of `dst`, and returns their count. It may write any value to the rest of `dst`.
+/// Appends the survivors of `n` rows to `out`, `CHUNK` rows at a time, where `kept` is the
+/// number of survivors among the `n` rows. `chunk(rows, dst)` selects from `rows`, writes
+/// the survivors in order to the front of `dst`, and returns their count. It may write any
+/// value to the rest of `dst`. `dst` has `min(rows.len(), r + 1)` rows, with `r` the
+/// survivors still to come, so a predicated write of every row stays inside it.
+///
+/// The output buffer is reserved once for exactly the rows it can reach, so a selection
+/// into an empty builder neither grows by reallocation nor leaves more than one block of
+/// unused capacity. Panics when a chunk returns more survivors than `dst` holds, which a
+/// wrong `kept` can cause.
 #[inline(always)]
 pub(crate) fn append_chunks<T: Elem>(
     out: &mut ArrayBuilder,
     n: usize,
-    mut chunk: impl FnMut(usize, &mut [T]) -> usize,
+    kept: usize,
+    mut chunk: impl FnMut(Range<usize>, &mut [T]) -> usize,
 ) {
-    // Reserving for every row up front keeps the buffer from moving as it grows. The
-    // capacity is only allocated, the chunks touch it as they go.
-    out.reserve(n);
-    let mut start = 0;
+    // The spare rows of a chunk end at most one row past the last survivor, and never past
+    // the rows of the tile.
+    out.reserve(kept.saturating_add(1).min(n));
+    let (mut start, mut done) = (0, 0);
     while start < n {
-        let dst = out.spare_rows::<T>(CHUNK.min(n - start));
-        let len = dst.len();
-        let kept = chunk(start, dst);
-        out.commit(kept);
-        start += len;
+        let rows = CHUNK.min(n - start);
+        let room = rows.min(kept.saturating_sub(done).saturating_add(1));
+        let dst = out.spare_rows::<T>(room);
+        let got = chunk(start..start + rows, dst);
+        out.commit(got);
+        done += got;
+        start += rows;
     }
+}
+
+/// The number of nonzero bytes of `mask`, the survivors of `compress` and `where`.
+#[inline(always)]
+pub(crate) fn count_nonzero(mask: &[u8]) -> usize {
+    mask.iter().filter(|&&m| m != 0).count()
 }
 
 /// Writes every row of `rows` to `dst` at the survivor count so far, which then advances by
 /// the row's keep flag, and returns the survivor count. There is no branch on the data, so
-/// the time does not depend on the selectivity. `dst` needs a slot per row.
+/// the time does not depend on the selectivity. `dst` needs a slot per survivor, plus one
+/// when a row that is not kept follows the last survivor, and panics otherwise.
 #[inline(always)]
 pub(crate) fn predicated<T: Copy>(rows: impl Iterator<Item = (T, bool)>, dst: &mut [T]) -> usize {
     let mut kept = 0;
@@ -53,12 +71,11 @@ pub(crate) fn predicated<T: Copy>(rows: impl Iterator<Item = (T, bool)>, dst: &m
 #[inline(always)]
 pub fn compress_append<T: Elem>(x: &[T], mask: &[u8], out: &mut ArrayBuilder) {
     assert_eq!(x.len(), mask.len(), "mask rows must match the data rows");
-    append_chunks(out, x.len(), |start, dst| {
-        let end = start + dst.len();
+    append_chunks(out, x.len(), count_nonzero(mask), |rows, dst| {
         predicated(
-            x[start..end]
+            x[rows.clone()]
                 .iter()
-                .zip(&mask[start..end])
+                .zip(&mask[rows])
                 .map(|(&v, &m)| (v, m != 0)),
             dst,
         )
@@ -71,13 +88,9 @@ pub fn compress_append<T: Elem>(x: &[T], mask: &[u8], out: &mut ArrayBuilder) {
 #[inline(always)]
 pub fn where_append(mask: &[u8], base: usize, out: &mut ArrayBuilder) {
     check_row_indices(base, mask.len());
-    append_chunks(out, mask.len(), |start, dst| {
-        let end = start + dst.len();
-        let first = i64::try_from(base + start).expect("row index fits in i64");
-        predicated(
-            (first..).zip(&mask[start..end]).map(|(i, &m)| (i, m != 0)),
-            dst,
-        )
+    append_chunks(out, mask.len(), count_nonzero(mask), |rows, dst| {
+        let first = i64::try_from(base + rows.start).expect("row index fits in i64");
+        predicated((first..).zip(&mask[rows]).map(|(i, &m)| (i, m != 0)), dst)
     });
 }
 

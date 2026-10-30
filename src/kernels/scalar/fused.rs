@@ -138,6 +138,13 @@ impl<T: Reducible> ReductionBody for SumSq<T> {
     }
 }
 
+/// The number of rows of `x` with `x[i] <cmp> c`, the body of `count_<cmp>` and the count pass
+/// of `filter_<cmp>`.
+#[inline(always)]
+pub(crate) fn count_cmp<T: PartialOrd + Copy>(x: &[T], cmp: Cmp, c: T) -> usize {
+    x.iter().filter(|&&v| cmp.test(v, c)).count()
+}
+
 /// `count_<cmp>`: the number of rows with `x[i] <cmp> c`, for comparison number `C` of `CMPS`.
 struct CountCmp<T, const C: usize> {
     count: usize,
@@ -151,7 +158,7 @@ impl<T: Elem + PartialOrd, const C: usize> Reducer for CountCmp<T, C> {
             return Err(arity_error(2, args.len()));
         };
         let (x, c) = (rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?);
-        self.count += x.iter().filter(|&&v| CMPS[C].1.test(v, c)).count();
+        self.count += count_cmp(x, CMPS[C].1, c);
         Ok(())
     }
 
@@ -220,9 +227,9 @@ fn filter_tile<T: Elem + PartialOrd>(
     cmp: Cmp,
 ) -> Result<(), String> {
     let (x, c) = filter_args::<T>(args)?;
-    append_chunks(out, x.len(), |start, dst| {
-        let rows = x[start..start + dst.len()].iter();
-        predicated(rows.map(|&v| (v, cmp.test(v, c))), dst)
+    // The count pass sizes the output exactly, with the loop of `count_<cmp>`.
+    append_chunks(out, x.len(), count_cmp(x, cmp, c), |rows, dst| {
+        predicated(x[rows].iter().map(|&v| (v, cmp.test(v, c))), dst)
     });
     Ok(())
 }

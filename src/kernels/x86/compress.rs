@@ -2,11 +2,10 @@
 //! `filter_*_*`, hand-written for AVX2 and AVX-512 beside their auto entries.
 //!
 //! Each entry parses its arguments with the scalar entry's helpers, so it fails exactly when
-//! the scalar entry fails, and appends through `append_chunks`, so its output is reserved in
-//! the same chunks. Within a chunk it selects a vector of rows at a time and finishes the
-//! rows that do not fill a vector with the portable predicated loop. A vector step stores a
-//! whole vector at the survivor count, which never exceeds the row index of the step, so the
-//! store stays inside the chunk's spare rows.
+//! the scalar entry fails. It counts the survivors of the tile first, then appends through
+//! `append_chunks`, which reserves exactly that many rows. Within a chunk it selects a vector
+//! of rows at a time while a whole vector store fits in the chunk's spare rows, and finishes
+//! the rest with the portable predicated loop.
 
 use crate::kernels::SelectionFn;
 use crate::value::{Elem, ScalarType};
