@@ -1,5 +1,6 @@
-//! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro the portable bodies for AVX2 and AVX-512,
-//! and `compress` holds the hand-written intrinsics entries of the selections.
+//! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro to compile
+//! the portable bodies for AVX2 and AVX-512, and `compress` holds the hand-written intrinsics
+//! entries of the selections.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.

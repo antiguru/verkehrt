@@ -6,7 +6,7 @@
 /// Emits module `$isa` with the auto entries for one instruction set. `$features` must be
 /// the feature string that `Isa::is_available` checks for `$name`.
 // Only x86-64 instantiates it today, see the `aarch64` module doc for the NEON pivot.
-#[allow(unused_macros)]
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_macros))]
 macro_rules! auto_backend {
     ($isa:ident, $name:literal, $features:literal) => {
         #[doc = concat!("Auto entries compiled for ", $name, ".")]
@@ -76,5 +76,5 @@ macro_rules! auto_backend {
     };
 }
 
-#[allow(unused_imports)]
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_imports))]
 pub(crate) use auto_backend;

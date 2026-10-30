@@ -73,7 +73,6 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl
 
 /// Adds the intrinsics entries of `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true) on
 /// rows of type `T`. x86-64 has none.
-// The x86-64 build has no extreme entries, so the parameters only matter on aarch64.
 #[cfg_attr(
     not(target_arch = "aarch64"),
     allow(clippy::extra_unused_type_parameters, clippy::needless_pass_by_ref_mut)
@@ -87,7 +86,6 @@ pub(crate) fn add_extreme<T: Elem, const MAX: bool>(impls: &mut [Option<KernelIm
 
 /// Adds the intrinsics entries of `argmin` (`MAX` false) or `argmax` (`MAX` true) on rows of
 /// type `T`. x86-64 has none.
-// The x86-64 build has no extreme entries, so the parameters only matter on aarch64.
 #[cfg_attr(
     not(target_arch = "aarch64"),
     allow(clippy::extra_unused_type_parameters, clippy::needless_pass_by_ref_mut)
