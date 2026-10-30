@@ -338,6 +338,10 @@ fn kernel_names_are_unique_valid_identifiers() {
             "{}",
             def.name
         );
+        // Fused kernels have no op, their classes are checked by the oracle tests.
+        if def.pattern.is_some() {
+            continue;
+        }
         let expected = match def.op {
             Some(Op::Reduce(_) | Op::Count | Op::Any | Op::All | Op::ArgMin | Op::ArgMax) => {
                 KernelClass::Reduction
@@ -349,7 +353,6 @@ fn kernel_names_are_unique_valid_identifiers() {
             _ => KernelClass::Elementwise,
         };
         assert_eq!(def.class, expected, "{}", def.name);
-        assert!(def.pattern.is_none());
         assert!(def.impls[Isa::Scalar.index()].is_some());
     }
 }

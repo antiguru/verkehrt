@@ -15,8 +15,15 @@ mod tests;
 /// Runs a kernel. The `String` is the runtime error message, the executor adds the span.
 pub type KernelFn = fn(&[Value]) -> Result<Value, String>;
 
-/// Defined by the fusion task. Until then no kernel has a pattern.
-pub type FusedPattern = ();
+/// The expression a fused kernel implements, as an egglog pattern over single-op kernel names.
+/// The planner later emits `(rewrite <lhs> (<kernel name> <vars...>))` for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FusedPattern {
+    /// Pattern text with `?`-variables. `(Bcast ?c)` marks a scalar broadcast operand.
+    pub lhs: String,
+    /// The variables in the fused kernel's argument order.
+    pub vars: Vec<String>,
+}
 
 /// What a kernel accepts for one argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -103,6 +110,7 @@ impl Registry {
         scalar::reduce::register(&mut reg);
         scalar::select::register(&mut reg);
         scalar::construct::register(&mut reg);
+        scalar::fused::register(&mut reg);
         reg
     }
 
