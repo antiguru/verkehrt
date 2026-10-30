@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="verkehrt">
+  <title>verkehrt</title>
+  <!-- An upside-down V is a lambda. The lambda is cut into equal vertical bars, like the lanes of a SIMD register. -->
+  <style>
+    .lanes { fill: #1f6feb; }
+    @media (prefers-color-scheme: dark) {
+      .lanes { fill: #58a6ff; }
+    }
+  </style>
+  <defs>
+    <clipPath id="lambda">
+      <polygon points="32,6 60,58 46,58 32,32 18,58 4,58"/>
+    </clipPath>
+  </defs>
+  <g class="lanes" clip-path="url(#lambda)">
+    <rect x="4.00" y="0" width="4.27" height="64"/>
+    <rect x="10.47" y="0" width="4.27" height="64"/>
+    <rect x="16.93" y="0" width="4.27" height="64"/>
+    <rect x="23.40" y="0" width="4.27" height="64"/>
+    <rect x="29.87" y="0" width="4.27" height="64"/>
+    <rect x="36.33" y="0" width="4.27" height="64"/>
+    <rect x="42.80" y="0" width="4.27" height="64"/>
+    <rect x="49.27" y="0" width="4.27" height="64"/>
+    <rect x="55.73" y="0" width="4.27" height="64"/>
+  </g>
+</svg>
