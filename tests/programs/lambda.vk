@@ -1,0 +1,8 @@
+let x = [1.0, -2.0, 3.0];
+let y = [10.0, 20.0, 30.0];
+fn twice(v: f64) -> f64 { v * 2.0 }
+let k = 0.5;
+print(map(x, |v| if v > 0.0 { v } else { 0.0 - v }));
+print(zip_map(x, y, |a, b| a + b));
+print(map(x, twice));
+print(map(x, |v| v * k));

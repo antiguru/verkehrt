@@ -1,0 +1,234 @@
+//! The library API: an interpreter with persistent bindings, and compile-once programs for
+//! embedding in a host.
+
+use std::io::Write;
+
+use crate::check::{Globals, TStmt, VarId, check};
+use crate::error::Error;
+use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
+use crate::kernels::{Isa, Registry};
+use crate::lower::{LStmt, Mode, lower};
+use crate::plan::{Planner, render};
+use crate::syntax::parse;
+use crate::value::{Value, ValueType};
+
+/// Interpreter settings. The default has everything off and detects the instruction set.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Options {
+    /// The instruction set to run kernels with, `None` detects the best one.
+    pub isa: Option<Isa>,
+    /// Print one plan line per statement to the diagnostic stream before execution.
+    pub show_plan: bool,
+    /// Print one line per kernel call to the diagnostic stream.
+    pub trace: bool,
+    /// Collect per-kernel totals, written by `Interpreter::write_stats`.
+    pub stats: bool,
+}
+
+pub struct Interpreter {
+    opts: Options,
+    isa: Isa,
+    reg: Registry,
+    planner: Planner,
+    globals: Globals,
+    env: Env,
+    stats: Stats,
+}
+
+/// An `input` declaration of a program.
+struct InputDecl {
+    name: String,
+    var: VarId,
+    ty: ValueType,
+}
+
+/// A checked, lowered, and planned program.
+struct Compiled {
+    plan: Plan,
+    inputs: Vec<InputDecl>,
+    /// One `plan <line>: <render>` text per statement, empty unless `show_plan` is set.
+    plan_lines: Vec<String>,
+}
+
+/// A program compiled once and executed many times. It holds no interpreter state.
+pub struct Prepared {
+    plan: Plan,
+    inputs: Vec<InputDecl>,
+}
+
+impl Interpreter {
+    /// Fails with `ErrorKind::Usage` when the requested instruction set is not available.
+    pub fn new(opts: Options) -> Result<Interpreter, Error> {
+        let isa = match opts.isa {
+            Some(isa) if !isa.is_available() => {
+                return Err(Error::usage(format!(
+                    "instruction set '{}' is not available on this CPU",
+                    isa.name()
+                )));
+            }
+            Some(isa) => isa,
+            None => Isa::detect(),
+        };
+        let reg = Registry::new();
+        let planner = Planner::new(&reg);
+        Ok(Interpreter {
+            opts,
+            isa,
+            reg,
+            planner,
+            globals: Globals::new(),
+            env: Env::new(),
+            stats: Stats::default(),
+        })
+    }
+
+    /// Runs a whole program. Every statement is checked and planned before any executes.
+    /// `print` writes to `out`, plan and trace lines go to `diag`.
+    pub fn run(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+        self.eval(src, Mode::Run, out, diag)
+    }
+
+    /// Like `run`, but lets stay bound and expression statements print their value to `out`.
+    pub fn eval_repl(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+        self.eval(src, Mode::Repl, out, diag)
+    }
+
+    fn eval(&mut self, src: &str, mode: Mode, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+        // The checker declares each `input` as a fresh variable, so the host's binding is
+        // looked up in the globals as they were before this program.
+        let before = self.globals.clone();
+        let mut globals = before.clone();
+        let c = self.compile(&mut globals, src, mode)?;
+        let mut aliases = Vec::new();
+        for decl in &c.inputs {
+            let value = before
+                .lookup(&decl.name)
+                .and_then(|(var, _)| self.env.get(&var).map(|v| (var, v)));
+            match value {
+                None => return Err(Error::usage(format!("input '{}' is not bound", decl.name))),
+                Some((_, v)) if v.ty() != decl.ty => {
+                    return Err(Error::usage(format!(
+                        "input '{}' is declared {} but bound as {}",
+                        decl.name,
+                        decl.ty,
+                        v.ty()
+                    )));
+                }
+                Some((_, v)) => aliases.push((decl.var, v.clone())),
+            }
+        }
+        // Everything is checked, so the new names become visible now.
+        self.globals = globals;
+        self.env.extend(aliases);
+        for line in &c.plan_lines {
+            writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
+        }
+        let mut sinks = Sinks { out, diag, print_to_diag: false, show: mode == Mode::Repl };
+        let obs = Observe { trace: self.opts.trace, stats: self.opts.stats.then_some(&mut self.stats) };
+        run_plan(&self.reg, self.isa, &c.plan, &mut self.env, obs, &mut sinks)
+    }
+
+    /// Parses, checks, lowers, and plans `src` as a program with no prior bindings.
+    fn compile(&self, globals: &mut Globals, src: &str, mode: Mode) -> Result<Compiled, Error> {
+        let ast = parse(src)?;
+        let typed = check(&ast, &self.reg, globals)?;
+        let inputs = typed
+            .stmts
+            .iter()
+            .filter_map(|s| match s {
+                TStmt::Input { var, ty, .. } => {
+                    Some(InputDecl { name: globals.name(*var).to_string(), var: *var, ty: *ty })
+                }
+                _ => None,
+            })
+            .collect();
+        let lowered = lower(&typed, globals, &self.reg, mode)?;
+        let mut nodes = Vec::new();
+        let mut plan_lines = Vec::new();
+        for stmt in &lowered.stmts {
+            let (LStmt::Bind { term, span, .. }
+            | LStmt::Print { term, span }
+            | LStmt::Show { term, span }) = stmt;
+            let node = self.planner.plan(&self.reg, term)?;
+            if self.opts.show_plan {
+                let text = render(&self.reg, &node, &lowered.leaves, globals);
+                plan_lines.push(format!("plan {}: {text}", span.line));
+            }
+            nodes.push(node);
+        }
+        Ok(Compiled { plan: Plan { lowered, nodes }, inputs, plan_lines })
+    }
+
+    /// Binds `name` to `value` at the value's type. A later `input` of the name refers to it.
+    pub fn bind(&mut self, name: &str, value: Value) {
+        let var = self.globals.declare(name, value.ty());
+        self.env.insert(var, value);
+    }
+
+    pub fn get(&self, name: &str) -> Option<Value> {
+        let (var, _) = self.globals.lookup(name)?;
+        self.env.get(&var).cloned()
+    }
+
+    /// Writes the per-kernel totals collected under `Options::stats`.
+    pub fn write_stats(&self, diag: &mut dyn Write) {
+        self.stats.write(diag);
+    }
+
+    /// Compiles `src` for repeated execution. Names must be declared by the program itself,
+    /// and `input` declarations give the types of what `Prepared::execute` is supplied.
+    pub fn prepare(&self, src: &str) -> Result<Prepared, Error> {
+        self.prepare_to(src, &mut std::io::sink())
+    }
+
+    /// Like `prepare`, and with `show_plan` writes the plan lines to `diag`. The plan is
+    /// written here and never by `Prepared::execute`.
+    pub fn prepare_to(&self, src: &str, diag: &mut dyn Write) -> Result<Prepared, Error> {
+        let c = self.compile(&mut Globals::new(), src, Mode::Run)?;
+        for line in &c.plan_lines {
+            writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
+        }
+        Ok(Prepared { plan: c.plan, inputs: c.inputs })
+    }
+}
+
+impl Prepared {
+    /// Runs the program on `inputs` and returns its exports in source order. Every declared
+    /// input must be supplied with its declared type. `print` writes to `diag`, as do trace
+    /// lines when the interpreter traces. Statistics are not collected.
+    pub fn execute(
+        &self,
+        interp: &Interpreter,
+        inputs: &[(&str, Value)],
+        diag: &mut dyn Write,
+    ) -> Result<Vec<(String, Value)>, Error> {
+        let mut env = Env::new();
+        for decl in &self.inputs {
+            let Some((_, v)) = inputs.iter().find(|(n, _)| *n == decl.name) else {
+                return Err(Error::usage(format!("input '{}' is not supplied", decl.name)));
+            };
+            if v.ty() != decl.ty {
+                return Err(Error::usage(format!(
+                    "input '{}' is declared {} but supplied as {}",
+                    decl.name,
+                    decl.ty,
+                    v.ty()
+                )));
+            }
+            env.insert(decl.var, v.clone());
+        }
+        let mut sink = std::io::sink();
+        let mut sinks = Sinks { out: &mut sink, diag, print_to_diag: true, show: false };
+        let obs = Observe { trace: interp.opts.trace, stats: None };
+        run_plan(&interp.reg, interp.isa, &self.plan, &mut env, obs, &mut sinks)?;
+        self.plan
+            .lowered
+            .exports
+            .iter()
+            .map(|(name, var)| {
+                let v = env.remove(var).expect("exports are bound by their statements");
+                Ok((name.clone(), v))
+            })
+            .collect()
+    }
+}

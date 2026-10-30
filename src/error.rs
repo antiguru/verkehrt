@@ -49,6 +49,14 @@ impl Error {
     pub fn runtime(msg: impl Into<String>, span: Option<Span>) -> Error {
         Error { kind: ErrorKind::Runtime, message: msg.into(), span }
     }
+
+    pub fn usage(msg: impl Into<String>) -> Error {
+        Error { kind: ErrorKind::Usage, message: msg.into(), span: None }
+    }
+
+    pub fn io(err: &std::io::Error) -> Error {
+        Error { kind: ErrorKind::Io, message: err.to_string(), span: None }
+    }
 }
 
 impl fmt::Display for Error {
