@@ -5,7 +5,8 @@
 //! the scalar entry fails. It counts the survivors of the tile first, then appends through
 //! `append_chunks`, which reserves that many rows plus one vector. Within a chunk it selects
 //! a vector of rows at a time while a whole vector store fits in the chunk's spare rows, and
-//! finishes the rest with the portable predicated loop.
+//! finishes the rest with the portable predicated loop. The loops and entries are shared
+//! with the other ISAs, see `crate::kernels::select_loops`.
 //!
 //! AArch64 has no compress instruction. The keep mask of a 128-bit vector comes from a
 //! compare (`filter`) or from a byte test of the bool mask (`compress`, `where`), reduced to
@@ -17,12 +18,9 @@
 use std::arch::aarch64::*;
 
 use crate::kernels::SelectionFn;
-use crate::kernels::scalar::elementwise::tag;
-use crate::kernels::scalar::fused::{CMPS, Cmp, count_cmp, filter_args};
-use crate::kernels::scalar::select::{
-    append_chunks, check_row_indices, compress_args, count_nonzero, predicated, where_args,
-};
-use crate::value::{Arg, ArrayBuilder, Elem, ScalarType};
+use crate::kernels::scalar::fused::{CMPS, Cmp};
+use crate::kernels::select_loops::{ones, selection_loops};
+use crate::value::{Elem, ScalarType};
 
 /// The NEON entry of `compress` on rows of storage type `T`, whose semantic type is
 /// `tag::<T, BOOL>()`, where it exists.
@@ -55,12 +53,6 @@ pub(crate) fn filter_entry<T: Elem, const C: usize>() -> Option<SelectionFn> {
         ScalarType::I32 => Some(filter::<i32, C>),
         _ => None,
     }
-}
-
-/// The number of set bits, as a row count.
-#[inline(always)]
-fn ones(bits: u64) -> usize {
-    usize::try_from(bits.count_ones()).expect("a bit count fits in usize")
 }
 
 /// `shuffles::<M, B, W>()[m]` lists the bytes of the `W`-byte lanes of a `B`-byte vector
@@ -134,7 +126,7 @@ fn bits_32(m: uint32x4_t) -> u64 {
 /// `src` must be valid for reading 16 bytes, and the CPU must support NEON.
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn load<T>(src: *const T) -> uint8x16_t {
+unsafe fn load_bytes<T>(src: *const T) -> uint8x16_t {
     // SAFETY: the caller guarantees 16 readable bytes at `src`, and `ld1` of bytes has no
     // alignment requirement.
     unsafe { vld1q_u8(src.cast()) }
@@ -166,6 +158,9 @@ pub(super) trait Lanes: Elem {
     /// The keep mask of the `LANES` bool bytes at `mask`, bit `j` set when byte `j` is
     /// nonzero. `mask` must be valid for reading `LANES` bytes.
     unsafe fn keep(mask: *const u8) -> u64;
+
+    /// The `LANES` rows at `src`, which must be valid for reading them.
+    unsafe fn load(src: *const Self) -> uint8x16_t;
 
     /// Stores the lanes of `v` whose bit in `keep` is set, in lane order, to the front of the
     /// `LANES` rows at `dst`, and returns their count. Bits of `keep` at `LANES` and above are
@@ -201,6 +196,15 @@ macro_rules! lanes {
                 byte_bits(vcreate_u8(u64::from(word)))
             }
 
+            // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::load`
+            // states. Nothing assumes more than element alignment.
+            #[inline]
+            #[target_feature(enable = "neon")]
+            unsafe fn load(src: *const $t) -> uint8x16_t {
+                // SAFETY: the caller guarantees `LANES` readable rows (16 bytes) at `src`.
+                unsafe { load_bytes(src) }
+            }
+
             // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::compress`
             // states. Nothing assumes more than element alignment.
             #[inline]
@@ -231,8 +235,17 @@ impl Lanes for u8 {
     #[target_feature(enable = "neon")]
     unsafe fn keep(mask: *const u8) -> u64 {
         // SAFETY: the caller guarantees 16 readable bytes at `mask`.
-        let v = unsafe { load(mask) };
+        let v = unsafe { load_bytes(mask) };
         byte_bits(vget_low_u8(v)) | byte_bits(vget_high_u8(v)) << 8
+    }
+
+    // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::load` states.
+    // Nothing assumes more than element alignment.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    unsafe fn load(src: *const u8) -> uint8x16_t {
+        // SAFETY: the caller guarantees 16 readable bytes at `src`.
+        unsafe { load_bytes(src) }
     }
 
     // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::compress`
@@ -333,162 +346,22 @@ impl Compare for i32 {
     }
 }
 
-/// Writes the rows of `x` whose `mask` byte is nonzero to the front of `dst` and returns
-/// their count. Panics unless `mask` has the rows of `x`, or when `dst` has no room for a
-/// predicated write of the survivors, see `predicated`.
+/// The `i64` rows `first + j` of lanes `j`, see `selection_loops`.
+#[inline]
 #[target_feature(enable = "neon")]
-fn compress_chunk<T: Lanes>(x: &[T], mask: &[u8], dst: &mut [T]) -> usize {
-    // The pointer arithmetic below relies on equal lengths, which the entry's caller does not
-    // guarantee, so they are checked here.
-    assert!(
-        mask.len() == x.len(),
-        "compress chunk of {} rows with {} mask rows",
-        x.len(),
-        mask.len()
-    );
-    let n = x.len();
-    let (mut i, mut k) = (0, 0);
-    // A vector step stores a whole vector, so it runs only while one fits in `dst`, and the
-    // predicated loop finishes the rest.
-    while i + T::LANES <= n && k + T::LANES <= dst.len() {
-        // SAFETY: `i + LANES <= n`, so rows `i..i + LANES` (16 bytes) of `x` and `LANES`
-        // bytes of `mask` are in bounds, and `k + LANES <= dst.len()`, so rows
-        // `k..k + LANES` of `dst` are in bounds. This function has NEON, the feature of
-        // `Lanes` and `load`.
-        unsafe {
-            let keep = T::keep(mask.as_ptr().add(i));
-            let v = load(x.as_ptr().add(i));
-            k += T::compress(v, keep, dst.as_mut_ptr().add(k));
-        }
-        i += T::LANES;
-    }
-    let rest = x[i..].iter().zip(&mask[i..]).map(|(&v, &m)| (v, m != 0));
-    k + predicated(rest, &mut dst[k..])
+fn first_indices(first: i64) -> uint8x16_t {
+    let lanes = vcombine_s64(vcreate_s64(0), vcreate_s64(1));
+    vreinterpretq_u8_s64(vaddq_s64(vdupq_n_s64(first), lanes))
 }
 
-/// The number of rows `v` of `x` with `v <cmp> c`, for comparison number `C` of `CMPS`, with
-/// the compares of `filter_chunk`.
+/// `idx` advanced by the 2 `i64` lanes of a vector, see `selection_loops`.
+#[inline]
 #[target_feature(enable = "neon")]
-fn count_rows<T: Compare, const C: usize>(x: &[T], c: T) -> usize {
-    let n = x.len();
-    let (mut i, mut kept) = (0, 0);
-    while i + T::LANES <= n {
-        // SAFETY: `i + LANES <= n`, so rows `i..i + LANES` (16 bytes) of `x` are in bounds.
-        // This function has NEON, the feature of `Compare` and `load`.
-        kept += unsafe { ones(T::compare::<C>(load(x.as_ptr().add(i)), c)) };
-        i += T::LANES;
-    }
-    kept + count_cmp(&x[i..], CMPS[C].1, c)
+fn next_indices(idx: uint8x16_t) -> uint8x16_t {
+    vreinterpretq_u8_s64(vaddq_s64(vreinterpretq_s64_u8(idx), vdupq_n_s64(2)))
 }
 
-/// Writes the rows `v` of `x` with `v <cmp> c` to the front of `dst`, for comparison number
-/// `C` of `CMPS`, and returns their count. Panics when `dst` has no room for a predicated
-/// write of the survivors, see `predicated`.
-#[target_feature(enable = "neon")]
-fn filter_chunk<T: Compare, const C: usize>(x: &[T], c: T, dst: &mut [T]) -> usize {
-    let n = x.len();
-    let (mut i, mut k) = (0, 0);
-    // As in `compress_chunk`, vector steps run while a whole vector fits in `dst`.
-    while i + T::LANES <= n && k + T::LANES <= dst.len() {
-        // SAFETY: as in `compress_chunk`, rows `i..i + LANES` of `x` and rows `k..k + LANES`
-        // of `dst` are in bounds by the loop condition. This function has NEON, the feature
-        // of `Compare` and `load`.
-        unsafe {
-            let v = load(x.as_ptr().add(i));
-            let keep = T::compare::<C>(v, c);
-            k += T::compress(v, keep, dst.as_mut_ptr().add(k));
-        }
-        i += T::LANES;
-    }
-    let cmp = CMPS[C].1;
-    let rest = x[i..].iter().map(|&v| (v, cmp.test(v, c)));
-    k + predicated(rest, &mut dst[k..])
-}
-
-/// Writes `first + i` for every row `i` of `mask` whose byte is nonzero to the front of
-/// `dst` and returns their count. Panics when `dst` has no room for a predicated write of
-/// the survivors, see `predicated`. The caller guarantees that `first + mask.len()` fits in
-/// i64.
-#[target_feature(enable = "neon")]
-fn where_chunk(mask: &[u8], first: i64, dst: &mut [i64]) -> usize {
-    let n = mask.len();
-    let lanes = <i64 as Lanes>::LANES;
-    let step = vdupq_n_s64(2);
-    // Lane `j` holds the index of row `i + j`. The index of every row of the chunk fits in
-    // i64, so every lane that is stored holds its exact index. Lanes past the last row, after
-    // the final add, may wrap, which is harmless because they are never stored and SIMD adds
-    // wrap without undefined behavior.
-    let mut idx = vaddq_s64(
-        vdupq_n_s64(first),
-        vcombine_s64(vcreate_s64(0), vcreate_s64(1)),
-    );
-    let (mut i, mut k) = (0, 0);
-    // As in `compress_chunk`, vector steps run while a whole vector fits in `dst`.
-    while i + lanes <= n && k + lanes <= dst.len() {
-        // SAFETY: as in `compress_chunk`, bytes `i..i + lanes` of `mask` and rows
-        // `k..k + lanes` of `dst` are in bounds by the loop condition. This function has
-        // NEON, the feature of `Lanes`.
-        unsafe {
-            let keep = i64::keep(mask.as_ptr().add(i));
-            k += i64::compress(vreinterpretq_u8_s64(idx), keep, dst.as_mut_ptr().add(k));
-        }
-        idx = vaddq_s64(idx, step);
-        i += lanes;
-    }
-    let at = first + i64::try_from(i).expect("row index fits in i64");
-    let rest = (at..).zip(&mask[i..]).map(|(r, &m)| (r, m != 0));
-    k + predicated(rest, &mut dst[k..])
-}
-
-/// The NEON `compress` entry on rows of storage type `T` and type `tag::<T, BOOL>()`.
-// SAFETY: the caller guarantees that the CPU supports NEON, which `Dispatch` does by calling
-// only entries that `resolve` installed after `is_available` returned true. Memory safety
-// does not depend on the caller: `compress_args` checks that the rows and the mask have the
-// same length, and `compress_chunk` checks the lengths it relies on again.
-#[target_feature(enable = "neon")]
-unsafe fn compress<T: Lanes, const BOOL: bool>(
-    args: &[Arg],
-    _base: usize,
-    out: &mut ArrayBuilder,
-) -> Result<(), String> {
-    let (x, mask) = compress_args::<T>(args, tag::<T, BOOL>())?;
-    // The count pass sizes the output exactly. It is the portable count, compiled for this
-    // ISA.
-    append_chunks(out, x.len(), count_nonzero(mask), |rows, dst| {
-        compress_chunk(&x[rows.clone()], &mask[rows], dst)
-    });
-    Ok(())
-}
-
-/// The NEON `filter_<cmp>` entry on rows of type `T`, for comparison number `C` of `CMPS`.
-// SAFETY: as for `compress`, the caller guarantees NEON, and the chunk functions check the
-// lengths they rely on.
-#[target_feature(enable = "neon")]
-unsafe fn filter<T: Compare, const C: usize>(
-    args: &[Arg],
-    _base: usize,
-    out: &mut ArrayBuilder,
-) -> Result<(), String> {
-    let (x, c) = filter_args::<T>(args)?;
-    append_chunks(out, x.len(), count_rows::<T, C>(x, c), |rows, dst| {
-        filter_chunk::<T, C>(&x[rows], c, dst)
-    });
-    Ok(())
-}
-
-/// The NEON `where` entry.
-// SAFETY: as for `compress`, the caller guarantees NEON, and `where_chunk` checks the
-// lengths it relies on.
-#[target_feature(enable = "neon")]
-unsafe fn r#where(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String> {
-    let mask = where_args(args)?;
-    check_row_indices(base, mask.len());
-    append_chunks(out, mask.len(), count_nonzero(mask), |rows, dst| {
-        let first = i64::try_from(base + rows.start).expect("row index fits in i64");
-        where_chunk(&mask[rows], first, dst)
-    });
-    Ok(())
-}
+selection_loops!("NEON", "neon");
 
 #[cfg(test)]
 mod tests {

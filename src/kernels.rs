@@ -14,6 +14,7 @@ mod arch;
 mod auto;
 pub mod dispatch;
 pub mod scalar;
+mod select_loops;
 #[cfg(target_arch = "x86_64")]
 mod x86;
 

@@ -5,7 +5,8 @@
 //! the scalar entry fails. It counts the survivors of the tile first, then appends through
 //! `append_chunks`, which reserves that many rows plus one vector. Within a chunk it selects
 //! a vector of rows at a time while a whole vector store fits in the chunk's spare rows, and
-//! finishes the rest with the portable predicated loop.
+//! finishes the rest with the portable predicated loop. The loops and entries are shared
+//! with the other ISAs, see `crate::kernels::select_loops`.
 
 use crate::kernels::SelectionFn;
 use crate::value::{Elem, ScalarType};
@@ -60,10 +61,4 @@ pub(crate) fn filter_entries<T: Elem, const C: usize>() -> Entries {
         ScalarType::I32 => (Some(avx2::filter::<i32, C>), Some(avx512::filter::<i32, C>)),
         _ => (None, None),
     }
-}
-
-/// The number of set bits, as a row count.
-#[inline(always)]
-fn ones(bits: u64) -> usize {
-    usize::try_from(bits.count_ones()).expect("a bit count fits in usize")
 }
