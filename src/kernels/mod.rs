@@ -100,6 +100,9 @@ impl Registry {
             by_op: HashMap::new(),
         };
         scalar::elementwise::register(&mut reg);
+        scalar::reduce::register(&mut reg);
+        scalar::select::register(&mut reg);
+        scalar::construct::register(&mut reg);
         reg
     }
 

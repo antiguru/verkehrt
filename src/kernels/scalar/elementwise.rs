@@ -112,7 +112,7 @@ enum Shape {
 }
 
 /// Typed rows of an array. Bool arrays are viewed as their `u8` storage, so `T` is `u8` then.
-fn slice_of<T: Elem>(a: &Array) -> &[T] {
+pub(crate) fn slice_of<T: Elem>(a: &Array) -> &[T] {
     if a.elem() == ScalarType::Bool {
         bytemuck::cast_slice(a.as_bool_bytes())
     } else {
@@ -121,7 +121,7 @@ fn slice_of<T: Elem>(a: &Array) -> &[T] {
 }
 
 /// The scalar's storage value. The caller checked that `s` has the storage width of `T`.
-fn scalar_to<T: Elem>(s: &Scalar) -> T {
+pub(crate) fn scalar_to<T: Elem>(s: &Scalar) -> T {
     let mut buf = [0u8; 8];
     match s {
         Scalar::I8(v) => buf[..1].copy_from_slice(bytemuck::bytes_of(v)),
@@ -140,7 +140,7 @@ fn scalar_to<T: Elem>(s: &Scalar) -> T {
 }
 
 /// The scalar of type `ty` for a storage value. `ty` must have the storage width of `U`.
-fn scalar_from<U: Elem>(u: U, ty: ScalarType) -> Scalar {
+pub(crate) fn scalar_from<U: Elem>(u: U, ty: ScalarType) -> Scalar {
     let b = bytemuck::bytes_of(&u);
     match ty {
         ScalarType::I8 => Scalar::I8(bytemuck::pod_read_unaligned(b)),
@@ -207,7 +207,7 @@ fn finish<U: Elem>(
     }
 }
 
-fn arity_error(want: usize, got: usize) -> String {
+pub(crate) fn arity_error(want: usize, got: usize) -> String {
     format!("expected {want} arguments, got {got}")
 }
 
@@ -334,7 +334,7 @@ macro_rules! binary {
 }
 
 /// Numeric element types. Integers wrap, floats follow IEEE 754.
-trait Num: Elem + PartialOrd {
+pub trait Num: Elem + PartialOrd {
     fn add(self, o: Self) -> Self;
     fn sub(self, o: Self) -> Self;
     fn mul(self, o: Self) -> Self;

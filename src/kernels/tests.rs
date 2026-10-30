@@ -1,4 +1,6 @@
+use super::scalar::construct::splitmix64;
 use super::scalar::elementwise::{Operand, binary_into};
+use super::scalar::reduce::{CanonicalProduct, CanonicalSum, canonical_product, canonical_sum};
 use super::*;
 use crate::value::{Array, Scalar};
 
@@ -102,7 +104,12 @@ fn lookup_resolves_array_and_scalar_kernels() {
 #[test]
 fn lookup_is_exact_for_non_elementwise_kernels() {
     use ScalarType::*;
-    let mut reg = Registry::new();
+    // An empty registry, so the dummy kernels do not collide with the real ones.
+    let mut reg = Registry {
+        defs: Vec::new(),
+        by_name: std::collections::HashMap::new(),
+        by_op: std::collections::HashMap::new(),
+    };
     fn dummy(_: &[Value]) -> Result<Value, String> {
         Err("unused".into())
     }
@@ -331,7 +338,17 @@ fn kernel_names_are_unique_valid_identifiers() {
             "{}",
             def.name
         );
-        assert_eq!(def.class, KernelClass::Elementwise, "{}", def.name);
+        let expected = match def.op {
+            Some(Op::Reduce(_) | Op::Count | Op::Any | Op::All | Op::ArgMin | Op::ArgMax) => {
+                KernelClass::Reduction
+            }
+            Some(Op::Compress | Op::Where) => KernelClass::Selection,
+            Some(Op::Iota | Op::Fill | Op::RandI64 | Op::RandF64 | Op::Load(_) | Op::Length) => {
+                KernelClass::Whole
+            }
+            _ => KernelClass::Elementwise,
+        };
+        assert_eq!(def.class, expected, "{}", def.name);
         assert!(def.pattern.is_none());
         assert!(def.impls[Isa::Scalar.index()].is_some());
     }
@@ -425,4 +442,356 @@ fn tiled_calls_match_one_call() {
         binary_into(x, Operand::Splat(2.5), &mut tiled[r], |x, y| x * y);
     }
     assert_eq!(whole, tiled);
+}
+
+fn i64_s(v: i64) -> Value {
+    Value::Scalar(Scalar::I64(v))
+}
+
+fn u8s(v: &[u8]) -> Value {
+    Value::Array(Array::from_vec(v.to_vec()))
+}
+
+fn scalar(v: Result<Value, String>) -> Scalar {
+    match v.unwrap() {
+        Value::Scalar(s) => s,
+        other => panic!("expected a scalar, got {other:?}"),
+    }
+}
+
+/// Test data that spans magnitudes, so the summation order changes the result.
+fn varied(n: usize) -> Vec<f64> {
+    (0..n)
+        .map(|i| {
+            let unit = (splitmix64(u64::try_from(i).unwrap()) >> 11) as f64 * (-53f64).exp2();
+            (unit - 0.5) * 10f64.powi(i32::try_from(i % 9).unwrap() * 2)
+        })
+        .collect()
+}
+
+/// The spec's order, written bullet by bullet.
+fn reference_sum(xs: &[f64]) -> f64 {
+    let n = xs.len();
+    let b = n - n % 16;
+    let mut acc = [0.0f64; 16];
+    for (j, a) in acc.iter_mut().enumerate() {
+        let mut i = j;
+        while i < b {
+            *a += xs[i];
+            i += 16;
+        }
+    }
+    for step in [8, 4, 2, 1] {
+        for j in 0..step {
+            acc[j] += acc[j + step];
+        }
+    }
+    for &x in &xs[b..] {
+        acc[0] += x;
+    }
+    acc[0]
+}
+
+#[test]
+fn canonical_sum_follows_the_spec_order() {
+    // The large pair sits in one accumulator lane, so the canonical order cancels it
+    // before the ones are added, while a left fold absorbs the first ones into 1e16.
+    let xs: Vec<f64> = (0..35)
+        .map(|i| match i {
+            0 => 1e16,
+            16 => -1e16,
+            _ => 1.0,
+        })
+        .collect();
+    let want = reference_sum(&xs);
+    assert_eq!(canonical_sum(&xs).to_bits(), want.to_bits());
+    let naive = xs.iter().fold(0.0, |a, &x| a + x);
+    assert_ne!(naive.to_bits(), want.to_bits());
+    let xs = varied(35);
+    assert_eq!(canonical_sum(&xs).to_bits(), reference_sum(&xs).to_bits());
+}
+
+#[test]
+fn canonical_empty_is_the_identity() {
+    assert_eq!(canonical_sum::<f64>(&[]).to_bits(), 0.0f64.to_bits());
+    assert_eq!(canonical_product::<f64>(&[]).to_bits(), 1.0f64.to_bits());
+    assert_eq!(canonical_sum::<f32>(&[]).to_bits(), 0.0f32.to_bits());
+}
+
+#[test]
+fn canonical_sum_f32_accumulates_in_f32() {
+    let xs: Vec<f32> = (0..37)
+        .map(|i| 1e7 + f32::from(i16::try_from(i).unwrap()))
+        .collect();
+    let mut acc = [0.0f32; 16];
+    for j in 0..32 {
+        acc[j % 16] += xs[j];
+    }
+    for step in [8, 4, 2, 1] {
+        for j in 0..step {
+            acc[j] += acc[j + step];
+        }
+    }
+    for &x in &xs[32..] {
+        acc[0] += x;
+    }
+    assert_eq!(canonical_sum(&xs).to_bits(), acc[0].to_bits());
+}
+
+#[test]
+fn canonical_state_update_finish_matches_one_shot() {
+    let xs = varied(1000);
+    let mut s = CanonicalSum::new();
+    s.update(&xs[0..64]);
+    s.update(&xs[64..384]);
+    s.update(&xs[384..992]);
+    assert_eq!(s.finish(&xs[992..]).to_bits(), canonical_sum(&xs).to_bits());
+    // The data is order sensitive, so the equality above is not vacuous.
+    assert_ne!(
+        xs.iter().fold(0.0, |a, &x| a + x).to_bits(),
+        canonical_sum(&xs).to_bits()
+    );
+    let mut p = CanonicalProduct::new();
+    let ys: Vec<f64> = xs.iter().map(|x| 1.0 + x.abs().sin() * 0.01).collect();
+    p.update(&ys[0..640]);
+    p.update(&ys[640..992]);
+    assert_eq!(
+        p.finish(&ys[992..]).to_bits(),
+        canonical_product(&ys).to_bits()
+    );
+}
+
+#[test]
+#[should_panic]
+fn canonical_update_rejects_partial_blocks() {
+    CanonicalSum::<f64>::new().update(&[1.0; 17]);
+}
+
+#[test]
+fn float_reduce_kernels_use_the_canonical_order() {
+    let reg = Registry::new();
+    let xs = varied(100);
+    let r = scalar(call(&reg, "reduce_add_f64", &[f64s(&xs)]));
+    assert_eq!(r, Scalar::F64(canonical_sum(&xs)));
+    let r = scalar(call(&reg, "reduce_mul_f64", &[f64s(&[2.0, 3.0, 4.0])]));
+    assert_eq!(r, Scalar::F64(24.0));
+    let r = scalar(call(&reg, "reduce_add_f64", &[f64s(&[])]));
+    assert_eq!(r, Scalar::F64(0.0));
+}
+
+#[test]
+fn integer_reductions_widen_and_wrap() {
+    let reg = Registry::new();
+    let r = scalar(call(&reg, "reduce_add_i32", &[i32s(&[i32::MAX, 1])]));
+    assert_eq!(r, Scalar::I64(2147483648));
+    let r = scalar(call(&reg, "reduce_add_u8", &[u8s(&[200, 100])]));
+    assert_eq!(r, Scalar::U64(300));
+    let r = scalar(call(
+        &reg,
+        "reduce_add_i64",
+        &[Value::Array(Array::from_vec(vec![i64::MAX, 1]))],
+    ));
+    assert_eq!(r, Scalar::I64(i64::MIN));
+    let r = scalar(call(&reg, "reduce_mul_u8", &[u8s(&[16, 17])]));
+    assert_eq!(r, Scalar::U8(16));
+    let r = scalar(call(&reg, "reduce_mul_i32", &[i32s(&[])]));
+    assert_eq!(r, Scalar::I32(1));
+    let r = scalar(call(&reg, "reduce_max_i32", &[i32s(&[3, 9, -1])]));
+    assert_eq!(r, Scalar::I32(9));
+    let r = scalar(call(&reg, "reduce_min_u8", &[u8s(&[3, 9, 1])]));
+    assert_eq!(r, Scalar::U8(1));
+    let e = call(&reg, "reduce_min_i32", &[i32s(&[])]).unwrap_err();
+    assert!(e.contains("empty"), "{e}");
+    assert!(call(&reg, "reduce_max_u8", &[u8s(&[])]).is_err());
+}
+
+#[test]
+fn float_min_max_reductions_follow_ieee_minimum() {
+    let reg = Registry::new();
+    let r = scalar(call(&reg, "reduce_min_f64", &[f64s(&[1.0, f64::NAN, 0.0])]));
+    assert!(matches!(r, Scalar::F64(v) if v.is_nan()));
+    let r = scalar(call(&reg, "reduce_min_f64", &[f64s(&[0.0, -0.0])]));
+    assert!(matches!(r, Scalar::F64(v) if v.to_bits() == (-0.0f64).to_bits()));
+    let r = scalar(call(&reg, "reduce_max_f64", &[f64s(&[-0.0, 0.0])]));
+    assert!(matches!(r, Scalar::F64(v) if v.to_bits() == 0.0f64.to_bits()));
+    let e = call(&reg, "reduce_min_f64", &[f64s(&[])]).unwrap_err();
+    assert!(e.contains("empty"), "{e}");
+}
+
+#[test]
+fn argmin_argmax_tie_and_nan_rules() {
+    let reg = Registry::new();
+    let idx = |name: &str, v: &[f64]| scalar(call(&reg, name, &[f64s(v)]));
+    assert_eq!(idx("argmin_f64", &[3.0, 1.0, 1.0]), Scalar::I64(1));
+    assert_eq!(
+        idx("argmin_f64", &[3.0, f64::NAN, f64::NAN]),
+        Scalar::I64(1)
+    );
+    assert_eq!(idx("argmin_f64", &[0.0, -0.0]), Scalar::I64(1));
+    assert_eq!(idx("argmax_f64", &[-0.0, 0.0]), Scalar::I64(1));
+    assert_eq!(idx("argmax_f64", &[1.0, 5.0, 5.0]), Scalar::I64(1));
+    assert_eq!(idx("argmax_f64", &[1.0, f64::NAN, 5.0]), Scalar::I64(1));
+    assert!(call(&reg, "argmax_f64", &[f64s(&[])]).is_err());
+    let r = scalar(call(&reg, "argmax_i32", &[i32s(&[4, 9, 9, 2])]));
+    assert_eq!(r, Scalar::I64(1));
+    assert!(call(&reg, "argmin_u8", &[u8s(&[])]).is_err());
+}
+
+#[test]
+fn bool_reductions() {
+    let reg = Registry::new();
+    let b = |name: &str, v: &[bool]| scalar(call(&reg, name, &[bools(v)]));
+    assert_eq!(b("count", &[true, false, true]), Scalar::I64(2));
+    assert_eq!(b("any", &[]), Scalar::Bool(false));
+    assert_eq!(b("all", &[]), Scalar::Bool(true));
+    assert_eq!(b("any", &[false, true]), Scalar::Bool(true));
+    assert_eq!(b("all", &[true, false]), Scalar::Bool(false));
+    assert_eq!(b("reduce_and_bool", &[]), Scalar::Bool(true));
+    assert_eq!(b("reduce_or_bool", &[]), Scalar::Bool(false));
+    assert_eq!(b("reduce_xor_bool", &[true, true]), Scalar::Bool(false));
+    assert_eq!(
+        b("reduce_xor_bool", &[true, true, true]),
+        Scalar::Bool(true)
+    );
+}
+
+#[test]
+fn compress_and_where() {
+    let reg = Registry::new();
+    let r = call(
+        &reg,
+        "compress_f64",
+        &[f64s(&[1.0, 2.0, 3.0]), bools(&[false, true, true])],
+    );
+    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[2.0, 3.0]);
+    let r = call(
+        &reg,
+        "compress_f64",
+        &[f64s(&[1.0, 2.0]), bools(&[false, false])],
+    );
+    assert!(arr(r.unwrap()).is_empty());
+    let r = call(&reg, "compress_f64", &[f64s(&[1.0, 2.0]), bools(&[true])]);
+    assert!(r.is_err());
+    let r = call(
+        &reg,
+        "compress_bool",
+        &[bools(&[true, false, true]), bools(&[true, true, false])],
+    );
+    assert_eq!(arr(r.unwrap()), Array::from_bools(&[true, false]));
+    let r = call(
+        &reg,
+        "compress_u8",
+        &[u8s(&[7, 8, 9]), bools(&[true, false, true])],
+    );
+    assert_eq!(arr(r.unwrap()).as_slice::<u8>(), &[7, 9]);
+    let r = call(&reg, "where", &[bools(&[false, true, true])]);
+    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[1, 2]);
+}
+
+#[test]
+fn iota_fill_and_negative_counts() {
+    let reg = Registry::new();
+    let r = call(&reg, "iota", &[i64_s(3)]);
+    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[0, 1, 2]);
+    assert!(call(&reg, "iota", &[i64_s(-1)]).is_err());
+    let r = call(&reg, "fill_f64", &[i64_s(2), f64_s(1.5)]);
+    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.5, 1.5]);
+    let r = call(
+        &reg,
+        "fill_bool",
+        &[i64_s(2), Value::Scalar(Scalar::Bool(true))],
+    );
+    assert_eq!(arr(r.unwrap()), Array::from_bools(&[true, true]));
+    assert!(call(&reg, "fill_f64", &[i64_s(-1), f64_s(1.5)]).is_err());
+    assert!(call(&reg, "rand_i64", &[i64_s(-1), i64_s(0)]).is_err());
+    assert!(call(&reg, "rand_f64", &[i64_s(-1), i64_s(0)]).is_err());
+    let r = call(&reg, "length_f64", &[f64s(&[1.0, 2.0])]);
+    assert_eq!(scalar(r), Scalar::I64(2));
+    let r = call(&reg, "length_bool", &[bools(&[])]);
+    assert_eq!(scalar(r), Scalar::I64(0));
+}
+
+#[test]
+fn splitmix_and_rand() {
+    assert_eq!(splitmix64(0), 0xE220A8397B1DCDAF);
+    let reg = Registry::new();
+    let r = arr(call(&reg, "rand_i64", &[i64_s(3), i64_s(7)]).unwrap());
+    assert_eq!(r.as_slice::<i64>()[1], splitmix64(8) as i64);
+    let r = arr(call(&reg, "rand_f64", &[i64_s(1000), i64_s(1)]).unwrap());
+    assert!(r.as_slice::<f64>().iter().all(|v| (0.0..1.0).contains(v)));
+    let want = (splitmix64(1) >> 11) as f64 * (-53f64).exp2();
+    assert_eq!(r.as_slice::<f64>()[0].to_bits(), want.to_bits());
+}
+
+fn temp_file(name: &str, bytes: &[u8]) -> String {
+    let path = std::env::temp_dir().join(format!("verkehrt-{}-{name}", std::process::id()));
+    std::fs::write(&path, bytes).unwrap();
+    path.to_str().unwrap().to_string()
+}
+
+#[test]
+fn load_reads_little_endian_files() {
+    let reg = Registry::new();
+    let bytes: Vec<u8> = [1.0f64, 2.5].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let path = temp_file("load.f64", &bytes);
+    let r = call(&reg, "load_f64", &[Value::Str(path.as_str().into())]);
+    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.0, 2.5]);
+    let r = call(&reg, "load_u8", &[Value::Str(path.as_str().into())]);
+    assert_eq!(arr(r.unwrap()).len(), 16);
+    let r = call(&reg, "load_i32", &[Value::Str(path.as_str().into())]);
+    assert_eq!(arr(r.unwrap()).len(), 4);
+    std::fs::remove_file(&path).unwrap();
+
+    let missing = "/nonexistent/verkehrt-missing.bin";
+    let e = call(&reg, "load_f64", &[Value::Str(missing.into())]).unwrap_err();
+    assert!(e.contains(missing), "{e}");
+
+    let path = temp_file("odd.bin", &[0u8; 9]);
+    let e = call(&reg, "load_f64", &[Value::Str(path.as_str().into())]).unwrap_err();
+    assert!(e.contains("multiple of 8"), "{e}");
+    std::fs::remove_file(&path).unwrap();
+    assert!(reg.by_name("load_bool").is_none());
+}
+
+#[test]
+fn new_kernels_resolve_through_lookup_with_classes_and_costs() {
+    use ScalarType::*;
+    let reg = Registry::new();
+    let name = |op, args: &[ValueType]| reg.lookup(op, args).map(|id| reg.get(id).name.clone());
+    assert_eq!(
+        name(Op::Reduce(crate::ops::ReduceOp::Add), &[arr_ty(I32)]).as_deref(),
+        Some("reduce_add_i32")
+    );
+    assert_eq!(
+        name(Op::Fill, &[sc_ty(I64), sc_ty(F64)]).as_deref(),
+        Some("fill_f64")
+    );
+    assert_eq!(name(Op::Iota, &[sc_ty(I64)]).as_deref(), Some("iota"));
+    assert_eq!(
+        name(Op::Load(F32), &[ValueType::Str]).as_deref(),
+        Some("load_f32")
+    );
+    assert_eq!(name(Op::Fill, &[sc_ty(I64), sc_ty(I8)]), None);
+    let def = |n: &str| reg.get(reg.by_name(n).unwrap());
+    let cost = |n: &str| def(n).cost;
+    assert_eq!(cost("reduce_add_f64"), 8);
+    assert_eq!(cost("reduce_add_u8"), 1);
+    assert_eq!((cost("count"), cost("any"), cost("all")), (1, 1, 1));
+    assert_eq!(cost("argmin_f32"), 4);
+    assert_eq!(cost("compress_f64"), 17);
+    assert_eq!(cost("compress_bool"), 3);
+    assert_eq!(cost("where"), 9);
+    assert_eq!(
+        (cost("iota"), cost("rand_i64"), cost("rand_f64")),
+        (8, 8, 8)
+    );
+    assert_eq!(
+        (cost("fill_i32"), cost("load_f64"), cost("length_u8")),
+        (4, 8, 0)
+    );
+    assert_eq!(def("compress_f64").class, KernelClass::Selection);
+    assert_eq!(def("reduce_add_f64").class, KernelClass::Reduction);
+    assert_eq!(def("iota").class, KernelClass::Whole);
+    assert_eq!(def("reduce_add_i32").output, sc_ty(I64));
+    assert_eq!(def("reduce_add_u8").output, sc_ty(U64));
 }
