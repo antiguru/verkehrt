@@ -149,13 +149,16 @@ fn filter_body(x: &[f64], c: f64) -> Vec<f64> {
 }
 
 /// Only the crossover sweep multiplies.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline(always)]
 fn mul_body(x: &[f64], y: &[f64]) -> Vec<f64> {
     x.iter().zip(y).map(|(a, b)| a * b).collect()
 }
 
 /// The minimum of the rows, one running minimum per accumulator so that it vectorizes. Minimum
-/// is order-independent on the NaN-free bench data, so no canonical order is needed.
+/// is order-independent on the NaN-free bench data, so no canonical order is needed. The
+/// comparison has no signed-zero order (`-0.0 == +0.0`), so it agrees with Verkehrt only on
+/// data without NaN and `-0.0`.
 #[inline(always)]
 fn min_body(x: &[f64]) -> f64 {
     let (chunks, tail) = x.as_chunks::<LANES>();
@@ -175,7 +178,9 @@ fn min_body(x: &[f64]) -> f64 {
 /// The index of the first minimum, with one running (value, index) pair per accumulator. A
 /// lane replaces its pair only on a strictly smaller row, so it keeps its first minimum. The
 /// merge takes the smaller value and, on equal values, the smaller index, which gives the
-/// first index overall. The bench data is NaN-free.
+/// first index overall. The comparison has no signed-zero order (`-0.0 == +0.0`) and a NaN
+/// never wins, so it agrees with Verkehrt only on data without NaN and `-0.0`, which the bench
+/// data is.
 #[inline(always)]
 fn argmin_body(x: &[f64]) -> i64 {
     let (chunks, tail) = x.as_chunks::<LANES>();
@@ -231,6 +236,7 @@ native_fns!(n_count, count_body, (x: &[f64], c: f64) -> i64);
 native_fns!(n_filter, filter_body, (x: &[f64], c: f64) -> Vec<f64>);
 native_fns!(n_min, min_body, (x: &[f64]) -> f64);
 native_fns!(n_argmin, argmin_body, (x: &[f64]) -> i64);
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 native_fns!(n_mul, mul_body, (x: &[f64], y: &[f64]) -> Vec<f64>);
 
 /// Calls the flavor of a function module that a `Checked` names. The availability check
