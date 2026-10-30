@@ -709,8 +709,20 @@ fn neon_extremes_of_all_nan_rows() {
 #[test]
 fn neon_extremes_keep_the_first_index_on_ties() {
     // Rows 1 and 2, and rows 3 and 4, sit in different vectors of both element types, with
-    // the later row in the lower lane. Rows 5 and 6 share an f32 vector.
-    for (a, b) in [(1, 2), (3, 4), (5, 6), (63, 64), (383, 384), (0, 999)] {
+    // the later row in the lower lane. Rows 5 and 6 share an f32 vector. Rows 7 and 8, 15
+    // and 16, and 13 and 18 sit in the last and the first of the four accumulators of a
+    // group, for f64 or f32, with the later row in the earlier accumulator.
+    for (a, b) in [
+        (1, 2),
+        (3, 4),
+        (5, 6),
+        (7, 8),
+        (15, 16),
+        (13, 18),
+        (63, 64),
+        (383, 384),
+        (0, 999),
+    ] {
         let low = rows_with(TILED_LEN, 5.0, &[(a, 1.0), (b, 1.0)]);
         assert_index("argmin", &low, i64::try_from(a).unwrap());
         assert_value("reduce_min", &low, 1.0);
@@ -736,8 +748,9 @@ fn neon_extremes_keep_the_first_index_on_ties() {
 #[cfg(target_arch = "aarch64")]
 #[test]
 fn neon_extremes_order_signed_zeros() {
-    // Pairs of rows in different lanes, in different vectors, and across a tile boundary.
-    for (a, b) in [(2, 7), (3, 4), (4, 5), (1, 2), (63, 64)] {
+    // Pairs of rows in different lanes, in different vectors, in different accumulators, and
+    // across a tile boundary.
+    for (a, b) in [(2, 7), (3, 4), (4, 5), (1, 2), (7, 8), (15, 16), (63, 64)] {
         let ia = i64::try_from(a).unwrap();
         let ib = i64::try_from(b).unwrap();
         // +0.0 first: -0.0 is the smaller.

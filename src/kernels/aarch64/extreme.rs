@@ -13,7 +13,9 @@
 //! from the lane's value, which is exactly when the row is strictly smaller (larger) in the
 //! order with `-0.0 < +0.0`, so each lane keeps the first index of its extreme. A NaN row
 //! turns its lane's value into NaN for good, so a NaN lane after the loop means that the rows
-//! hold a NaN, and a scan of the rows finds the first one.
+//! hold a NaN, and a scan of the rows finds the first one. Four such pairs take every fourth
+//! vector, so their dependency chains overlap, and the merge takes the smallest index among
+//! the lanes with the extreme value.
 
 use std::arch::aarch64::*;
 
@@ -78,8 +80,8 @@ pub(super) trait FloatLanes: Ordered {
     /// The indices `0..LANES`.
     unsafe fn first_indices() -> Self::I;
 
-    /// `i` advanced by `LANES`.
-    unsafe fn next_indices(i: Self::I) -> Self::I;
+    /// `i` advanced by `rows`. Every advanced index must fit an index lane.
+    unsafe fn advance_indices(i: Self::I, rows: usize) -> Self::I;
 
     /// The lanes of `old_i` where `new` has the bits of `old`, and of `new_i` elsewhere.
     unsafe fn keep_unchanged(old: Self::V, new: Self::V, old_i: Self::I, new_i: Self::I)
@@ -140,8 +142,9 @@ macro_rules! float_lanes {
             // SAFETY: the caller guarantees NEON. The method reads no memory.
             #[inline]
             #[target_feature(enable = "neon")]
-            unsafe fn next_indices(i: $i) -> $i {
-                $add(i, $dup($lanes))
+            unsafe fn advance_indices(i: $i, rows: usize) -> $i {
+                // The callers advance by a few vectors and keep every index below `CHUNK`.
+                $add(i, $dup(<$u>::try_from(rows).expect("an index step fits an index lane")))
             }
 
             // SAFETY: the caller guarantees NEON. The method reads no memory.
@@ -350,25 +353,68 @@ impl<T: FloatLanes, const MAX: bool> NeonArgExtreme<T, MAX> {
     unsafe fn feed_chunk(&mut self, base: usize, xs: &[T]) {
         debug_assert!(xs.len() <= CHUNK);
         let lanes = T::LANES;
-        let mut vectors = xs.chunks_exact(lanes);
-        let rest_start = xs.len() - vectors.remainder().len();
-        if let Some(first) = vectors.next() {
-            // SAFETY: the caller guarantees NEON. Each load reads one chunk of exactly
-            // `LANES` rows from `chunks_exact`.
-            let (values, indices) = unsafe {
-                let mut best = T::load(first.as_ptr());
-                let mut best_i = T::first_indices();
-                let mut cur_i = best_i;
-                for v in vectors {
-                    // `cur_i` stays below `rest_start <= CHUNK`, so it fits the index lanes.
-                    cur_i = T::next_indices(cur_i);
-                    let next = T::extreme::<MAX>(best, T::load(v.as_ptr()));
-                    best_i = T::keep_unchanged(best, next, best_i, cur_i);
-                    best = next;
+        // Four accumulators of values and indices, each fed every fourth vector, so the
+        // `FMIN`, compare, and select chain of one accumulator overlaps with the others. Each
+        // lane of each accumulator keeps the first index of its extreme, so the first
+        // index overall is the smallest index among the lanes with the extreme value.
+        let mut quads = xs.chunks_exact(4 * lanes);
+        let mut singles = quads.remainder().chunks_exact(lanes);
+        let rest_start = xs.len() - singles.remainder().len();
+        // SAFETY: the caller guarantees NEON. Every load reads `LANES` rows at the start or
+        // at a multiple of `LANES` rows into a chunk from `chunks_exact`, whose length is a
+        // multiple of `LANES` covering them. Every index stays below `rest_start <= CHUNK`,
+        // so it fits the index lanes.
+        let folded = unsafe {
+            let first = T::first_indices();
+            let mut acc: Option<([T::V; 4], [T::I; 4], usize)> = None;
+            if let Some(head) = quads.next() {
+                let p0 = head.as_ptr();
+                let best = [0, 1, 2, 3].map(|k| T::load(p0.add(k * lanes)));
+                let idx = [0, 1, 2, 3].map(|k| T::advance_indices(first, k * lanes));
+                let (mut best, mut best_i, mut cur_i) = (best, idx, idx);
+                for q in quads.by_ref() {
+                    let p = q.as_ptr();
+                    for k in 0..4 {
+                        cur_i[k] = T::advance_indices(cur_i[k], 4 * lanes);
+                        let next = T::extreme::<MAX>(best[k], T::load(p.add(k * lanes)));
+                        best_i[k] = T::keep_unchanged(best[k], next, best_i[k], cur_i[k]);
+                        best[k] = next;
+                    }
                 }
-                T::lanes(best, best_i)
-            };
-            let (values, indices) = (&values[..lanes], &indices[..lanes]);
+                acc = Some((best, best_i, 4));
+            }
+            // The vectors after the last group of four go to the first accumulator, in
+            // order, after every row it has seen.
+            let mut at = rest_start - singles.len() * lanes;
+            for v in singles.by_ref() {
+                let x = T::load(v.as_ptr());
+                let cur = T::advance_indices(first, at);
+                acc = Some(match acc {
+                    None => ([x; 4], [cur; 4], 1),
+                    Some((mut best, mut best_i, used)) => {
+                        let next = T::extreme::<MAX>(best[0], x);
+                        best_i[0] = T::keep_unchanged(best[0], next, best_i[0], cur);
+                        best[0] = next;
+                        (best, best_i, used)
+                    }
+                });
+                at += lanes;
+            }
+            acc.map(|(best, best_i, used)| {
+                // Every entry up to `used * lanes` is written below, the fill is a row value.
+                let fill = T::lanes(best[0], best_i[0]).0[0];
+                let mut values = [fill; 4 * MAX_LANES];
+                let mut indices = [0; 4 * MAX_LANES];
+                for k in 0..used {
+                    let (v, i) = T::lanes(best[k], best_i[k]);
+                    values[k * lanes..(k + 1) * lanes].copy_from_slice(&v[..lanes]);
+                    indices[k * lanes..(k + 1) * lanes].copy_from_slice(&i[..lanes]);
+                }
+                (values, indices, used * lanes)
+            })
+        };
+        if let Some((values, indices, n)) = folded {
+            let (values, indices) = (&values[..n], &indices[..n]);
             if values.iter().any(|x| x.is_nan_()) {
                 // A NaN lane holds a NaN row, see the module doc.
                 let first_nan = xs.iter().position(|x| x.is_nan_());
@@ -378,7 +424,7 @@ impl<T: FloatLanes, const MAX: bool> NeonArgExtreme<T, MAX> {
             // The lane with the extreme value, the smallest index among equal values. The
             // order of `better` puts `-0.0` before `+0.0`, so the zeros are not equal here.
             let mut win = 0;
-            for j in 1..lanes {
+            for j in 1..n {
                 let (x, w) = (values[j], values[win]);
                 if better::<T, MAX>(x, w) || (!better::<T, MAX>(w, x) && indices[j] < indices[win])
                 {
