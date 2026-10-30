@@ -8,7 +8,8 @@
 //! (for example `"dotprod,fp16,rdm"`) is one invocation of `crate::kernels::auto::auto_backend`
 //! plus an `is_aarch64_feature_detected!` check in `Isa::is_available`.
 //!
-//! `compress` holds the hand-written NEON intrinsics entries of the selections.
+//! `compress` holds the hand-written NEON intrinsics entries of the selections, and
+//! `extreme` those of the float min, max, argmin, and argmax reductions.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
@@ -19,6 +20,7 @@ use crate::kernels::{
 use crate::value::Elem;
 
 mod compress;
+mod extreme;
 
 const NEON_INTRINSICS: Variant = Variant {
     isa: Isa::Neon,
@@ -54,8 +56,13 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl
 
 /// Adds the intrinsics entries of `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true) on
 /// rows of type `T`.
-pub(crate) fn add_extreme<T: Elem, const MAX: bool>(_impls: &mut [Option<KernelImpl>]) {}
+pub(crate) fn add_extreme<T: Elem, const MAX: bool>(impls: &mut [Option<KernelImpl>]) {
+    impls[NEON_INTRINSICS.index()] = extreme::extreme_entry::<T, MAX>().map(KernelImpl::Reduction);
+}
 
 /// Adds the intrinsics entries of `argmin` (`MAX` false) or `argmax` (`MAX` true) on rows of
 /// type `T`.
-pub(crate) fn add_arg_extreme<T: Elem, const MAX: bool>(_impls: &mut [Option<KernelImpl>]) {}
+pub(crate) fn add_arg_extreme<T: Elem, const MAX: bool>(impls: &mut [Option<KernelImpl>]) {
+    impls[NEON_INTRINSICS.index()] =
+        extreme::arg_extreme_entry::<T, MAX>().map(KernelImpl::Reduction);
+}

@@ -557,3 +557,280 @@ fn neon_intrinsics_resolve_for_selections() {
         assert_eq!(dispatch.variant_used(id), intrinsics, "{name}");
     }
 }
+
+/// The float extreme reductions have NEON intrinsics entries.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_intrinsics_resolve_for_float_extremes() {
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    for t in ["f64", "f32"] {
+        for op in ["reduce_min", "reduce_max", "argmin", "argmax"] {
+            let name = format!("{op}_{t}");
+            let id = reg.by_name(&name).unwrap();
+            assert_eq!(dispatch.variant_used(id), NEON_INTRINSICS, "{name}");
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+const NEON_INTRINSICS: Variant = Variant {
+    isa: Isa::Neon,
+    backend: Backend::Intrinsics,
+};
+
+/// The float extreme reductions, which have NEON intrinsics entries.
+#[cfg(target_arch = "aarch64")]
+const EXTREME_OPS: [&str; 4] = ["reduce_min", "reduce_max", "argmin", "argmax"];
+
+/// `values` as an `f64` or an `f32` array. The conversion keeps zeros, infinities, and NaN.
+#[cfg(target_arch = "aarch64")]
+fn float_array(values: &[f64], f32s: bool) -> Value {
+    if f32s {
+        #[allow(clippy::cast_possible_truncation)]
+        let v: Vec<f32> = values.iter().map(|&x| x as f32).collect();
+        Value::Array(Array::from_vec(v))
+    } else {
+        Value::Array(Array::from_vec(values.to_vec()))
+    }
+}
+
+/// Runs `op` on `values` as `f64` and as `f32` with the NEON intrinsics entry, one-shot and
+/// over the reduction tiles, and checks both against scalar with `same`. Returns the f64 and
+/// f32 one-shot results of the NEON entry.
+#[cfg(target_arch = "aarch64")]
+fn neon_extreme(op: &str, values: &[f64]) -> [Result<Value, String>; 2] {
+    let reg = Registry::new();
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    [false, true].map(|f32s| {
+        let name = format!("{op}_{}", if f32s { "f32" } else { "f64" });
+        let id = reg.by_name(&name).unwrap();
+        assert_eq!(neon.variant_used(id), NEON_INTRINSICS, "{name}");
+        let args = [float_array(values, f32s)];
+        let n = values.len();
+        let want = scalar.call(&reg, id, &args);
+        let got = neon.call(&reg, id, &args);
+        assert!(
+            same(&want, &got),
+            "{name} n={n}: scalar {} vs neon {}",
+            show(&want),
+            show(&got)
+        );
+        let tiled = reduce_tiled(&reg, &neon, id, &args, n);
+        assert!(
+            same(&want, &tiled),
+            "{name} n={n} tiled: scalar {} vs neon {}",
+            show(&want),
+            show(&tiled)
+        );
+        got
+    })
+}
+
+/// `n` rows of `fill` with the listed rows replaced.
+#[cfg(target_arch = "aarch64")]
+fn rows_with(n: usize, fill: f64, set: &[(usize, f64)]) -> Vec<f64> {
+    let mut v = vec![fill; n];
+    for &(i, x) in set {
+        v[i] = x;
+    }
+    v
+}
+
+/// Asserts that both element types gave index `want`.
+#[cfg(target_arch = "aarch64")]
+fn assert_index(op: &str, values: &[f64], want: i64) {
+    for got in neon_extreme(op, values) {
+        assert_eq!(got, Ok(Value::Scalar(Scalar::I64(want))), "{op}");
+    }
+}
+
+/// Asserts that both element types gave a value with the bits of `want`, or a NaN.
+#[cfg(target_arch = "aarch64")]
+fn assert_value(op: &str, values: &[f64], want: f64) {
+    for got in neon_extreme(op, values) {
+        let ok = match got {
+            Ok(Value::Scalar(Scalar::F64(x))) if want.is_nan() => x.is_nan(),
+            Ok(Value::Scalar(Scalar::F64(x))) => x.to_bits() == want.to_bits(),
+            #[allow(clippy::cast_possible_truncation)]
+            Ok(Value::Scalar(Scalar::F32(x))) if want.is_nan() => x.is_nan(),
+            #[allow(clippy::cast_possible_truncation)]
+            Ok(Value::Scalar(Scalar::F32(x))) => x.to_bits() == (want as f32).to_bits(),
+            _ => false,
+        };
+        assert!(ok, "{op}: want {want:?}, got {got:?}");
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_take_the_first_nan_across_tiles() {
+    // The first NaN sits in the first tile and a lower and a higher value in later ones.
+    let v = rows_with(
+        TILED_LEN,
+        5.0,
+        &[(10, f64::NAN), (500, -100.0), (700, 100.0)],
+    );
+    assert_index("argmin", &v, 10);
+    assert_index("argmax", &v, 10);
+    assert_value("reduce_min", &v, f64::NAN);
+    assert_value("reduce_max", &v, f64::NAN);
+    // A NaN in a later tile than the extreme, and one in the scalar rest of a tile.
+    let late = rows_with(
+        TILED_LEN,
+        5.0,
+        &[(3, -100.0), (995, f64::NAN), (998, f64::NAN)],
+    );
+    assert_index("argmin", &late, 995);
+    assert_index("argmax", &late, 995);
+    assert_value("reduce_min", &late, f64::NAN);
+    let rest = rows_with(19, 5.0, &[(1, -1.0), (18, f64::NAN)]);
+    assert_index("argmin", &rest, 18);
+    assert_value("reduce_max", &rest, f64::NAN);
+    // Two NaNs in one vector, the second in a lower lane of the next.
+    let pair = rows_with(40, 5.0, &[(6, f64::NAN), (7, f64::NAN), (8, f64::NAN)]);
+    assert_index("argmax", &pair, 6);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_of_all_nan_rows() {
+    for n in [1, 2, 5, 17, TILED_LEN] {
+        let v = vec![f64::NAN; n];
+        assert_index("argmin", &v, 0);
+        assert_index("argmax", &v, 0);
+        assert_value("reduce_min", &v, f64::NAN);
+        assert_value("reduce_max", &v, f64::NAN);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_keep_the_first_index_on_ties() {
+    // Rows 1 and 2, and rows 3 and 4, sit in different vectors of both element types, with
+    // the later row in the lower lane. Rows 5 and 6 share an f32 vector.
+    for (a, b) in [(1, 2), (3, 4), (5, 6), (63, 64), (383, 384), (0, 999)] {
+        let low = rows_with(TILED_LEN, 5.0, &[(a, 1.0), (b, 1.0)]);
+        assert_index("argmin", &low, i64::try_from(a).unwrap());
+        assert_value("reduce_min", &low, 1.0);
+        let high = rows_with(TILED_LEN, 5.0, &[(a, 9.0), (b, 9.0)]);
+        assert_index("argmax", &high, i64::try_from(a).unwrap());
+        assert_value("reduce_max", &high, 9.0);
+    }
+    // Equal rows everywhere.
+    for n in [1, 3, 4, 16, 17, TILED_LEN] {
+        let v = vec![2.5; n];
+        assert_index("argmin", &v, 0);
+        assert_index("argmax", &v, 0);
+    }
+    // Infinities, the vector identities of min and max.
+    let inf = vec![f64::INFINITY; 9];
+    assert_index("argmin", &inf, 0);
+    assert_value("reduce_min", &inf, f64::INFINITY);
+    let ninf = vec![f64::NEG_INFINITY; 9];
+    assert_index("argmax", &ninf, 0);
+    assert_value("reduce_max", &ninf, f64::NEG_INFINITY);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_order_signed_zeros() {
+    // Pairs of rows in different lanes, in different vectors, and across a tile boundary.
+    for (a, b) in [(2, 7), (3, 4), (4, 5), (1, 2), (63, 64)] {
+        let ia = i64::try_from(a).unwrap();
+        let ib = i64::try_from(b).unwrap();
+        // +0.0 first: -0.0 is the smaller.
+        let pos_neg = rows_with(TILED_LEN, 3.0, &[(a, 0.0), (b, -0.0)]);
+        assert_index("argmin", &pos_neg, ib);
+        assert_value("reduce_min", &pos_neg, -0.0);
+        // -0.0 first: it is still the smaller.
+        let neg_pos = rows_with(TILED_LEN, 3.0, &[(a, -0.0), (b, 0.0)]);
+        assert_index("argmin", &neg_pos, ia);
+        assert_value("reduce_min", &neg_pos, -0.0);
+        // The same for max, where +0.0 is the larger.
+        let neg_pos_max = rows_with(TILED_LEN, -3.0, &[(a, -0.0), (b, 0.0)]);
+        assert_index("argmax", &neg_pos_max, ib);
+        assert_value("reduce_max", &neg_pos_max, 0.0);
+        let pos_neg_max = rows_with(TILED_LEN, -3.0, &[(a, 0.0), (b, -0.0)]);
+        assert_index("argmax", &pos_neg_max, ia);
+        assert_value("reduce_max", &pos_neg_max, 0.0);
+    }
+    // Only zeros, in both orders.
+    let zeros = [0.0, 0.0, -0.0, 0.0, -0.0];
+    assert_index("argmin", &zeros, 2);
+    assert_index("argmax", &zeros, 0);
+    assert_value("reduce_min", &zeros, -0.0);
+    assert_value("reduce_max", &zeros, 0.0);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_match_scalar_for_short_lengths() {
+    // Every length up to two f32 vectors plus a rest, with the extreme at every row, and a
+    // few lengths that are not multiples of the lane counts.
+    for n in (1..=17).chain([31, 33, 65, 1001]) {
+        for at in 0..n {
+            let low = rows_with(n, 1.0, &[(at, -1.0)]);
+            assert_index("argmin", &low, i64::try_from(at).unwrap());
+            assert_value("reduce_min", &low, -1.0);
+            let high = rows_with(n, 1.0, &[(at, 7.0)]);
+            assert_index("argmax", &high, i64::try_from(at).unwrap());
+            assert_value("reduce_max", &high, 7.0);
+            let nan = rows_with(n, 1.0, &[(at, f64::NAN)]);
+            assert_index("argmin", &nan, i64::try_from(at).unwrap());
+            assert_value("reduce_max", &nan, f64::NAN);
+        }
+        // Distinct values, ascending and descending.
+        let up: Vec<f64> = (0..n)
+            .map(|i| f64::from(u32::try_from(i).unwrap()))
+            .collect();
+        let down: Vec<f64> = up.iter().rev().copied().collect();
+        // `neon_extreme` checks against scalar, so the results need no further check.
+        for op in EXTREME_OPS {
+            let _ = neon_extreme(op, &up);
+            let _ = neon_extreme(op, &down);
+        }
+    }
+    // A single row.
+    assert_index("argmin", &[4.0], 0);
+    assert_value("reduce_max", &[-0.0], -0.0);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extremes_of_empty_rows_fail_like_scalar() {
+    for op in EXTREME_OPS {
+        for got in neon_extreme(op, &[]) {
+            assert_eq!(got, Err(format!("{op} of an empty array")), "{op}");
+        }
+    }
+}
+
+/// The NEON extreme reducers check their argument like the scalar ones.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn neon_extreme_reducers_reject_bad_arguments() {
+    let reg = Registry::new();
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let ints = Array::from_vec(vec![1i32, 2, 3]);
+    let floats = Array::from_vec(vec![1.0f64, 2.0]);
+    let bad: [Vec<Arg>; 4] = [
+        vec![],
+        vec![Arg::Rows(ints.slice(0, 3))],
+        vec![Arg::Splat(Scalar::F64(1.0))],
+        vec![Arg::Rows(floats.slice(0, 2)), Arg::Rows(floats.slice(0, 2))],
+    ];
+    for t in ["f64", "f32"] {
+        for op in EXTREME_OPS {
+            let id = reg.by_name(&format!("{op}_{t}")).unwrap();
+            for args in &bad {
+                let want = scalar.reducer(&reg, id).unwrap().update(args);
+                let got = neon.reducer(&reg, id).unwrap().update(args);
+                assert!(want.is_err(), "{op}_{t}");
+                assert_eq!(want, got, "{op}_{t}");
+            }
+        }
+    }
+}
