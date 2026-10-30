@@ -40,7 +40,7 @@ impl Dispatch {
     }
 
     /// The entry that `call` runs for the kernel.
-    pub fn entry(&self, id: KernelId) -> KernelImpl {
+    pub(crate) fn entry(&self, id: KernelId) -> KernelImpl {
         self.slot(id).0
     }
 
@@ -133,6 +133,50 @@ impl Dispatch {
         }
     }
 
+    /// Runs elementwise array kernel `id` over one tile, writing its rows to `out`, the bytes
+    /// of the tile's rows of the output type. Checks the argument kinds against the kernel's
+    /// inputs, that `out` is aligned for the output type and holds whole rows, that there is
+    /// a `Rows` argument, and that every `Rows` argument has exactly `out.len() / width`
+    /// rows. Fails for another registry or a kernel that is not an elementwise array kernel.
+    pub fn elementwise_tile(
+        &self,
+        reg: &Registry,
+        id: KernelId,
+        args: &[Arg],
+        out: &mut [u8],
+    ) -> Result<(), String> {
+        self.check_registry(reg)?;
+        let def = reg.get(id);
+        let KernelImpl::Elementwise(f) = self.entry(id) else {
+            return Err(format!("{} is not an elementwise kernel", def.name));
+        };
+        let ValueType::Array(t) = def.output else {
+            return Err(format!("{} does not produce an array", def.name));
+        };
+        let w = t.width();
+        if !out.len().is_multiple_of(w) {
+            return Err(format!(
+                "destination of {} bytes is not a multiple of the {w} byte rows",
+                out.len()
+            ));
+        }
+        if !out.as_ptr().addr().is_multiple_of(w) {
+            return Err(format!("destination is not aligned for {}", t.name()));
+        }
+        let want = out.len() / w;
+        match check_tile_args(def, args)? {
+            None => Err("an array kernel needs an array operand".into()),
+            Some(n) if n != want => Err(format!(
+                "length mismatch: {n} rows for a destination of {want} rows"
+            )),
+            // SAFETY: resolve installs an entry only for an ISA whose is_available()
+            // returned true. `out` holds `want` rows of the output type, aligned for it, and
+            // `check_tile_args` checked the argument kinds and that every `Rows` argument
+            // has `want` rows.
+            Some(_) => unsafe { f(args, out) },
+        }
+    }
+
     /// Runs selection `id` over one tile whose first row is row `base` of the whole array,
     /// appending the selected rows to `out`. Checks the argument kinds against the kernel's
     /// inputs and that every `Rows` argument has the same row count. Fails for another
@@ -150,31 +194,38 @@ impl Dispatch {
         let KernelImpl::Selection(f) = self.entry(id) else {
             return Err(format!("{} is not a selection", def.name));
         };
-        if def.inputs.len() != args.len() {
-            return Err(arity_error(def.inputs.len(), args.len()));
-        }
-        let mut rows: Option<usize> = None;
-        for (spec, arg) in def.inputs.iter().zip(args) {
-            let ty = match arg {
-                Arg::Rows(a) => a.ty(),
-                Arg::Splat(s) => ValueType::Scalar(s.ty()),
-            };
-            if !spec.accepts(ty) {
-                return Err(kind_error(*spec, ty));
-            }
-            if let Arg::Rows(a) = arg {
-                match rows {
-                    Some(n) if n != a.len() => {
-                        return Err(format!("length mismatch: {n} vs {}", a.len()));
-                    }
-                    _ => rows = Some(a.len()),
-                }
-            }
-        }
+        check_tile_args(def, args)?;
         // SAFETY: resolve installs an entry only for an ISA whose is_available() returned
-        // true. The loop above checked the argument kinds and unified the row counts.
+        // true. `check_tile_args` checked the argument kinds and unified the row counts.
         unsafe { f(args, base, out) }
     }
+}
+
+/// Checks the tile arguments `args` against the kernel's inputs, and returns the common row
+/// count of the `Rows` arguments, `None` when all are `Splat`.
+fn check_tile_args(def: &KernelDef, args: &[Arg]) -> Result<Option<usize>, String> {
+    if def.inputs.len() != args.len() {
+        return Err(arity_error(def.inputs.len(), args.len()));
+    }
+    let mut rows: Option<usize> = None;
+    for (spec, arg) in def.inputs.iter().zip(args) {
+        let ty = match arg {
+            Arg::Rows(a) => a.ty(),
+            Arg::Splat(s) => ValueType::Scalar(s.ty()),
+        };
+        if !spec.accepts(ty) {
+            return Err(kind_error(*spec, ty));
+        }
+        if let Arg::Rows(a) = arg {
+            match rows {
+                Some(n) if n != a.len() => {
+                    return Err(format!("length mismatch: {n} vs {}", a.len()));
+                }
+                _ => rows = Some(a.len()),
+            }
+        }
+    }
+    Ok(rows)
 }
 
 /// Checks `args` against the kernel's inputs, and returns them as entry arguments with the

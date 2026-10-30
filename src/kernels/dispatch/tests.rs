@@ -37,14 +37,12 @@ fn tile_args(args: &[Value], start: usize, end: usize) -> Vec<Arg> {
         .collect()
 }
 
-/// Runs the registered scalar entry over the tiles `0..37`, `37..100`, `100..n` into one
-/// destination, and compares it with one `Dispatch::call` over all rows.
+/// Runs the scalar entry over the tiles `0..37`, `37..100`, `100..n` into one destination
+/// with `Dispatch::elementwise_tile`, and compares it with one `Dispatch::call` over all rows.
 fn assert_tiled_matches_whole(name: &str, args: &[Value], n: usize) {
     let reg = Registry::new();
     let id = reg.by_name(name).unwrap();
-    let KernelImpl::Elementwise(f) = reg.get(id).impls[Variant::SCALAR.index()].unwrap() else {
-        panic!("{name} has no elementwise scalar entry");
-    };
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
     let ValueType::Array(out_ty) = reg.get(id).output else {
         panic!("{name} is not an array kernel");
     };
@@ -52,16 +50,12 @@ fn assert_tiled_matches_whole(name: &str, args: &[Value], n: usize) {
     let tiled = Array::build_bytes(n, out_ty, |out| {
         for (start, end) in [(0, 37), (37, 100), (100, n)] {
             let tile = tile_args(args, start, end);
-            // SAFETY: the scalar entry is a safe function and needs no CPU feature.
-            unsafe { f(&tile, &mut out[start * w..end * w]) }?;
+            dispatch.elementwise_tile(&reg, id, &tile, &mut out[start * w..end * w])?;
         }
         Ok(())
     })
     .unwrap();
-    let whole = reg
-        .resolve(Isa::Scalar, Backend::Auto)
-        .call(&reg, id, args)
-        .unwrap();
+    let whole = dispatch.call(&reg, id, args).unwrap();
     assert_eq!(bytes_of(&Value::Array(tiled)), bytes_of(&whole), "{name}");
 }
 
@@ -81,6 +75,65 @@ fn tiled_elementwise_matches_whole() {
         n,
     );
     assert_tiled_matches_whole("cast_f64_i32", &[Value::Array(f64s(n, 0.75))], n);
+}
+
+#[test]
+fn elementwise_tile_checks_its_arguments() {
+    let reg = Registry::new();
+    let other = Registry::new();
+    let id = reg.by_name("add_f64").unwrap();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let x = Arg::Rows(f64s(4, 1.0));
+    let splat = Arg::Splat(Scalar::F64(1.0));
+    // A u64 buffer gives the destination the alignment of an f64.
+    let mut buf = [0u64; 5];
+    let bytes = bytemuck::cast_slice_mut::<u64, u8>(&mut buf);
+    let ok = dispatch.elementwise_tile(&reg, id, &[x.clone(), splat.clone()], &mut bytes[..32]);
+    assert_eq!(ok, Ok(()));
+    let want: Vec<u8> = (0..4)
+        .flat_map(|i| ((f64::from(i) - 400.0) + 1.0).to_ne_bytes())
+        .collect();
+    assert_eq!(&bytes[..32], &want[..]);
+
+    let mismatched_rows = |out: &mut [u8]| {
+        dispatch
+            .elementwise_tile(&reg, id, &[x.clone(), splat.clone()], out)
+            .unwrap_err()
+    };
+    let err1 = mismatched_rows(&mut bytes[..40]);
+    assert!(
+        err1.contains("4 rows for a destination of 5 rows"),
+        "{err1}"
+    );
+    let err2 = mismatched_rows(&mut bytes[..31]);
+    assert!(err2.contains("not a multiple of"), "{err2}");
+    let err3 = mismatched_rows(&mut bytes[1..33]);
+    assert!(err3.contains("not aligned"), "{err3}");
+
+    let err4 = dispatch
+        .elementwise_tile(&reg, id, std::slice::from_ref(&x), &mut bytes[..32])
+        .unwrap_err();
+    assert!(err4.contains("expected 2 arguments"), "{err4}");
+    let kind = [x.clone(), Arg::Splat(Scalar::I64(1))];
+    let err5 = dispatch
+        .elementwise_tile(&reg, id, &kind, &mut bytes[..32])
+        .unwrap_err();
+    assert!(err5.contains("expected f64"), "{err5}");
+    let splats = [splat.clone(), splat.clone()];
+    let err6 = dispatch
+        .elementwise_tile(&reg, id, &splats, &mut bytes[..32])
+        .unwrap_err();
+    assert!(err6.contains("needs an array operand"), "{err6}");
+    let pair = [x.clone(), splat];
+    let err7 = dispatch
+        .elementwise_tile(&other, id, &pair, &mut bytes[..32])
+        .unwrap_err();
+    assert!(err7.contains("different registry"), "{err7}");
+    let sel = reg.by_name("compress_f64").unwrap();
+    let err8 = dispatch
+        .elementwise_tile(&reg, sel, &[x], &mut bytes[..32])
+        .unwrap_err();
+    assert!(err8.contains("not an elementwise"), "{err8}");
 }
 
 #[test]
@@ -235,18 +288,15 @@ fn same_array(a: &Array, b: &Array) -> bool {
 fn tiled_reductions_match_whole() {
     let reg = Registry::new();
     let mut checked = 0;
-    for (_, def) in reg
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    for (id, def) in reg
         .iter()
         .filter(|(_, d)| d.class == KernelClass::Reduction)
     {
-        let KernelImpl::Reduction(make) = def.impls[Variant::SCALAR.index()].unwrap() else {
-            panic!("{} has no reduction scalar entry", def.name);
-        };
         for nan_at in [None, Some(700)] {
             let args = random_args(&def.inputs, 1000, nan_at);
             let run = |tiles: &[(usize, usize)]| {
-                // SAFETY: the scalar entry is a safe function and needs no CPU feature.
-                let mut reducer: Box<dyn Reducer> = unsafe { make() };
+                let mut reducer: Box<dyn Reducer> = dispatch.reducer(&reg, id).unwrap();
                 for &(start, end) in tiles {
                     reducer.update(&tile_args(&args, start, end)).unwrap();
                 }
@@ -270,13 +320,11 @@ fn tiled_reductions_match_whole() {
 fn tiled_selections_match_whole() {
     let reg = Registry::new();
     let mut checked = 0;
-    for (_, def) in reg
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    for (id, def) in reg
         .iter()
         .filter(|(_, d)| d.class == KernelClass::Selection)
     {
-        let KernelImpl::Selection(f) = def.impls[Variant::SCALAR.index()].unwrap() else {
-            panic!("{} has no selection scalar entry", def.name);
-        };
         let ValueType::Array(out_ty) = def.output else {
             panic!("{} does not produce an array", def.name);
         };
@@ -285,8 +333,10 @@ fn tiled_selections_match_whole() {
             let run = |tiles: &[(usize, usize)]| {
                 let mut out = ArrayBuilder::new(out_ty);
                 for &(start, end) in tiles {
-                    // SAFETY: the scalar entry is a safe function and needs no CPU feature.
-                    unsafe { f(&tile_args(&args, start, end), start, &mut out) }.unwrap();
+                    let tile = tile_args(&args, start, end);
+                    dispatch
+                        .select_tile(&reg, id, &tile, start, &mut out)
+                        .unwrap();
                 }
                 out.finish()
             };
@@ -315,13 +365,10 @@ fn call_rejects_another_registry() {
 /// 608, and 8 rows, and returns both results. They must be equal by bits.
 fn reduce_whole_and_tiled(name: &str, args: &[Value]) -> Scalar {
     let reg = Registry::new();
-    let def = reg.get(reg.by_name(name).unwrap());
-    let KernelImpl::Reduction(make) = def.impls[Variant::SCALAR.index()].unwrap() else {
-        panic!("{name} has no reduction scalar entry");
-    };
+    let id = reg.by_name(name).unwrap();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
     let run = |tiles: &[(usize, usize)]| {
-        // SAFETY: the scalar entry is a safe function and needs no CPU feature.
-        let mut reducer: Box<dyn Reducer> = unsafe { make() };
+        let mut reducer: Box<dyn Reducer> = dispatch.reducer(&reg, id).unwrap();
         for &(start, end) in tiles {
             reducer.update(&tile_args(args, start, end)).unwrap();
         }

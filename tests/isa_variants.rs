@@ -14,7 +14,7 @@ use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value,
 
 /// Row counts of every checked call, around the vector widths of AVX2 and AVX-512.
 const LENGTHS: [usize; 15] = [0, 1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 63, 64, 65, 300];
-/// A row count long enough for every reduction and selection tile below plus a rest.
+/// A row count long enough for every tile below plus a rest.
 const TILED_LEN: usize = 1000;
 /// A row count for selections only, longer than two of the chunks that selection entries
 /// reserve output in (2048 rows), so chunk boundaries fall inside the tile `100..n`.
@@ -26,8 +26,8 @@ const MAX_OFFSET: usize = 7;
 const BUF_LEN: usize = LONG_LEN + MAX_OFFSET;
 /// Reduction tiles of 64, 320, and 608 rows, then the rest. Values are tile ends.
 const REDUCE_CUTS: [usize; 3] = [64, 384, 992];
-/// Selection tiles `0..37`, `37..100`, and `100..n`. Values are tile ends.
-const SELECT_CUTS: [usize; 2] = [37, 100];
+/// Elementwise and selection tiles `0..37`, `37..100`, and `100..n`. Values are tile ends.
+const TILE_CUTS: [usize; 2] = [37, 100];
 /// Proptest cases per kernel and variant, each covering every length at both offsets.
 const CASES: u32 = 6;
 
@@ -278,6 +278,32 @@ fn reduce_tiled(
     reducer.finish().map(Value::Scalar)
 }
 
+/// The variant's elementwise kernel called once per tile into one destination. `None` when
+/// the kernel does not produce an array from an array operand, which `call` covers alone.
+fn elementwise_tiled(
+    reg: &Registry,
+    dispatch: &Dispatch,
+    id: KernelId,
+    args: &[Value],
+    n: usize,
+) -> Option<Result<Value, String>> {
+    let ValueType::Array(t) = reg.get(id).output else {
+        return None;
+    };
+    if !args.iter().any(|a| matches!(a, Value::Array(_))) {
+        return None;
+    }
+    let w = t.width();
+    let out = Array::build_bytes(n, t, |out| {
+        for (start, end) in tiles(n, &TILE_CUTS) {
+            let dst = &mut out[start * w..end * w];
+            dispatch.elementwise_tile(reg, id, &tile_args(args, start, end), dst)?;
+        }
+        Ok(())
+    });
+    Some(out.map(Value::Array))
+}
+
 /// The variant's selection called once per tile with the tile's base.
 fn select_tiled(
     reg: &Registry,
@@ -290,7 +316,7 @@ fn select_tiled(
         return Err("a selection must produce an array".into());
     };
     let mut out = ArrayBuilder::new(t);
-    for (start, end) in tiles(n, &SELECT_CUTS) {
+    for (start, end) in tiles(n, &TILE_CUTS) {
         dispatch.select_tile(reg, id, &tile_args(args, start, end), start, &mut out)?;
     }
     Ok(Value::Array(out.finish()))
@@ -319,9 +345,10 @@ fn check_case(
                 show(&got)
             );
             let tiled = match def.class {
+                KernelClass::Elementwise => elementwise_tiled(reg, variant, id, &args, n),
                 KernelClass::Reduction => Some(reduce_tiled(reg, variant, id, &args, n)),
                 KernelClass::Selection => Some(select_tiled(reg, variant, id, &args, n)),
-                _ => None,
+                KernelClass::Whole => None,
             };
             if let Some(tiled) = tiled {
                 prop_assert!(
