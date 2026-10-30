@@ -117,8 +117,8 @@ The intrinsics (1.199 and 1.197 ms in the reruns) and native (1.290 and 1.292 ms
 
 All three corgi `filter` results equal Verkehrt's rows bitwise, and the bench asserts that before timing.
 For `f64` rows the NEON `filter` is 6 to 11% faster than scalar (0.89 to 0.94), and it is 1.10 to 1.39 times `native-base`.
-During the optimization, temporary criterion groups measured the same loops at 0.51 to 0.59 times scalar for `i32` and `f32` rows and at 0.88 to 0.92 for `i64` rows (median of 41 runs, 10M rows).
-Those harnesses are not committed, each figure is a single unrepeated measurement, and this bench measures `f64` only.
+During the optimization, a scratch harness measured the same loops at 0.51 to 0.59 times scalar for `i32` and `f32` rows and at 0.88 to 0.92 for `i64` rows (median of 41 runs, 10M rows).
+That harness is not committed, so the committed bench does not reproduce these figures, and it measures `f64` only.
 
 ### Summary against the target
 
@@ -153,11 +153,11 @@ The `filter` numbers were reproduced in a second run at 50% (5.120 ms against 5.
 A profile of the 50% group, taken with samply during the optimization, put 33.1% of its 5363 samples on the transfer after the popcount in the select loop, 32.4% on the vector-to-register transfer in the count loop, and 13.4% on the bound check that waits on the popcount.
 An instruction listing showed 19 instructions per 2-row step in the `f64` select loop.
 Each 2-row step paid a horizontal mask reduction, a vector-to-register transfer, and a popcount round trip, and the time per step was about 1 ns whatever the lane count.
-Temporary criterion groups measured the first attempt at 1.22 to 1.44 times scalar for `f64` and `i64` `filter` and at 0.70 to 0.80 for `f32` and `i32`, so the 4-lane types won and the 2-lane types lost.
-These profiles and groups come from an uncommitted harness, and each is a single unrepeated measurement.
+A scratch harness measured the first attempt at 1.22 to 1.44 times scalar for `f64` and `i64` `filter` and at 0.70 to 0.80 for `f32` and `i32`, so the 4-lane types won and the 2-lane types lost.
+The ratios come from the uncommitted scratch harness (median of 41 runs, 10M rows), and the profile comes from the committed `tier1/filter-50pct/neon-intrinsics` group at the first attempt (`2d97663` "Add min, argmin, and an aarch64 crossover to the benches"). Neither was repeated after the fix.
 
 The fix (`1ca388a`) steps the selections four vectors at a time (8 `f64` or 16 `f32` rows per step) with a prefix table instead of a popcount, and the argmin fix (`eb1b552`) uses four (value, index) accumulators.
-The scratch measurements after these commits agree with this document's final run within 2% for `filter` (3.05, 3.46, and 3.95 ms against 3.05, 3.45, and 3.95 ms), and the scratch `argmin` figure of 1.20 ms matches this run's 1.196 ms.
+A run of the committed `tier1` bench after these commits agrees with this document's final run within 2% for `filter` (3.05, 3.46, and 3.95 ms against 3.05, 3.45, and 3.95 ms), and its `argmin` figure of 1.20 ms matches this run's 1.196 ms.
 
 ## Fragility of the hot loop
 
@@ -170,8 +170,8 @@ Nothing in the test suite guards this property, so a later edit can reintroduce 
 ## Count pass
 
 The `f64` and `i64` `filter` reads the 80 MB input twice, once in a count pass that sizes the output exactly and once in the select pass, while `native-base` filters in one pass with no count.
-A scratch estimate from the measured `sum` and `count` bandwidth puts the count pass at about 0.8 ms, and this document's `filter` gap to native is 0.28 ms at 1% and 1.11 ms at 99%, so the gap is not uniformly of that size.
-This bench does not measure the count pass separately, and the estimate is a single unrepeated figure.
+An estimate from the measured `sum` and `count` bandwidth puts the count pass at about 0.8 ms, and this document's `filter` gap to native is 0.28 ms at 1% and 1.11 ms at 99%, so the gap is not uniformly of that size.
+This bench does not measure the count pass separately, and the estimate is derived from the `sum` and `count` medians, not measured on the count pass itself.
 A faster count would need a vector accumulator in the shared `count_rows` that x86 also uses, and the x86 effect cannot be measured on this machine, so the branch leaves it alone.
 
 ## Corgi
