@@ -2,7 +2,7 @@ use super::scalar::construct::splitmix64;
 use super::scalar::elementwise::{Operand, binary_into};
 use super::scalar::reduce::{CanonicalProduct, CanonicalSum, canonical_product, canonical_sum};
 use super::*;
-use crate::value::{Array, Scalar};
+use crate::value::{Arg, Array, Scalar};
 
 fn f64s(v: &[f64]) -> Value {
     Value::Array(Array::from_vec(v.to_vec()))
@@ -25,9 +25,9 @@ fn call(reg: &Registry, name: &str, args: &[Value]) -> Result<Value, String> {
     let id = reg
         .by_name(name)
         .unwrap_or_else(|| panic!("no kernel {name}"));
-    let (f, isa) = reg.select_impl(id, Isa::Scalar);
-    assert_eq!(isa, Isa::Scalar);
-    f(args)
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    assert_eq!(dispatch.variant_used(id), Variant::SCALAR);
+    dispatch.call(reg, id, args)
 }
 
 fn arr(v: Value) -> Array {
@@ -105,11 +105,7 @@ fn lookup_resolves_array_and_scalar_kernels() {
 fn lookup_is_exact_for_non_elementwise_kernels() {
     use ScalarType::*;
     // An empty registry, so the dummy kernels do not collide with the real ones.
-    let mut reg = Registry {
-        defs: Vec::new(),
-        by_name: std::collections::HashMap::new(),
-        by_op: std::collections::HashMap::new(),
-    };
+    let mut reg = Registry::empty();
     fn dummy(_: &[Value]) -> Result<Value, String> {
         Err("unused".into())
     }
@@ -123,7 +119,7 @@ fn lookup_is_exact_for_non_elementwise_kernels() {
             cost: 0,
             commutative: false,
             pattern: None,
-            impls: [Some(dummy as KernelFn), None, None, None],
+            impls: KernelImpl::Whole(dummy).scalar_only(),
         })
     };
     let fill = def(
@@ -363,7 +359,7 @@ fn kernel_names_are_unique_valid_identifiers() {
             _ => KernelClass::Elementwise,
         };
         assert_eq!(def.class, expected, "{}", def.name);
-        assert!(def.impls[Isa::Scalar.index()].is_some());
+        assert!(def.impls[Variant::SCALAR.index()].is_some());
     }
 }
 
@@ -395,12 +391,66 @@ fn array_kernels_exist_for_v1_types_only() {
 }
 
 #[test]
-fn select_impl_falls_back_to_scalar() {
+fn resolve_falls_back_to_scalar_without_variants() {
     let reg = Registry::new();
-    let id = reg.by_name("add_f64").unwrap();
+    // A `_s` kernel has only its scalar entry.
+    let id = reg.by_name("add_f64_s").unwrap();
     for isa in Isa::ALL {
-        assert_eq!(reg.select_impl(id, isa).1, Isa::Scalar);
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            assert_eq!(reg.resolve(isa, backend).variant_used(id), Variant::SCALAR);
+        }
     }
+    // A kernel with ISA variants uses its scalar entry for `Isa::Scalar` and for an ISA
+    // without variants or support.
+    let add = reg.by_name("add_f64").unwrap();
+    for isa in [Isa::Scalar, Isa::Neon] {
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            assert_eq!(reg.resolve(isa, backend).variant_used(add), Variant::SCALAR);
+        }
+    }
+}
+
+#[test]
+fn variant_index_and_display() {
+    let all: Vec<Variant> = Isa::ALL
+        .into_iter()
+        .flat_map(|isa| {
+            [Backend::Auto, Backend::Intrinsics]
+                .into_iter()
+                .map(move |backend| Variant { isa, backend })
+        })
+        .filter(|v| v.isa != Isa::Scalar || v.backend == Backend::Auto)
+        .collect();
+    let mut indexes: Vec<usize> = all.iter().map(|v| v.index()).collect();
+    indexes.sort_unstable();
+    assert_eq!(indexes, (0..Variant::COUNT).collect::<Vec<_>>());
+    assert_eq!(Variant::SCALAR.to_string(), "isa=scalar");
+    let avx2 = Variant {
+        isa: Isa::Avx2,
+        backend: Backend::Auto,
+    };
+    assert_eq!(avx2.to_string(), "isa=avx2 backend=auto");
+    assert_eq!(Backend::default(), Backend::Intrinsics);
+}
+
+#[test]
+#[should_panic(expected = "does not fit its class")]
+fn add_rejects_entries_of_another_class() {
+    fn entry(_: &[Arg], _: &mut [u8]) -> Result<(), String> {
+        Ok(())
+    }
+    let mut reg = Registry::new();
+    reg.add(KernelDef {
+        name: "bad".into(),
+        class: KernelClass::Reduction,
+        op: None,
+        inputs: vec![],
+        output: sc_ty(ScalarType::I64),
+        cost: 0,
+        commutative: false,
+        pattern: None,
+        impls: KernelImpl::Elementwise(entry).scalar_only(),
+    });
 }
 
 #[test]
@@ -554,6 +604,52 @@ fn canonical_sum_f32_accumulates_in_f32() {
     assert_eq!(canonical_sum(&xs).to_bits(), acc[0].to_bits());
 }
 
+/// The golden bits below pin the canonical order independently of the code that computes
+/// it. The input has 35 elements, so `b = 32` and the tail is elements 32, 33, 34.
+///
+/// Hand check against the spec's bullets:
+/// * Accumulator 0 holds `1e16 + -1e16 = 0` (elements 0 and 16), so the large pair cancels
+///   exactly. A left fold instead adds 0.1 to 1e16 first, which rounds the small values away,
+///   and ends at 49.56.
+/// * Accumulators 1 to 15 hold `x[j] + x[j + 16]`, for example `0.1 + 1.7` in accumulator 1.
+/// * Pairwise combination then adds accumulator `j + 8` into `j`, then `+ 4`, `+ 2`, `+ 1`.
+/// * The tail adds `0.01`, `0.02`, `0.03` to accumulator 0 in order.
+///
+/// The resulting bits are those of the literal `50.16`. They were computed by an independent
+/// lane-by-lane simulation as well as by `canonical_sum`, and the two agree.
+#[test]
+fn canonical_sum_golden_values() {
+    #[rustfmt::skip]
+    let xs: [f64; 35] = [
+        1e16, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
+        -1e16, 1.7, 1.8, 1.9, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.1, 3.2, 3.3,
+        0.01, 0.02, 0.03,
+    ];
+    assert_eq!(
+        canonical_sum(&xs).to_bits(),
+        f64::from_bits(0x4049_147a_e147_ae14).to_bits()
+    );
+    assert_eq!(xs.iter().fold(0.0, |a, &x| a + x), 49.56);
+
+    // Accumulator 0 holds 2^24 and 1.0 (elements 0 and 16). In `f32` the sum 2^24 + 1 is not
+    // representable and rounds to 2^24 (ties to even), so the 1.0 is lost. The other
+    // accumulators hold exact multiples of 0.25, and the three tail elements are 3.0 each.
+    // With `f64` accumulation the 1.0 survives, the final rounding to `f32` lands on
+    // 16777394 instead of the `f32`-accumulated 16777396, which the assertions pin down.
+    #[rustfmt::skip]
+    let ys: [f32; 35] = [
+        16777216.0, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5,
+        1.0, 0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25, 3.75, 4.25, 4.75, 5.25, 5.75, 6.25, 6.75, 7.25,
+        3.0, 3.0, 3.0,
+    ];
+    let got = canonical_sum(&ys);
+    assert_eq!(got.to_bits(), f32::from_bits(0x4b80_005a).to_bits());
+    let wide: Vec<f64> = ys.iter().map(|&y| f64::from(y)).collect();
+    let in_f64 = canonical_sum(&wide) as f32;
+    assert_eq!(in_f64.to_bits(), f32::from_bits(0x4b80_0059).to_bits());
+    assert_ne!(got.to_bits(), in_f64.to_bits());
+}
+
 #[test]
 fn canonical_state_update_finish_matches_one_shot() {
     let xs = varied(1000);
@@ -705,6 +801,148 @@ fn compress_and_where() {
     assert_eq!(arr(compress_u8_res.unwrap()).as_slice::<u8>(), &[7, 9]);
     let where_res = call(&reg, "where", &[bools(&[false, true, true])]);
     assert_eq!(arr(where_res.unwrap()).as_slice::<i64>(), &[1, 2]);
+}
+
+/// The predicated selections reserve and commit in chunks, so check lengths around the chunk
+/// boundaries against plain iterator filters, one-shot and in tiles that straddle chunks.
+#[test]
+fn selections_span_chunks() {
+    use super::scalar::select::CHUNK;
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    for n in [CHUNK - 1, CHUNK, CHUNK + 1, 3 * CHUNK + 5] {
+        let xs: Vec<f64> = (0..n)
+            .map(|i| f64::from(u32::try_from(i).unwrap()))
+            .collect();
+        let mask: Vec<bool> = (0..n)
+            .map(|i| splitmix64(u64::try_from(i).unwrap()).is_multiple_of(3))
+            .collect();
+        let kept: Vec<f64> = xs
+            .iter()
+            .zip(&mask)
+            .filter(|p| *p.1)
+            .map(|p| *p.0)
+            .collect();
+        let idx: Vec<i64> = (0..n)
+            .filter(|&i| mask[i])
+            .map(|i| i64::try_from(i).unwrap())
+            .collect();
+        let cut = f64::from(u32::try_from(n / 2).unwrap());
+        let above: Vec<f64> = xs.iter().copied().filter(|&v| v > cut).collect();
+        let compress = call(&reg, "compress_f64", &[f64s(&xs), bools(&mask)]);
+        assert_eq!(arr(compress.unwrap()).as_slice::<f64>(), kept, "n={n}");
+        let r#where = call(&reg, "where", &[bools(&mask)]);
+        assert_eq!(arr(r#where.unwrap()).as_slice::<i64>(), idx, "n={n}");
+        let filter = call(&reg, "filter_gt_f64", &[f64s(&xs), f64_s(cut)]);
+        assert_eq!(arr(filter.unwrap()).as_slice::<f64>(), above, "n={n}");
+        // Tiles of `CHUNK + 3` rows put chunk boundaries at every offset into a tile.
+        let id = reg.by_name("where").unwrap();
+        let all = Array::from_bools(&mask);
+        let mut out = ArrayBuilder::new(ScalarType::I64);
+        for start in (0..n).step_by(CHUNK + 3) {
+            let len = (CHUNK + 3).min(n - start);
+            let args = [Arg::Rows(all.slice(start, len))];
+            dispatch
+                .select_tile(&reg, id, &args, start, &mut out)
+                .unwrap();
+        }
+        assert_eq!(out.finish().as_slice::<i64>(), idx, "tiled n={n}");
+    }
+}
+
+/// A selection counts its survivors and reserves for them plus one vector (64 bytes) of
+/// room for vector stores, so the array keeps at most that vector plus the rounding up to
+/// whole 64-byte blocks of capacity past its rows, without a shrink copy.
+#[test]
+fn selection_retains_at_most_one_vector_of_slack() {
+    let reg = Registry::new();
+    let n = 10_000;
+    let xs: Vec<f64> = (0..n)
+        .map(|i| f64::from(u32::try_from(i).unwrap()))
+        .collect();
+    // 13% survive, and 60%, where the 2x shrink of `ArrayBuilder::finish` does not apply, so
+    // only exact sizing keeps the slack within a block.
+    for keep in [1300, 6000] {
+        let mask: Vec<bool> = (0..n).map(|i| i < keep).collect();
+        let kept = arr(call(&reg, "compress_f64", &[f64s(&xs), bools(&mask)]).unwrap());
+        assert_eq!(kept.len(), keep);
+        let bytes = kept.len() * size_of::<f64>();
+        assert!(
+            kept.buffer_capacity_bytes() <= (bytes + 64).next_multiple_of(64),
+            "{} bytes of capacity for {bytes} bytes of rows",
+            kept.buffer_capacity_bytes()
+        );
+    }
+}
+
+/// Once the survivors of a tile run out, every chunk still gets a vector of room past them,
+/// so the entries keep their vector loops instead of the predicated scalar loop.
+#[test]
+fn append_chunks_keeps_a_vector_of_room_past_the_survivors() {
+    use super::scalar::select::{CHUNK, append_chunks, predicated};
+    let n = 3 * CHUNK + 5;
+    let kept = 10;
+    let mut out = ArrayBuilder::new(ScalarType::F64);
+    let mut rooms = Vec::new();
+    append_chunks::<f64>(&mut out, n, kept, |rows, dst| {
+        rooms.push((rows.len(), dst.len()));
+        let xs = rows.map(|i| (f64::from(u32::try_from(i).unwrap()), i < kept));
+        predicated(xs, dst)
+    });
+    assert_eq!(rooms.len(), 4);
+    for (rows, room) in rooms {
+        assert!(
+            room >= rows.min(8),
+            "{room} rows of room for a chunk of {rows}"
+        );
+    }
+    let want: Vec<f64> = (0..10).map(f64::from).collect();
+    assert_eq!(out.finish().as_slice::<f64>(), want);
+}
+
+/// Survivors packed at the front and none after, through every variant this CPU runs.
+#[test]
+fn selections_with_a_dense_prefix_and_an_empty_suffix() {
+    use super::scalar::select::CHUNK;
+    let reg = Registry::new();
+    let n = 3 * CHUNK + 5;
+    let prefix = CHUNK + 100;
+    // Falling values, so `x > cut` keeps exactly the first `prefix` rows.
+    let xs: Vec<f64> = (0..n)
+        .map(|i| f64::from(u32::try_from(n - i).unwrap()))
+        .collect();
+    let cut = f64::from(u32::try_from(n - prefix).unwrap());
+    let mask: Vec<bool> = (0..n).map(|i| i < prefix).collect();
+    let idx: Vec<i64> = (0..prefix).map(|i| i64::try_from(i).unwrap()).collect();
+    let mut checked = 0;
+    for isa in [Isa::Scalar, Isa::Avx2, Isa::Avx512] {
+        if !isa.is_available() {
+            continue;
+        }
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            let dispatch = reg.resolve(isa, backend);
+            let run = |name: &str, args: &[Value]| {
+                let id = reg.by_name(name).unwrap();
+                arr(dispatch.call(&reg, id, args).unwrap())
+            };
+            let compressed = run("compress_f64", &[f64s(&xs), bools(&mask)]);
+            assert_eq!(
+                compressed.as_slice::<f64>(),
+                &xs[..prefix],
+                "{isa:?} {backend:?}"
+            );
+            let filtered = run("filter_gt_f64", &[f64s(&xs), f64_s(cut)]);
+            assert_eq!(
+                filtered.as_slice::<f64>(),
+                &xs[..prefix],
+                "{isa:?} {backend:?}"
+            );
+            let indices = run("where", &[bools(&mask)]);
+            assert_eq!(indices.as_slice::<i64>(), idx, "{isa:?} {backend:?}");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 2);
 }
 
 #[test]

@@ -17,6 +17,8 @@ rustyline = "19.0.0"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+corgi = { git = "https://github.com/frankmcsherry/WIP", rev = "2751e04e8501d47b33219be23049bf4afa7a4428" }
+criterion = "0.8"
 proptest = "1.12.0"
 
 [lints.clippy]
@@ -89,3 +91,11 @@ rpath = false
 lto = true
 debug-assertions = false
 codegen-units = 4
+
+[[bench]]
+name = "tier1"
+harness = false
+
+[[bench]]
+name = "corgi"
+harness = false

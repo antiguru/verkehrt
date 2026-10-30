@@ -6,7 +6,7 @@ use proptest::prelude::*;
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
 
 use verkehrt::kernels::scalar::fused::reference;
-use verkehrt::kernels::{InputSpec, Isa, KernelId, Registry};
+use verkehrt::kernels::{Backend, InputSpec, Isa, KernelId, Registry};
 use verkehrt::value::{Array, Elem, Scalar, ScalarType, Value};
 
 const MAX_LEN: usize = 300;
@@ -189,11 +189,13 @@ fn check_family(prefix: &str, mixes: &[Mix]) {
             failure_persistence: None,
             ..Config::default()
         });
-        let fused = def.impls[Isa::Scalar.index()].expect("scalar impl");
+        let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
         runner
             .run(&strategy, |(n, pool)| {
                 let args = args_for(&def.inputs, &pool);
-                let got = fused(&args).map_err(TestCaseError::fail)?;
+                let got = dispatch
+                    .call(&reg, id, &args)
+                    .map_err(TestCaseError::fail)?;
                 let want = reference(&reg, id, &args).map_err(TestCaseError::fail)?;
                 prop_assert!(
                     same(&want, &got),

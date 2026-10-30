@@ -35,8 +35,11 @@ The problem catalog below drives which primitives exist and in what order.
 
 The interpreter parses a program, type-checks it, plans it, then executes the plan.
 Planning covers the typed program with kernel patterns (see kernel selection), producing a sequence of kernel calls over whole arrays, and scalar nodes are evaluated directly.
-Kernel variants are selected once at startup by runtime CPU feature detection and stored in a function-pointer table, so dispatch per kernel call is one indirect call.
+Kernel variants are selected once at startup by runtime CPU feature detection and stored in a function-pointer table.
+Dispatch per kernel call is one indirect call, plus, for reductions, one allocation of a boxed reducer and one virtual `update` call per tile.
 A command-line flag forces a variant (`--isa scalar|avx2|avx512|neon`) to compare implementations on the same program.
+`avx512` means AVX-512 F, BW, VL, and VBMI2, all required. Detection picks AVX2 on a CPU without VBMI2, and `--isa avx512` fails there.
+Each ISA has two backends. The autovectorization backend compiles every kernel's portable body under that ISA's target features and covers every kernel. The intrinsics backend holds hand-written kernels and exists only where one was written. `--backend auto|intrinsics` picks between them (default `intrinsics`, falling back to auto, then scalar), so every hand-written kernel is measured against what the compiler produces from the same semantics.
 
 ```mermaid
 flowchart LR
@@ -80,6 +83,8 @@ Nothing in the design may prevent it, which fixes these first-version decisions:
 * Elementwise kernels are implemented over slices into a caller-provided destination, with the allocating call as a thin wrapper, so the same code runs on a tile.
 * Reductions are implemented as state, update, and finish, so a reduction can consume tiles. The canonical float order survives tiling when every tile except the last has a length that is a multiple of 16, because the 16 accumulators are the state and the tail is added at finish.
 * Selection kernels append to a growing output, so they also run per tile.
+  Each selection counts the survivors of its tile first and reserves the output for them plus one 64-byte vector of room for vector stores, so an array retains about 1x its rows and the input is read twice.
+  This was measured against reserving every row, which is faster but retains up to 8x, and against a 2x shrink rule, which copies the output when more than half of the reservation is unused and was slower at 50% selectivity, see `docs/measurements/2026-10-30-x86-kernels.md`. Those measurements reserved one row of room past the survivors, not a vector.
 * Array views make a tile of an input a zero-copy slice, and length checks happen before execution, so no error depends on tile boundaries.
 * The ordering rules already leave the executor free to interleave statements.
 

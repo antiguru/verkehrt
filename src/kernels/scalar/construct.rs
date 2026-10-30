@@ -3,7 +3,7 @@
 use crate::kernels::scalar::elementwise::{arity_error, scalar_to};
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::select::array_of;
-use crate::kernels::{InputSpec, KernelClass, KernelDef, Registry};
+use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
 use crate::ops::Op;
 use crate::value::{Array, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -127,7 +127,7 @@ fn add_whole(
     inputs: Vec<InputSpec>,
     output: ValueType,
     cost: u64,
-    f: crate::kernels::KernelFn,
+    f: crate::kernels::WholeFn,
 ) {
     reg.add(KernelDef {
         name,
@@ -138,7 +138,7 @@ fn add_whole(
         cost,
         commutative: false,
         pattern: None,
-        impls: [Some(f), None, None, None],
+        impls: KernelImpl::Whole(f).scalar_only(),
     });
 }
 

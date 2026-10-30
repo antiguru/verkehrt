@@ -145,6 +145,27 @@ impl Scalar {
     }
 }
 
+impl Scalar {
+    /// The scalar of type `ty` stored in the first `ty.width()` bytes of `bytes`. Bool reads
+    /// as nonzero. Panics when `bytes` is shorter than the type's width.
+    pub fn from_bytes(ty: ScalarType, bytes: &[u8]) -> Scalar {
+        let b = &bytes[..ty.width()];
+        match ty {
+            ScalarType::I8 => Scalar::I8(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I16 => Scalar::I16(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I32 => Scalar::I32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I64 => Scalar::I64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U8 => Scalar::U8(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U16 => Scalar::U16(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U32 => Scalar::U32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U64 => Scalar::U64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::F32 => Scalar::F32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::F64 => Scalar::F64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::Bool => Scalar::Bool(b[0] != 0),
+        }
+    }
+}
+
 impl fmt::Display for Scalar {
     /// Floats use `{:?}` so they always show a decimal point (`1.0`, `NaN`, `-0.0`, `inf`).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -320,6 +341,33 @@ impl Array {
         }
     }
 
+    /// Like `build`, but `f` fills the raw bytes of the `len` elements of `elem` and may fail.
+    /// The buffer is zeroed and 64-byte aligned. Fails instead of panicking when the size
+    /// exceeds `isize::MAX` bytes. For `Bool`, `f` must write only 0 or 1.
+    pub fn build_bytes(
+        len: usize,
+        elem: ScalarType,
+        f: impl FnOnce(&mut [u8]) -> Result<(), String>,
+    ) -> Result<Array, String> {
+        let size = Array::byte_size(len, elem)?;
+        let mut blocks = Array::zeroed(len, elem);
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
+        f(&mut bytes[..size])?;
+        Ok(Array {
+            buf: Arc::new(blocks),
+            offset: 0,
+            len,
+            elem,
+        })
+    }
+
+    /// The bytes the underlying buffer can hold without reallocating, for tests of how much
+    /// capacity an array retains.
+    #[cfg(test)]
+    pub(crate) fn buffer_capacity_bytes(&self) -> usize {
+        self.buf.capacity() * size_of::<Block>()
+    }
+
     /// Element `i` as a scalar. Panics when out of range.
     pub fn get(&self, i: usize) -> Scalar {
         assert!(
@@ -339,6 +387,151 @@ impl Array {
             ScalarType::F32 => Scalar::F32(self.as_slice::<f32>()[i]),
             ScalarType::F64 => Scalar::F64(self.as_slice::<f64>()[i]),
             ScalarType::Bool => Scalar::Bool(self.as_bool_bytes()[i] != 0),
+        }
+    }
+}
+
+/// One operand of a kernel entry for one tile: rows of an array or one value repeated for
+/// every row. `Rows` is a view, so a tile is `array.slice(start, len)`.
+#[derive(Clone, Debug)]
+pub enum Arg {
+    Rows(Array),
+    Splat(Scalar),
+}
+
+/// A growable 64-byte aligned buffer of rows of one element type. Selection kernels append
+/// the rows they keep, and `finish` turns the buffer into an `Array` without copying.
+pub struct ArrayBuilder {
+    blocks: Vec<Block>,
+    /// Rows appended so far.
+    len: usize,
+    /// Rows past `len` handed out by the last `spare_rows` that `commit` may still append.
+    spare: usize,
+    elem: ScalarType,
+}
+
+impl ArrayBuilder {
+    pub fn new(elem: ScalarType) -> ArrayBuilder {
+        ArrayBuilder::with_capacity(elem, 0)
+    }
+
+    /// Reserves room for `rows` rows. Panics when that exceeds `isize::MAX` bytes.
+    pub fn with_capacity(elem: ScalarType, rows: usize) -> ArrayBuilder {
+        let bytes = Array::byte_size(rows, elem).unwrap_or_else(|e| panic!("{e}"));
+        ArrayBuilder {
+            blocks: Vec::with_capacity(bytes.div_ceil(64)),
+            len: 0,
+            spare: 0,
+            elem,
+        }
+    }
+
+    /// Appends rows. Panics when `T` does not match the element type, where bool takes `u8`.
+    /// Ends any reservation of `spare_rows`.
+    pub fn extend<T: Elem>(&mut self, rows: &[T]) {
+        self.window::<T>("extend", rows.len(), 0)
+            .copy_from_slice(rows);
+        self.len += rows.len();
+    }
+
+    /// Reserves capacity for at least `rows` more rows without writing them, so that later
+    /// appends up to that size do not move the buffer. Panics when that exceeds `isize::MAX`
+    /// bytes.
+    pub fn reserve(&mut self, rows: usize) {
+        let end = self
+            .len
+            .checked_add(rows)
+            .ok_or_else(|| format!("array of more than {} elements is too large", usize::MAX))
+            .and_then(|rows| Array::byte_size(rows, self.elem))
+            .unwrap_or_else(|e| panic!("{e}"));
+        self.blocks
+            .reserve(end.div_ceil(64).saturating_sub(self.blocks.len()));
+    }
+
+    /// The `n` rows past the end, for a selection to write its survivors into before it
+    /// appends a prefix of them with `commit`. The rows hold unspecified values, and they are
+    /// aligned for `T` like every row of the builder. Panics when `T` does not match the
+    /// element type, where bool takes `u8`, or when the rows would exceed `isize::MAX` bytes.
+    /// A `Bool` builder must only be committed rows of 0 or 1.
+    pub fn spare_rows<T: Elem>(&mut self, n: usize) -> &mut [T] {
+        self.window::<T>("spare_rows", n, n)
+    }
+
+    /// Appends the first `n` rows of the last `spare_rows` and ends that reservation. Panics
+    /// when `n` exceeds the rows it handed out, or when an `extend` or `commit` came between.
+    pub fn commit(&mut self, n: usize) {
+        assert!(
+            n <= self.spare,
+            "commit of {n} rows exceeds the {} spare rows",
+            self.spare
+        );
+        self.len += n;
+        self.spare = 0;
+    }
+
+    /// Grows the buffer to hold `n` rows past the end and returns them, with `spare` rows of
+    /// them reserved for `commit`. Panics on a type mismatch, see `extend`.
+    fn window<T: Elem>(&mut self, what: &str, n: usize, spare: usize) -> &mut [T] {
+        let matches =
+            T::TYPE == self.elem || (self.elem == ScalarType::Bool && T::TYPE == ScalarType::U8);
+        assert!(
+            matches,
+            "{what} with {} rows on a {} builder",
+            T::TYPE.name(),
+            self.elem.name()
+        );
+        self.spare = spare;
+        let w = self.elem.width();
+        let start = self.len * w;
+        let end = self
+            .len
+            .checked_add(n)
+            .ok_or_else(|| format!("array of more than {} elements is too large", usize::MAX))
+            .and_then(|rows| Array::byte_size(rows, self.elem))
+            .unwrap_or_else(|e| panic!("{e}"));
+        // `Vec::resize` grows amortized and zero fills new blocks. Rows that an earlier
+        // `spare_rows` handed out but `commit` did not append may hold any value, and
+        // `finish` zeroes the bytes past the end.
+        let blocks = end.div_ceil(64);
+        if self.blocks.len() < blocks {
+            self.blocks.resize(blocks, Block([0; 64]));
+        }
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(self.blocks.as_mut_slice());
+        bytemuck::cast_slice_mut(&mut bytes[start..end])
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The element type of the rows.
+    pub fn elem(&self) -> ScalarType {
+        self.elem
+    }
+
+    /// Turns the buffer into an array without copying. The bytes past the last row are zero.
+    pub fn finish(mut self) -> Array {
+        let end = self.len * self.elem.width();
+        self.blocks.truncate(end.div_ceil(64));
+        // Selections reserve their rows plus one vector, so this only catches other uses that
+        // over-reserve. Shrinking copies the rows, because the system allocator cannot resize
+        // a 64-byte aligned block in place. The buffer shrinks whenever more than half of it
+        // is unused, so an array never holds more than twice its blocks, and the copy costs
+        // at most the output size.
+        if self.blocks.capacity() / 2 > self.blocks.len() {
+            self.blocks.shrink_to_fit();
+        }
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(self.blocks.as_mut_slice());
+        bytes[end..].fill(0);
+        Array {
+            buf: Arc::new(self.blocks),
+            offset: 0,
+            len: self.len,
+            elem: self.elem,
         }
     }
 }
@@ -461,6 +654,78 @@ mod tests {
         let e = Array::byte_size(usize::MAX, ScalarType::F64).unwrap_err();
         assert_eq!(e, format!("array of {} elements is too large", usize::MAX));
         assert!(Array::try_build::<i64>(usize::MAX, |_| {}).is_err());
+    }
+
+    #[test]
+    fn array_builder_is_aligned_and_typed() {
+        let mut b = ArrayBuilder::new(ScalarType::F64);
+        b.extend(&[1.0f64, 2.0, 3.0]);
+        b.extend(&(0..70).map(f64::from).collect::<Vec<_>>());
+        assert_eq!(b.len(), 73);
+        let a = b.finish();
+        assert_eq!(a.len(), 73);
+        assert_eq!(a.as_slice::<f64>()[..4], [1.0, 2.0, 3.0, 0.0]);
+        assert_eq!(a.as_slice::<f64>()[72], 69.0);
+        assert_eq!(a.as_slice::<f64>().as_ptr() as usize % 64, 0);
+        let mut bools = ArrayBuilder::new(ScalarType::Bool);
+        bools.extend(&[1u8, 0]);
+        assert_eq!(bools.finish().as_bool_bytes(), &[1, 0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "extend with i64 rows on a f64 builder")]
+    fn array_builder_rejects_other_types() {
+        ArrayBuilder::new(ScalarType::F64).extend(&[1i64]);
+    }
+
+    #[test]
+    fn array_builder_spare_rows_commit_a_prefix() {
+        let mut b = ArrayBuilder::new(ScalarType::I64);
+        b.extend(&[7i64]);
+        let spare = b.spare_rows::<i64>(70);
+        assert_eq!(spare.len(), 70);
+        assert_eq!(spare.as_ptr() as usize % 8, 0);
+        for (i, s) in spare.iter_mut().enumerate() {
+            *s = i64::try_from(i).unwrap() + 100;
+        }
+        b.commit(3);
+        assert_eq!(b.len(), 4);
+        // Spare rows that were not committed are overwritten by the next reservation.
+        b.spare_rows::<i64>(2)[0] = -1;
+        b.commit(1);
+        b.extend(&[9i64]);
+        let a = b.finish();
+        assert_eq!(a.as_slice::<i64>(), &[7, 100, 101, 102, -1, 9]);
+        assert_eq!(a.as_slice::<i64>().as_ptr() as usize % 64, 0);
+        // `finish` zeroes the rows past the end, so the garbage of the spare rows is gone.
+        let all: &[u8] = bytemuck::cast_slice(a.buf.as_slice());
+        assert_eq!(all.len(), 64);
+        assert!(all[6 * 8..].iter().all(|&byte| byte == 0));
+    }
+
+    #[test]
+    fn array_builder_spare_rows_of_bool_take_u8() {
+        let mut b = ArrayBuilder::new(ScalarType::Bool);
+        b.spare_rows::<u8>(4).copy_from_slice(&[1, 0, 1, 1]);
+        b.commit(2);
+        assert_eq!(b.finish().as_bool_bytes(), &[1, 0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit of 3 rows exceeds the 2 spare rows")]
+    fn array_builder_commit_is_bounded_by_the_spare_rows() {
+        let mut b = ArrayBuilder::new(ScalarType::F64);
+        b.spare_rows::<f64>(2);
+        b.commit(3);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit of 1 rows exceeds the 0 spare rows")]
+    fn array_builder_extend_ends_the_reservation() {
+        let mut b = ArrayBuilder::new(ScalarType::F64);
+        b.spare_rows::<f64>(2);
+        b.extend(&[1.0f64]);
+        b.commit(1);
     }
 
     #[test]

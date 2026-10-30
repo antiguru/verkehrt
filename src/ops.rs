@@ -68,16 +68,6 @@ pub enum Isa {
 impl Isa {
     pub const ALL: [Isa; 4] = [Isa::Scalar, Isa::Avx2, Isa::Avx512, Isa::Neon];
 
-    /// Position in a `KernelDef::impls` table.
-    pub fn index(self) -> usize {
-        match self {
-            Isa::Scalar => 0,
-            Isa::Avx2 => 1,
-            Isa::Avx512 => 2,
-            Isa::Neon => 3,
-        }
-    }
-
     /// The best instruction set this CPU supports.
     pub fn detect() -> Isa {
         [Isa::Avx512, Isa::Avx2, Isa::Neon]

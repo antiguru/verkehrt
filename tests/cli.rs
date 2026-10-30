@@ -50,6 +50,14 @@ fn unknown_isa_is_usage_error() {
 }
 
 #[test]
+fn unknown_backend_is_usage_error() {
+    verkehrt()
+        .args(["run", "--backend", "bogus", "x.vk"])
+        .assert()
+        .code(2);
+}
+
+#[test]
 fn repl_reads_stdin() {
     verkehrt()
         .arg("repl")

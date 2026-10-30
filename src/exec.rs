@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::check::VarId;
 use crate::error::{Error, Span};
-use crate::kernels::{Isa, Registry};
+use crate::kernels::{Dispatch, KernelId, Registry, Variant};
 use crate::lower::{LStmt, Leaf, Lowered};
 use crate::plan::PlanNode;
 use crate::value::{Scalar, Value};
@@ -66,7 +66,7 @@ pub struct Sinks<'a> {
 /// the span of its statement.
 pub fn run_plan(
     reg: &Registry,
-    isa: Isa,
+    dispatch: &Dispatch,
     plan: &Plan,
     env: &mut Env,
     mut obs: Observe<'_>,
@@ -76,7 +76,7 @@ pub fn run_plan(
         let span = stmt_span(stmt);
         let value = Machine {
             reg,
-            isa,
+            dispatch,
             leaves: &plan.lowered.leaves,
             env,
             span,
@@ -113,7 +113,7 @@ fn stmt_span(stmt: &LStmt) -> Span {
 
 struct Machine<'a> {
     reg: &'a Registry,
-    isa: Isa,
+    dispatch: &'a Dispatch,
     leaves: &'a [Leaf],
     env: &'a Env,
     span: Span,
@@ -148,12 +148,20 @@ impl Machine<'_> {
                     .iter()
                     .map(|a| self.eval(a))
                     .collect::<Result<Vec<_>, _>>()?;
-                let (kernel, used) = self.reg.select_impl(*id, self.isa);
                 let observing = self.trace.is_some() || self.stats.is_some();
                 let start = observing.then(Instant::now);
-                let result = kernel(&args).map_err(|m| Error::runtime(m, Some(self.span)))?;
+                let result = self
+                    .dispatch
+                    .call(self.reg, *id, &args)
+                    .map_err(|m| Error::runtime(m, Some(self.span)))?;
                 if let Some(start) = start {
-                    self.observe(*id, used, &args, &result, start.elapsed())?;
+                    self.observe(
+                        *id,
+                        self.dispatch.variant_used(*id),
+                        &args,
+                        &result,
+                        start.elapsed(),
+                    )?;
                 }
                 Ok(result)
             }
@@ -162,8 +170,8 @@ impl Machine<'_> {
 
     fn observe(
         &mut self,
-        id: crate::kernels::KernelId,
-        used: Isa,
+        id: KernelId,
+        used: Variant,
         args: &[Value],
         result: &Value,
         time: Duration,
@@ -192,8 +200,7 @@ impl Machine<'_> {
             let gbps = if secs > 0.0 { total / secs / 1e9 } else { 0.0 };
             writeln!(
                 w,
-                "trace {name} isa={} n={n} read={read} write={write} time={:.1} gbps={gbps:.2}",
-                used.name(),
+                "trace {name} {used} n={n} read={read} write={write} time={:.1} gbps={gbps:.2}",
                 secs * 1e6,
             )
             .map_err(|e| Error::io(&e))?;
