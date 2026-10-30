@@ -306,3 +306,36 @@ fn huge_lengths_are_runtime_errors() {
         assert!(e.message.contains("is too large"), "{src}: {e}");
     }
 }
+
+#[test]
+fn scalar_condition_if_evaluates_only_the_taken_branch() {
+    for (src, want) in [
+        ("let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) } else { 0.0 });\n", "0.0\n"),
+        ("print(if true { [1.0] } else { [1.0, 2.0] });\n", "[1.0]\n"),
+        ("print(if false { [1.0] } else { [1.0, 2.0] });\n", "[1.0, 2.0]\n"),
+        // A subterm repeated inside a branch stays inside it.
+        (
+            "let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) + reduce(e, max) } else { 0.0 });\n",
+            "0.0\n",
+        ),
+        // A conditional nested in an operation and in a function body.
+        (
+            "fn safe_max(e: f64[]) -> f64 { if length(e) > 0 { reduce(e, max) } else { 0.0 } }\n\
+             let x = [1.0, 2.0];\nprint(safe_max(fill(0, 1.0)) + safe_max(x));\nprint(x * safe_max(x));\n",
+            "2.0\n[2.0, 4.0]\n",
+        ),
+        (
+            "let x = [1.0, 2.0];\nprint(sum(x * if length(x) > 1 { x } else { [0.0] }));\n",
+            "5.0\n",
+        ),
+    ] {
+        assert_eq!(run_ok(src), want, "{src}");
+    }
+    let src = "let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) } else { 0.0 });\n";
+    let (r, _, diag) = run_with(Options { show_plan: true, ..scalar_opts() }, src);
+    r.unwrap();
+    let line = diag.lines().find(|l| l.starts_with("plan 2: ")).expect(&diag);
+    // The comparison may come out as `gt` or as the swapped `lt`, both cost the same.
+    assert!(line.starts_with("plan 2: (if ("), "{line}");
+    assert!(line.ends_with(" then (reduce_max_f64 e) else 0.0)"), "{line}");
+}

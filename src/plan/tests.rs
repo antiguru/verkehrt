@@ -67,6 +67,7 @@ fn assert_broadcasts_fit(reg: &Registry, node: &PlanNode) {
     match node {
         PlanNode::Leaf(_) => {}
         PlanNode::Bcast(inner) => assert_broadcasts_fit(reg, inner),
+        PlanNode::Cond(c, t, e) => [c, t, e].into_iter().for_each(|x| assert_broadcasts_fit(reg, x)),
         PlanNode::Kernel(id, args) => {
             let def = reg.get(*id);
             for (spec, arg) in def.inputs.iter().zip(args) {
@@ -165,4 +166,19 @@ fn constant_array_renders_by_type_and_length() {
     // broadcast operand.
     let rendered = plan_print("print(sum([1.0, 2.0] * 2.0));").1;
     assert_eq!(rendered, "(reduce_add_f64 (mul_f64 <f64[2]> 2.0))");
+}
+
+#[test]
+fn conditional_branches_are_planned_and_fused_separately() {
+    let (root, rendered) = plan_print("print(if sum(x) > 0.0 { sum(x * y) } else { 0.0 });");
+    assert_eq!(root, "-");
+    assert!(rendered.starts_with("(if ("), "{rendered}");
+    assert!(rendered.ends_with(" then (dot_f64 x y) else 0.0)"), "{rendered}");
+}
+
+#[test]
+fn conditional_operand_is_an_array_to_fusion() {
+    let (root, rendered) = plan_print("print(sum(x * if length(x) > 1 { y } else { x }));");
+    assert_eq!(root, "dot_f64", "{rendered}");
+    assert!(rendered.contains(" then y else x)"), "{rendered}");
 }

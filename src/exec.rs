@@ -9,7 +9,7 @@ use crate::error::{Error, Span};
 use crate::kernels::{Isa, Registry};
 use crate::lower::{LStmt, Leaf, Lowered};
 use crate::plan::PlanNode;
-use crate::value::Value;
+use crate::value::{Scalar, Value};
 
 /// The variable environment. Values are `Arc`-backed, so cloning one never copies data.
 pub type Env = HashMap<VarId, Value>;
@@ -126,6 +126,13 @@ impl Machine<'_> {
             }
             // Single-op array kernels take a scalar operand directly and repeat it themselves.
             PlanNode::Bcast(inner) => self.eval(inner),
+            PlanNode::Cond(c, t, e) => match self.eval(c)? {
+                Value::Scalar(Scalar::Bool(b)) => self.eval(if b { t } else { e }),
+                other => Err(Error::runtime(
+                    format!("if condition is {}, not bool", other.ty()),
+                    Some(self.span),
+                )),
+            },
             PlanNode::Kernel(id, args) => {
                 let args = args.iter().map(|a| self.eval(a)).collect::<Result<Vec<_>, _>>()?;
                 let (kernel, used) = self.reg.select_impl(*id, self.isa);

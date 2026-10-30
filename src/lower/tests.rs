@@ -23,6 +23,7 @@ fn show(t: &Term, l: &Lowered, g: &Globals) -> String {
             Leaf::Const(_) => "L_c".to_string(),
         },
         TermKind::Bcast(a) => format!("bcast({})", show(a, l, g)),
+        TermKind::Cond(c, t, e) => format!("if({}, {}, {})", show(c, l, g), show(t, l, g), show(e, l, g)),
         TermKind::Op(op, args) => {
             let args: Vec<String> = args.iter().map(|a| show(a, l, g)).collect();
             format!("{}({})", op_name(*op), args.join(", "))
@@ -328,4 +329,73 @@ fn array_literal_of_non_constant_is_type_error() {
     assert_eq!(e.kind, ErrorKind::Type);
     assert_eq!(e.message, "array literal elements must be constants");
     assert_eq!(e.span, Some(Span { line: 1, col: 23 }));
+}
+
+#[test]
+fn scalar_condition_if_is_lazy() {
+    assert_eq!(
+        run_dump("let x = [1.0]; print(if sum(x) > 0.0 { x } else { x + x });"),
+        ["bind x = L_c", "print if(gt(reduce_add(L_x), L_c), L_x, add(L_x, L_x))"]
+    );
+}
+
+#[test]
+fn mask_condition_if_and_lambda_if_select() {
+    assert_eq!(
+        run_dump("let x = [1.0]; print(if x > 0.0 { 1.0 } else { 0.0 });"),
+        ["bind x = L_c", "print select(gt(L_x, bcast(L_c)), bcast(L_c), bcast(L_c))"]
+    );
+    // A condition on a captured scalar is still per element inside a lambda.
+    assert_eq!(
+        run_dump("let x = [1.0]; let s = sum(x); print(map(x, |v| if s > 0.0 { v } else { 0.0 }));"),
+        ["bind x = L_c", "print select(bcast(gt(reduce_add(L_x), L_c)), L_x, bcast(L_c))"]
+    );
+}
+
+#[test]
+fn repeated_subterm_in_branch_is_not_hoisted() {
+    assert_eq!(
+        run_dump("let x = [1.0]; print(if sum(x) > 0.0 { sum(x + x) + sum(x + x) } else { 0.0 });"),
+        [
+            "bind x = L_c",
+            "print if(gt(reduce_add(L_x), L_c), add(reduce_add(add(L_x, L_x)), reduce_add(add(L_x, L_x))), L_c)"
+        ]
+    );
+    // Repeats in the condition run unconditionally and are hoisted.
+    assert_eq!(
+        run_dump("let x = [1.0]; print(if sum(x) > sum(x) { sum(x) } else { 0.0 });"),
+        [
+            "bind x = L_c",
+            "bind _t0 = reduce_add(L_x)",
+            "print if(gt(L_t0, L_t0), reduce_add(L_x), L_c)"
+        ]
+    );
+}
+
+#[test]
+fn repeated_conditional_is_hoisted_whole() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let c = if sum(x) > 0.0 { 1.0 } else { 2.0 }; print(c + c);"),
+        [
+            "bind x = L_c",
+            "bind c = if(gt(reduce_add(L_x), L_c), L_c, L_c)",
+            "print add(L_c, L_c)"
+        ]
+    );
+    assert_eq!(
+        run_dump("fn f(x: f64[]) -> f64 { if sum(x) > 0.0 { 1.0 } else { 2.0 } } let x = [1.0]; print(f(x) + f(x));"),
+        [
+            "bind x = L_c",
+            "bind _t0 = if(gt(reduce_add(L_x), L_c), L_c, L_c)",
+            "print add(L_t0, L_t0)"
+        ]
+    );
+}
+
+#[test]
+fn single_use_let_inlines_into_branch() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let t = sum(x + x); print(if true { t } else { 0.0 });"),
+        ["bind x = L_c", "print if(L_c, reduce_add(add(L_x, L_x)), L_c)"]
+    );
 }

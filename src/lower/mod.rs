@@ -3,7 +3,9 @@
 //! Function calls and block lets are inlined by substitution, lambdas are lifted so they run
 //! once over whole arrays, scalar operands next to arrays get a broadcast, single-use lets are
 //! inlined, and repeated subterms are hoisted so every statement's term is a tree without
-//! shared structure.
+//! shared structure, except inside the branches of a conditional, which must not run
+//! unconditionally. An `if` on a scalar condition stays a lazy conditional, any other `if`
+//! becomes `select`.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -43,6 +45,9 @@ pub enum TermKind {
     Leaf(LeafId),
     /// A scalar term repeated to the length of the array operands next to it.
     Bcast(Box<Term>),
+    /// Evaluates the scalar `bool` condition, then only the branch it picks. Both branches
+    /// have the type of the term.
+    Cond(Box<Term>, Box<Term>, Box<Term>),
 }
 
 /// A first-order term. Equality and hashing ignore `span`.
@@ -154,7 +159,13 @@ pub fn lower(
     reg: &Registry,
     mode: Mode,
 ) -> Result<Lowered, Error> {
-    let mut lw = Lowerer { g: globals, reg, leaves: Leaves(Vec::new()), env: HashMap::new() };
+    let mut lw = Lowerer {
+        g: globals,
+        reg,
+        leaves: Leaves(Vec::new()),
+        env: HashMap::new(),
+        lambda_depth: 0,
+    };
     let mut stmts = Vec::new();
     let mut exports = Vec::new();
     let mut exported = HashSet::new();
@@ -198,6 +209,8 @@ struct Lowerer<'a> {
     /// Terms substituted for parameters and block locals. Other variables are top-level
     /// bindings and stay leaves.
     env: HashMap<VarId, Term>,
+    /// Number of lambda bodies being lifted around the current expression.
+    lambda_depth: usize,
 }
 
 impl Lowerer<'_> {
@@ -287,8 +300,22 @@ impl Lowerer<'_> {
                 self.op(Op::Compress, vec![x, mask], span)
             }
             TExprKind::If(c, t, f) => {
-                let args = vec![self.expr(c)?, self.expr(t)?, self.expr(f)?];
-                self.op(Op::Select, args, span)
+                let (c, t, f) = (self.expr(c)?, self.expr(t)?, self.expr(f)?);
+                // In a lifted lambda the condition is per element even when it does not
+                // depend on a parameter, and both branches are cheap elementwise terms, so
+                // computing both and selecting is correct there.
+                if self.lambda_depth == 0
+                    && c.ty == ValueType::Scalar(ScalarType::Bool)
+                    && t.ty == f.ty
+                {
+                    let ty = t.ty;
+                    return Ok(Term {
+                        kind: TermKind::Cond(Box::new(c), Box::new(t), Box::new(f)),
+                        ty,
+                        span,
+                    });
+                }
+                self.op(Op::Select, vec![c, t, f], span)
             }
             TExprKind::Block(lets, result) => {
                 let mut saved = Vec::new();
@@ -364,7 +391,10 @@ impl Lowerer<'_> {
     /// stays scalar, so it is filled to the length of the first array.
     fn lift(&mut self, lam: &TLambda, xs: Vec<Term>, span: Span) -> Result<Term, Error> {
         let first = xs[0].clone();
-        let body = self.with_bindings(&lam.params, xs, |lw| lw.expr(&lam.body))?;
+        self.lambda_depth += 1;
+        let body = self.with_bindings(&lam.params, xs, |lw| lw.expr(&lam.body));
+        self.lambda_depth -= 1;
+        let body = body?;
         if is_array(body.ty) {
             return Ok(body);
         }
@@ -414,6 +444,7 @@ fn leaf_vars(t: &Term, leaves: &Leaves, f: &mut impl FnMut(VarId)) {
         }
         TermKind::Bcast(a) => leaf_vars(a, leaves, f),
         TermKind::Op(_, args) => args.iter().for_each(|a| leaf_vars(a, leaves, f)),
+        TermKind::Cond(c, t, e) => [c, t, e].into_iter().for_each(|a| leaf_vars(a, leaves, f)),
     }
 }
 
@@ -432,6 +463,11 @@ fn substitute(t: &Term, pending: &HashMap<VarId, Term>, leaves: &Leaves) -> Term
         TermKind::Bcast(a) => TermKind::Bcast(Box::new(substitute(a, pending, leaves))),
         TermKind::Op(op, args) => {
             TermKind::Op(*op, args.iter().map(|a| substitute(a, pending, leaves)).collect())
+        }
+        // A let used only in a branch moves into it and runs only when the branch does.
+        TermKind::Cond(c, t, e) => {
+            let sub = |a: &Term| Box::new(substitute(a, pending, leaves));
+            TermKind::Cond(sub(c), sub(t), sub(e))
         }
     };
     Term { kind, ty: t.ty, span: t.span }
@@ -464,17 +500,23 @@ fn inline_single_use(stmts: Vec<LStmt>, leaves: &Leaves, exported: &HashSet<VarI
     out
 }
 
-/// Counts every distinct compound subterm. A repeated subterm is descended into once, so
-/// its children are not counted as repeated just because their parent is.
+/// Counts every distinct compound subterm that is evaluated unconditionally. A repeated
+/// subterm is descended into once, so its children are not counted as repeated just because
+/// their parent is. Branches of a conditional are not counted, so nothing inside them is
+/// hoisted into code that always runs.
 fn count_ops(t: &Term, counts: &mut HashMap<Term, usize>) {
     match &t.kind {
         TermKind::Leaf(_) => {}
         TermKind::Bcast(a) => count_ops(a, counts),
-        TermKind::Op(_, args) => {
+        TermKind::Op(..) | TermKind::Cond(..) => {
             let c = counts.entry(t.clone()).or_default();
             *c += 1;
             if *c == 1 {
-                args.iter().for_each(|a| count_ops(a, counts));
+                match &t.kind {
+                    TermKind::Op(_, args) => args.iter().for_each(|a| count_ops(a, counts)),
+                    TermKind::Cond(cond, ..) => count_ops(cond, counts),
+                    TermKind::Leaf(_) | TermKind::Bcast(_) => {}
+                }
             }
         }
     }
@@ -495,13 +537,18 @@ impl Hoister<'_> {
             TermKind::Bcast(a) => {
                 Term { kind: TermKind::Bcast(Box::new(self.go(a))), ty: t.ty, span: t.span }
             }
-            TermKind::Op(op, args) => {
+            TermKind::Op(..) | TermKind::Cond(..) => {
                 let shared = self.counts[t] >= 2;
                 if shared && let Some(leaf) = self.done.get(t) {
                     return leaf.clone();
                 }
-                let args = args.iter().map(|a| self.go(a)).collect();
-                let rebuilt = Term { kind: TermKind::Op(*op, args), ty: t.ty, span: t.span };
+                let kind = match &t.kind {
+                    TermKind::Op(op, args) => TermKind::Op(*op, args.iter().map(|a| self.go(a)).collect()),
+                    // Branches stay as they are, see `count_ops`.
+                    TermKind::Cond(c, a, b) => TermKind::Cond(Box::new(self.go(c)), a.clone(), b.clone()),
+                    TermKind::Leaf(_) | TermKind::Bcast(_) => unreachable!("matched above"),
+                };
+                let rebuilt = Term { kind, ty: t.ty, span: t.span };
                 if !shared {
                     return rebuilt;
                 }
@@ -517,7 +564,8 @@ impl Hoister<'_> {
 }
 
 /// Hoists the compound subterms that occur at least twice into binds placed before the
-/// statement, so the statement's own term has no shared structure.
+/// statement, so the statement's own term has no shared structure outside the branches of
+/// conditionals.
 fn hoist_repeated(mut s: LStmt, leaves: &mut Leaves, g: &mut Globals) -> Vec<LStmt> {
     let mut counts = HashMap::new();
     count_ops(stmt_term_mut(&mut s), &mut counts);

@@ -7,7 +7,7 @@ mod sexpr;
 use crate::check::Globals;
 use crate::error::Error;
 use crate::kernels::{KernelId, Registry};
-use crate::lower::{Leaf, LeafId, Term};
+use crate::lower::{Leaf, LeafId, Term, TermKind};
 use crate::value::Value;
 
 use sexpr::Sexp;
@@ -28,6 +28,8 @@ pub enum PlanNode {
     Leaf(LeafId),
     /// A scalar operand of a single-op array kernel, repeated to the array length.
     Bcast(Box<PlanNode>),
+    /// Evaluates the scalar `bool` condition, then only the branch it picks.
+    Cond(Box<PlanNode>, Box<PlanNode>, Box<PlanNode>),
 }
 
 /// Selects kernels for terms. Holds the egglog prelude generated from one registry, which
@@ -44,20 +46,27 @@ impl Planner {
     }
 
     /// The cheapest cover of `term` by kernels. Every op node of the term is covered, either
-    /// by its single-op kernel or as part of a fused kernel. Errors are internal planner
-    /// failures and carry the term's span.
+    /// by its single-op kernel or as part of a fused kernel. The condition and branches of a
+    /// conditional are planned on their own, so no kernel spans a conditional's boundary.
+    /// Errors are internal planner failures and carry the term's span.
     pub fn plan(&self, reg: &Registry, term: &Term) -> Result<PlanNode, Error> {
+        if let TermKind::Cond(c, t, e) = &term.kind {
+            let part = |x: &Term| self.plan(reg, x).map(Box::new);
+            return Ok(PlanNode::Cond(part(c)?, part(t)?, part(e)?));
+        }
         let fail = |msg: String| Error::runtime(format!("planner: {msg}"), Some(term.span));
-        let (commands, root) = egglog::emit(reg, term).map_err(fail)?;
+        let (commands, root, holes) = egglog::emit(reg, term).map_err(fail)?;
+        let holes = holes.iter().map(|h| self.plan(reg, h)).collect::<Result<Vec<_>, _>>()?;
         let extracted = egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
             .map_err(fail)?;
         let sexp = sexpr::parse(&extracted).map_err(fail)?;
-        to_node(reg, &sexp).map_err(fail)
+        to_node(reg, &sexp, &holes).map_err(fail)
     }
 }
 
-/// Maps an extracted egglog term back to a plan.
-fn to_node(reg: &Registry, sexp: &Sexp) -> Result<PlanNode, String> {
+/// Maps an extracted egglog term back to a plan. `holes` are the plans of the conditionals
+/// that `egglog::emit` replaced by holes.
+fn to_node(reg: &Registry, sexp: &Sexp, holes: &[PlanNode]) -> Result<PlanNode, String> {
     let bad = || format!("unexpected extracted term `{sexp}`");
     let Sexp::List(items) = sexp else {
         return Err(bad());
@@ -70,22 +79,26 @@ fn to_node(reg: &Registry, sexp: &Sexp) -> Result<PlanNode, String> {
             let n = n.parse::<u32>().map_err(|_| bad())?;
             Ok(PlanNode::Leaf(LeafId(n)))
         }
-        (egglog::BCAST, [inner]) => Ok(PlanNode::Bcast(Box::new(to_node(reg, inner)?))),
+        (egglog::HOLE, [Sexp::Atom(n)]) => {
+            let n = n.parse::<usize>().map_err(|_| bad())?;
+            holes.get(n).cloned().ok_or_else(bad)
+        }
+        (egglog::BCAST, [inner]) => Ok(PlanNode::Bcast(Box::new(to_node(reg, inner, holes)?))),
         _ => {
             let name = head.strip_prefix(egglog::KERNEL_PREFIX).ok_or_else(bad)?;
             let id = reg.by_name(name).ok_or_else(|| format!("unknown kernel `{name}`"))?;
             if reg.get(id).inputs.len() != args.len() {
                 return Err(bad());
             }
-            let args = args.iter().map(|a| to_node(reg, a)).collect::<Result<_, _>>()?;
+            let args = args.iter().map(|a| to_node(reg, a, holes)).collect::<Result<_, _>>()?;
             Ok(PlanNode::Kernel(id, args))
         }
     }
 }
 
 /// Renders a plan as an s-expression of kernel names. Variable leaves show their name,
-/// scalar constants their value, constant arrays `<type[len]>`, and a broadcast shows the
-/// scalar inside it.
+/// scalar constants their value, constant arrays `<type[len]>`, a broadcast shows the
+/// scalar inside it, and a conditional is `(if C then T else E)`.
 pub fn render(reg: &Registry, node: &PlanNode, leaves: &[Leaf], globals: &Globals) -> String {
     match node {
         PlanNode::Kernel(id, args) => {
@@ -104,5 +117,11 @@ pub fn render(reg: &Registry, node: &PlanNode, leaves: &[Leaf], globals: &Global
             Leaf::Const(Value::Str(s)) => format!("{s:?}"),
         },
         PlanNode::Bcast(inner) => render(reg, inner, leaves, globals),
+        PlanNode::Cond(c, t, e) => format!(
+            "(if {} then {} else {})",
+            render(reg, c, leaves, globals),
+            render(reg, t, leaves, globals),
+            render(reg, e, leaves, globals),
+        ),
     }
 }

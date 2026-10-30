@@ -16,6 +16,9 @@ pub const KERNEL_PREFIX: &str = "K_";
 pub const LEAF: &str = "Leaf";
 /// Constructor of a broadcast scalar operand.
 pub const BCAST: &str = "Bcast";
+/// Constructor of a conditional planned on its own, applied to its index in the holes that
+/// `emit` returns. No rewrite looks into it.
+pub const HOLE: &str = "Hole";
 /// Relation holding the e-classes whose value is a materialized array, as opposed to a
 /// broadcast scalar or a scalar.
 const ARR: &str = "Arr";
@@ -27,7 +30,9 @@ fn kernel_ctor(name: &str) -> String {
 /// The datatype with one constructor per kernel, the `Arr` relation, then the exact
 /// rewrites and one rewrite per fused kernel pattern.
 pub fn prelude(reg: &Registry) -> Result<String, String> {
-    let mut out = format!("(datatype Expr\n  ({LEAF} i64 :cost 0)\n  ({BCAST} Expr :cost 0)\n");
+    let mut out = format!(
+        "(datatype Expr\n  ({LEAF} i64 :cost 0)\n  ({HOLE} i64 :cost 0)\n  ({BCAST} Expr :cost 0)\n"
+    );
     for (_, def) in reg.iter() {
         let args = " Expr".repeat(def.inputs.len());
         writeln!(out, "  ({}{args} :cost {})", kernel_ctor(&def.name), def.cost)
@@ -98,15 +103,16 @@ fn fused_rule(def: &KernelDef) -> Result<Option<String>, String> {
 
 /// The per-statement commands for `term`: one `let` per node in post-order, with an `Arr`
 /// fact for every node that is an array and not a broadcast. Each op is written as the
-/// kernel that `Registry::lookup` resolves for its argument types. Returns the commands and
-/// the name bound to the root.
-pub fn emit(reg: &Registry, term: &Term) -> Result<(String, String), String> {
+/// kernel that `Registry::lookup` resolves for its argument types, and each conditional as a
+/// hole. Returns the commands, the name bound to the root, and the conditionals in hole order.
+pub fn emit(reg: &Registry, term: &Term) -> Result<(String, String, Vec<Term>), String> {
     // Facts per original node suffice because every rewrite adds a single constructor over
     // existing e-classes, so saturation never creates an e-class without an original node.
     let mut out = String::new();
     let mut next = 0;
-    let root = emit_node(reg, term, &mut out, &mut next)?;
-    Ok((out, root))
+    let mut holes = Vec::new();
+    let root = emit_node(reg, term, &mut out, &mut next, &mut holes)?;
+    Ok((out, root, holes))
 }
 
 fn emit_node(
@@ -114,10 +120,17 @@ fn emit_node(
     term: &Term,
     out: &mut String,
     next: &mut usize,
+    holes: &mut Vec<Term>,
 ) -> Result<String, String> {
     let expr = match &term.kind {
         TermKind::Leaf(id) => format!("({LEAF} {})", id.0),
-        TermKind::Bcast(inner) => format!("({BCAST} {})", emit_node(reg, inner, out, next)?),
+        TermKind::Bcast(inner) => {
+            format!("({BCAST} {})", emit_node(reg, inner, out, next, holes)?)
+        }
+        TermKind::Cond(..) => {
+            holes.push(term.clone());
+            format!("({HOLE} {})", holes.len() - 1)
+        }
         TermKind::Op(op, args) => {
             let tys: Vec<_> = args.iter().map(|a| a.ty).collect();
             let id = reg
@@ -126,7 +139,7 @@ fn emit_node(
             let mut expr = format!("({}", kernel_ctor(&reg.get(id).name));
             for a in args {
                 expr.push(' ');
-                expr.push_str(&emit_node(reg, a, out, next)?);
+                expr.push_str(&emit_node(reg, a, out, next, holes)?);
             }
             expr.push(')');
             expr
