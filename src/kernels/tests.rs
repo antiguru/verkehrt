@@ -2,7 +2,7 @@ use super::scalar::construct::splitmix64;
 use super::scalar::elementwise::{Operand, binary_into};
 use super::scalar::reduce::{CanonicalProduct, CanonicalSum, canonical_product, canonical_sum};
 use super::*;
-use crate::value::{Array, Scalar};
+use crate::value::{Arg, Array, Scalar};
 
 fn f64s(v: &[f64]) -> Value {
     Value::Array(Array::from_vec(v.to_vec()))
@@ -25,9 +25,9 @@ fn call(reg: &Registry, name: &str, args: &[Value]) -> Result<Value, String> {
     let id = reg
         .by_name(name)
         .unwrap_or_else(|| panic!("no kernel {name}"));
-    let (f, isa) = reg.select_impl(id, Isa::Scalar);
-    assert_eq!(isa, Isa::Scalar);
-    f(args)
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    assert_eq!(dispatch.variant_used(id), Variant::SCALAR);
+    dispatch.call(reg, id, args)
 }
 
 fn arr(v: Value) -> Array {
@@ -123,7 +123,7 @@ fn lookup_is_exact_for_non_elementwise_kernels() {
             cost: 0,
             commutative: false,
             pattern: None,
-            impls: [Some(dummy as KernelFn), None, None, None],
+            impls: KernelImpl::Whole(dummy).scalar_only(),
         })
     };
     let fill = def(
@@ -363,7 +363,7 @@ fn kernel_names_are_unique_valid_identifiers() {
             _ => KernelClass::Elementwise,
         };
         assert_eq!(def.class, expected, "{}", def.name);
-        assert!(def.impls[Isa::Scalar.index()].is_some());
+        assert!(def.impls[Variant::SCALAR.index()].is_some());
     }
 }
 
@@ -395,12 +395,57 @@ fn array_kernels_exist_for_v1_types_only() {
 }
 
 #[test]
-fn select_impl_falls_back_to_scalar() {
+fn resolve_falls_back_to_scalar_without_variants() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64").unwrap();
     for isa in Isa::ALL {
-        assert_eq!(reg.select_impl(id, isa).1, Isa::Scalar);
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            assert_eq!(reg.resolve(isa, backend).variant_used(id), Variant::SCALAR);
+        }
     }
+}
+
+#[test]
+fn variant_index_and_display() {
+    let all: Vec<Variant> = Isa::ALL
+        .into_iter()
+        .flat_map(|isa| {
+            [Backend::Auto, Backend::Intrinsics]
+                .into_iter()
+                .map(move |backend| Variant { isa, backend })
+        })
+        .filter(|v| v.isa != Isa::Scalar || v.backend == Backend::Auto)
+        .collect();
+    let mut indexes: Vec<usize> = all.iter().map(|v| v.index()).collect();
+    indexes.sort_unstable();
+    assert_eq!(indexes, (0..Variant::COUNT).collect::<Vec<_>>());
+    assert_eq!(Variant::SCALAR.to_string(), "isa=scalar");
+    let avx2 = Variant {
+        isa: Isa::Avx2,
+        backend: Backend::Auto,
+    };
+    assert_eq!(avx2.to_string(), "isa=avx2 backend=auto");
+    assert_eq!(Backend::default(), Backend::Intrinsics);
+}
+
+#[test]
+#[should_panic(expected = "does not fit its class")]
+fn add_rejects_entries_of_another_class() {
+    fn entry(_: &[Arg], _: &mut [u8]) -> Result<(), String> {
+        Ok(())
+    }
+    let mut reg = Registry::new();
+    reg.add(KernelDef {
+        name: "bad".into(),
+        class: KernelClass::Reduction,
+        op: None,
+        inputs: vec![],
+        output: sc_ty(ScalarType::I64),
+        cost: 0,
+        commutative: false,
+        pattern: None,
+        impls: KernelImpl::Elementwise(entry).scalar_only(),
+    });
 }
 
 #[test]

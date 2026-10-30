@@ -5,15 +5,130 @@ use std::collections::HashMap;
 
 pub use crate::ops::Isa;
 use crate::ops::Op;
-use crate::value::{ScalarType, Value, ValueType};
+use crate::value::{Arg, ArrayBuilder, Scalar, ScalarType, Value, ValueType};
 
+pub mod dispatch;
 pub mod scalar;
+
+pub use dispatch::Dispatch;
 
 #[cfg(test)]
 mod tests;
 
-/// Runs a kernel. The `String` is the runtime error message, the executor adds the span.
-pub type KernelFn = fn(&[Value]) -> Result<Value, String>;
+/// An elementwise entry. `out` is the destination rows of the output type as bytes, every
+/// `Rows` argument has exactly `out.len() / width` rows, and the caller guarantees that the
+/// CPU supports the entry's ISA. The `String` is the runtime error message, the executor
+/// adds the span.
+pub type ElementwiseFn = unsafe fn(args: &[Arg], out: &mut [u8]) -> Result<(), String>;
+
+/// Creates the accumulator of a reduction. The caller guarantees that the CPU supports the
+/// entry's ISA.
+pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
+
+/// The running state of one reduction.
+///
+/// Every `update` except the last receives a row count that is a multiple of 16, and `finish`
+/// follows the last `update`. An empty input means no `update` at all.
+pub trait Reducer: Send {
+    fn update(&mut self, args: &[Arg]) -> Result<(), String>;
+    fn finish(self: Box<Self>) -> Result<Scalar, String>;
+}
+
+/// A selection entry. It appends the selected rows of this tile to `out`, and `base` is the
+/// tile's first row index in the whole array. The caller guarantees that the CPU supports
+/// the entry's ISA.
+pub type SelectionFn =
+    unsafe fn(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String>;
+
+/// A kernel that sees its whole arguments at once, for class `Whole`.
+pub type WholeFn = fn(&[Value]) -> Result<Value, String>;
+
+/// The entry of a kernel variant. The variant of the entry matches `KernelDef::class`.
+#[derive(Clone, Copy)]
+pub enum KernelImpl {
+    Elementwise(ElementwiseFn),
+    Reduction(ReducerFn),
+    Selection(SelectionFn),
+    Whole(WholeFn),
+}
+
+impl KernelImpl {
+    /// Whether the entry fits a kernel of `class`.
+    fn fits(self, class: KernelClass) -> bool {
+        matches!(
+            (self, class),
+            (KernelImpl::Elementwise(_), KernelClass::Elementwise)
+                | (KernelImpl::Reduction(_), KernelClass::Reduction)
+                | (KernelImpl::Selection(_), KernelClass::Selection)
+                | (KernelImpl::Whole(_), KernelClass::Whole)
+        )
+    }
+
+    /// A table with only the scalar slot set.
+    pub fn scalar_only(self) -> [Option<KernelImpl>; Variant::COUNT] {
+        let mut impls = [None; Variant::COUNT];
+        impls[Variant::SCALAR.index()] = Some(self);
+        impls
+    }
+}
+
+/// How an ISA variant of a kernel is written.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Backend {
+    /// Plain Rust that the compiler vectorizes for the ISA.
+    Auto,
+    /// Hand-written intrinsics.
+    #[default]
+    Intrinsics,
+}
+
+/// One implementation of a kernel: an instruction set and how it is written.
+/// `Isa::Scalar` has only the scalar entry, whatever its backend says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Variant {
+    pub isa: Isa,
+    pub backend: Backend,
+}
+
+impl Variant {
+    /// The number of slots in `KernelDef::impls`.
+    pub const COUNT: usize = 7;
+
+    pub const SCALAR: Variant = Variant {
+        isa: Isa::Scalar,
+        backend: Backend::Auto,
+    };
+
+    /// Position in a `KernelDef::impls` table: scalar, then auto and intrinsics for each of
+    /// AVX2, AVX-512, and NEON.
+    pub fn index(self) -> usize {
+        let base = match self.isa {
+            Isa::Scalar => return 0,
+            Isa::Avx2 => 1,
+            Isa::Avx512 => 3,
+            Isa::Neon => 5,
+        };
+        base + match self.backend {
+            Backend::Auto => 0,
+            Backend::Intrinsics => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for Variant {
+    /// `isa=scalar`, or `isa=avx2 backend=auto`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "isa={}", self.isa.name())?;
+        if self.isa != Isa::Scalar {
+            let backend = match self.backend {
+                Backend::Auto => "auto",
+                Backend::Intrinsics => "intrinsics",
+            };
+            write!(f, " backend={backend}")?;
+        }
+        Ok(())
+    }
+}
 
 /// The expression a fused kernel implements, as an egglog pattern over single-op kernel names.
 /// The planner later emits `(rewrite <lhs> (<kernel name> <vars...>))` for it.
@@ -65,8 +180,8 @@ pub struct KernelDef {
     pub cost: u64,
     pub commutative: bool,
     pub pattern: Option<FusedPattern>,
-    /// Indexed by `Isa::index`. The scalar entry is always `Some`.
-    pub impls: [Option<KernelFn>; 4],
+    /// Indexed by `Variant::index`. The scalar entry is always `Some`.
+    pub impls: [Option<KernelImpl>; Variant::COUNT],
 }
 
 impl KernelDef {
@@ -114,14 +229,23 @@ impl Registry {
         reg
     }
 
-    /// Adds a kernel. Panics on a duplicate name or a missing scalar implementation,
-    /// because both are bugs in the kernel tables.
+    /// Adds a kernel. Panics on a duplicate name, a missing scalar implementation, or an
+    /// entry that does not match the class, because all are bugs in the kernel tables.
     pub(crate) fn add(&mut self, def: KernelDef) -> KernelId {
         assert!(
-            def.impls[Isa::Scalar.index()].is_some(),
+            def.impls[Variant::SCALAR.index()].is_some(),
             "kernel {} lacks a scalar impl",
             def.name
         );
+        for imp in def.impls.iter().flatten() {
+            // TODO(task 2): reductions, selections, and fused kernels still register their
+            // whole-array functions. Remove this allowance when they have class entries.
+            assert!(
+                imp.fits(def.class) || matches!(imp, KernelImpl::Whole(_)),
+                "kernel {} has an entry that does not fit its class",
+                def.name
+            );
+        }
         let id = KernelId(u32::try_from(self.defs.len()).expect("kernel count fits in u32"));
         let previous = self.by_name.insert(def.name.clone(), id);
         assert!(previous.is_none(), "duplicate kernel name {}", def.name);
@@ -160,19 +284,35 @@ impl Registry {
         })
     }
 
-    /// The implementation for `isa`, falling back to scalar when there is none or the CPU
-    /// cannot run it. Returns the instruction set actually used.
-    pub fn select_impl(&self, id: KernelId, isa: Isa) -> (KernelFn, Isa) {
-        let def = self.get(id);
-        if isa.is_available()
-            && let Some(f) = def.impls[isa.index()]
-        {
-            return (f, isa);
-        }
-        (
-            def.impls[Isa::Scalar.index()].expect("checked in add"),
-            Isa::Scalar,
-        )
+    /// Picks one entry per kernel for `isa` and `backend` and records the variant picked.
+    /// With `Intrinsics` a kernel uses its intrinsics entry, else its auto entry, else scalar.
+    /// With `Auto` it uses its auto entry, else scalar. ISA entries are installed only when
+    /// the CPU supports the ISA, and feature detection runs once here.
+    pub fn resolve(&self, isa: Isa, backend: Backend) -> Dispatch {
+        let usable = isa != Isa::Scalar && isa.is_available();
+        let preference: &[Backend] = match backend {
+            Backend::Intrinsics => &[Backend::Intrinsics, Backend::Auto],
+            Backend::Auto => &[Backend::Auto],
+        };
+        let entries = self
+            .defs
+            .iter()
+            .map(|def| {
+                let picked = usable
+                    .then(|| {
+                        preference.iter().find_map(|&b| {
+                            let variant = Variant { isa, backend: b };
+                            def.impls[variant.index()].map(|imp| (imp, variant))
+                        })
+                    })
+                    .flatten();
+                picked.unwrap_or_else(|| {
+                    let imp = def.impls[Variant::SCALAR.index()].expect("checked in add");
+                    (imp, Variant::SCALAR)
+                })
+            })
+            .collect();
+        Dispatch::new(entries)
     }
 }
 

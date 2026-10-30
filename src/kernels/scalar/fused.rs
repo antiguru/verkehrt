@@ -11,7 +11,8 @@ use crate::kernels::scalar::elementwise::{Num, arity_error, scalar_from, scalar_
 use crate::kernels::scalar::reduce::{CanonicalSum, Float, Reducible, array_arg};
 use crate::kernels::scalar::select::array_of;
 use crate::kernels::{
-    FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelFn, KernelId, Registry,
+    Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
+    Registry, WholeFn,
 };
 use crate::value::{Elem, ScalarType, Value, ValueType};
 
@@ -183,7 +184,7 @@ fn add_fused(
     cost_in_widths: u64,
     lhs: String,
     vars: &[&str],
-    f: KernelFn,
+    f: WholeFn,
 ) {
     let w = u64::try_from(ty.width()).expect("width fits in u64");
     reg.add(KernelDef {
@@ -198,7 +199,7 @@ fn add_fused(
             lhs,
             vars: vars.iter().map(|v| (*v).to_string()).collect(),
         }),
-        impls: [Some(f), None, None, None],
+        impls: KernelImpl::Whole(f).scalar_only(),
     });
 }
 
@@ -332,7 +333,12 @@ fn parse_at(tokens: &[&str], pos: &mut usize) -> Result<Sx, String> {
 }
 
 /// Evaluates a pattern through the single-op scalar kernels. `env` binds the `?` variables.
-fn eval(reg: &Registry, sx: &Sx, env: &HashMap<&str, &Value>) -> Result<Value, String> {
+fn eval(
+    reg: &Registry,
+    dispatch: &Dispatch,
+    sx: &Sx,
+    env: &HashMap<&str, &Value>,
+) -> Result<Value, String> {
     match sx {
         Sx::Atom(a) => env
             .get(a.as_str())
@@ -344,7 +350,7 @@ fn eval(reg: &Registry, sx: &Sx, env: &HashMap<&str, &Value>) -> Result<Value, S
             };
             let args = rest
                 .iter()
-                .map(|a| eval(reg, a, env))
+                .map(|a| eval(reg, dispatch, a, env))
                 .collect::<Result<Vec<_>, _>>()?;
             if head == "Bcast" {
                 // The scalar passes through as a scalar operand, the kernels broadcast it.
@@ -363,8 +369,7 @@ fn eval(reg: &Registry, sx: &Sx, env: &HashMap<&str, &Value>) -> Result<Value, S
                     "kernel {head} does not accept its pattern arguments"
                 ));
             }
-            let (f, _) = reg.select_impl(id, Isa::Scalar);
-            f(&args)
+            dispatch.call(reg, id, &args)
         }
     }
 }
@@ -381,5 +386,6 @@ pub fn reference(reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, 
         return Err(arity_error(pattern.vars.len(), args.len()));
     }
     let env: HashMap<&str, &Value> = pattern.vars.iter().map(String::as_str).zip(args).collect();
-    eval(reg, &parse(&pattern.lhs)?, &env)
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    eval(reg, &dispatch, &parse(&pattern.lhs)?, &env)
 }

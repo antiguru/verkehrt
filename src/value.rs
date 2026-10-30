@@ -145,6 +145,27 @@ impl Scalar {
     }
 }
 
+impl Scalar {
+    /// The scalar of type `ty` stored in the first `ty.width()` bytes of `bytes`. Bool reads
+    /// as nonzero. Panics when `bytes` is shorter than the type's width.
+    pub fn from_bytes(ty: ScalarType, bytes: &[u8]) -> Scalar {
+        let b = &bytes[..ty.width()];
+        match ty {
+            ScalarType::I8 => Scalar::I8(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I16 => Scalar::I16(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I32 => Scalar::I32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::I64 => Scalar::I64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U8 => Scalar::U8(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U16 => Scalar::U16(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U32 => Scalar::U32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::U64 => Scalar::U64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::F32 => Scalar::F32(bytemuck::pod_read_unaligned(b)),
+            ScalarType::F64 => Scalar::F64(bytemuck::pod_read_unaligned(b)),
+            ScalarType::Bool => Scalar::Bool(b[0] != 0),
+        }
+    }
+}
+
 impl fmt::Display for Scalar {
     /// Floats use `{:?}` so they always show a decimal point (`1.0`, `NaN`, `-0.0`, `inf`).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -320,6 +341,26 @@ impl Array {
         }
     }
 
+    /// Like `build`, but `f` fills the raw bytes of the `len` elements of `elem` and may fail.
+    /// The buffer is zeroed and 64-byte aligned. Fails instead of panicking when the size
+    /// exceeds `isize::MAX` bytes. For `Bool`, `f` must write only 0 or 1.
+    pub fn build_bytes(
+        len: usize,
+        elem: ScalarType,
+        f: impl FnOnce(&mut [u8]) -> Result<(), String>,
+    ) -> Result<Array, String> {
+        let size = Array::byte_size(len, elem)?;
+        let mut blocks = Array::zeroed(len, elem);
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
+        f(&mut bytes[..size])?;
+        Ok(Array {
+            buf: Arc::new(blocks),
+            offset: 0,
+            len,
+            elem,
+        })
+    }
+
     /// Element `i` as a scalar. Panics when out of range.
     pub fn get(&self, i: usize) -> Scalar {
         assert!(
@@ -339,6 +380,78 @@ impl Array {
             ScalarType::F32 => Scalar::F32(self.as_slice::<f32>()[i]),
             ScalarType::F64 => Scalar::F64(self.as_slice::<f64>()[i]),
             ScalarType::Bool => Scalar::Bool(self.as_bool_bytes()[i] != 0),
+        }
+    }
+}
+
+/// One operand of a kernel entry for one tile: rows of an array or one value repeated for
+/// every row. `Rows` is a view, so a tile is `array.slice(start, len)`.
+#[derive(Clone, Debug)]
+pub enum Arg {
+    Rows(Array),
+    Splat(Scalar),
+}
+
+/// A growable 64-byte aligned buffer of rows of one element type. Selection kernels append
+/// the rows they keep, and `finish` turns the buffer into an `Array` without copying.
+pub struct ArrayBuilder {
+    blocks: Vec<Block>,
+    /// Rows appended so far.
+    len: usize,
+    elem: ScalarType,
+}
+
+impl ArrayBuilder {
+    pub fn new(elem: ScalarType) -> ArrayBuilder {
+        ArrayBuilder::with_capacity(elem, 0)
+    }
+
+    /// Reserves room for `rows` rows. Panics when that exceeds `isize::MAX` bytes.
+    pub fn with_capacity(elem: ScalarType, rows: usize) -> ArrayBuilder {
+        let bytes = Array::byte_size(rows, elem).unwrap_or_else(|e| panic!("{e}"));
+        ArrayBuilder {
+            blocks: Vec::with_capacity(bytes.div_ceil(64)),
+            len: 0,
+            elem,
+        }
+    }
+
+    /// Appends rows. Panics when `T` does not match the element type, where bool takes `u8`.
+    pub fn extend<T: Elem>(&mut self, rows: &[T]) {
+        let matches =
+            T::TYPE == self.elem || (self.elem == ScalarType::Bool && T::TYPE == ScalarType::U8);
+        assert!(
+            matches,
+            "extend with {} rows on a {} builder",
+            T::TYPE.name(),
+            self.elem.name()
+        );
+        let w = self.elem.width();
+        let start = self.len * w;
+        let end =
+            Array::byte_size(self.len + rows.len(), self.elem).unwrap_or_else(|e| panic!("{e}"));
+        // `Vec::resize` grows amortized and zero fills, so the bytes past `end` stay zero.
+        self.blocks.resize(end.div_ceil(64), Block([0; 64]));
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(self.blocks.as_mut_slice());
+        bytes[start..end].copy_from_slice(bytemuck::cast_slice(rows));
+        self.len += rows.len();
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Turns the buffer into an array without copying.
+    pub fn finish(self) -> Array {
+        Array {
+            buf: Arc::new(self.blocks),
+            offset: 0,
+            len: self.len,
+            elem: self.elem,
         }
     }
 }
@@ -461,6 +574,28 @@ mod tests {
         let e = Array::byte_size(usize::MAX, ScalarType::F64).unwrap_err();
         assert_eq!(e, format!("array of {} elements is too large", usize::MAX));
         assert!(Array::try_build::<i64>(usize::MAX, |_| {}).is_err());
+    }
+
+    #[test]
+    fn array_builder_is_aligned_and_typed() {
+        let mut b = ArrayBuilder::new(ScalarType::F64);
+        b.extend(&[1.0f64, 2.0, 3.0]);
+        b.extend(&(0..70).map(f64::from).collect::<Vec<_>>());
+        assert_eq!(b.len(), 73);
+        let a = b.finish();
+        assert_eq!(a.len(), 73);
+        assert_eq!(a.as_slice::<f64>()[..4], [1.0, 2.0, 3.0, 0.0]);
+        assert_eq!(a.as_slice::<f64>()[72], 69.0);
+        assert_eq!(a.as_slice::<f64>().as_ptr() as usize % 64, 0);
+        let mut bools = ArrayBuilder::new(ScalarType::Bool);
+        bools.extend(&[1u8, 0]);
+        assert_eq!(bools.finish().as_bool_bytes(), &[1, 0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "extend with i64 rows on a f64 builder")]
+    fn array_builder_rejects_other_types() {
+        ArrayBuilder::new(ScalarType::F64).extend(&[1i64]);
     }
 
     #[test]

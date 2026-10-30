@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::check::{Globals, TStmt, VarId, check};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
-use crate::kernels::{Isa, Registry};
+use crate::kernels::{Backend, Dispatch, Isa, Registry};
 use crate::lower::{LStmt, Mode, lower};
 use crate::plan::{Planner, render};
 use crate::syntax::parse;
@@ -17,6 +17,8 @@ use crate::value::{Value, ValueType};
 pub struct Options {
     /// The instruction set to run kernels with, `None` detects the best one.
     pub isa: Option<Isa>,
+    /// How the instruction set's kernels are written, see `Registry::resolve`.
+    pub backend: Backend,
     /// Print one plan line per statement to the diagnostic stream before execution.
     pub show_plan: bool,
     /// Print one line per kernel call to the diagnostic stream.
@@ -27,7 +29,7 @@ pub struct Options {
 
 pub struct Interpreter {
     opts: Options,
-    isa: Isa,
+    dispatch: Dispatch,
     reg: Registry,
     planner: Planner,
     globals: Globals,
@@ -71,9 +73,10 @@ impl Interpreter {
         };
         let reg = Registry::new();
         let planner = Planner::new(&reg);
+        let dispatch = reg.resolve(isa, opts.backend);
         Ok(Interpreter {
             opts,
-            isa,
+            dispatch,
             reg,
             planner,
             globals: Globals::new(),
@@ -151,7 +154,14 @@ impl Interpreter {
             trace: self.opts.trace,
             stats: self.opts.stats.then_some(&mut self.stats),
         };
-        let result = run_plan(&self.reg, self.isa, &c.plan, &mut self.env, obs, &mut sinks);
+        let result = run_plan(
+            &self.reg,
+            &self.dispatch,
+            &c.plan,
+            &mut self.env,
+            obs,
+            &mut sinks,
+        );
         if result.is_err() {
             // A failed input exposes no new names and keeps old bindings. Variables created
             // by it are dropped from the environment because their ids will be reused.
@@ -285,7 +295,7 @@ impl Prepared {
         };
         run_plan(
             &interp.reg,
-            interp.isa,
+            &interp.dispatch,
             &self.plan,
             &mut env,
             obs,

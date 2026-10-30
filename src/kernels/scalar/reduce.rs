@@ -6,7 +6,7 @@
 //! against these functions.
 
 use crate::kernels::scalar::elementwise::{Num, arity_error, scalar_from, slice_of};
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelFn, Registry};
+use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, WholeFn};
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
@@ -262,7 +262,7 @@ fn add_reduction(
     name: String,
     in_ty: ScalarType,
     out_ty: ScalarType,
-    f: KernelFn,
+    f: WholeFn,
 ) {
     reg.add(KernelDef {
         name,
@@ -273,7 +273,7 @@ fn add_reduction(
         cost: u64::try_from(in_ty.width()).expect("width fits in u64"),
         commutative: false,
         pattern: None,
-        impls: [Some(f), None, None, None],
+        impls: KernelImpl::Whole(f).scalar_only(),
     });
 }
 
@@ -357,7 +357,7 @@ fn register_bool(reg: &mut Registry) {
         ("reduce_or_bool", Op::Reduce(ReduceOp::Or)),
         ("reduce_xor_bool", Op::Reduce(ReduceOp::Xor)),
     ] {
-        let f: KernelFn = match op {
+        let f: WholeFn = match op {
             Op::Reduce(ReduceOp::And) => |args| {
                 reduce_run::<u8, u8>(args, B, B, |xs| Ok(u8::from(xs.iter().all(|&x| x != 0))))
             },

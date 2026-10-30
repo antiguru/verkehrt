@@ -3,7 +3,7 @@
 
 use crate::kernels::scalar::elementwise::{arity_error, slice_of};
 use crate::kernels::scalar::reduce::array_arg;
-use crate::kernels::{InputSpec, KernelClass, KernelDef, Registry};
+use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
 use crate::ops::Op;
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
@@ -81,7 +81,7 @@ macro_rules! compress {
             cost: 2 * u64::try_from($ty.width()).expect("width fits in u64") + 1,
             commutative: false,
             pattern: None,
-            impls: [Some(|args| run_compress::<$t>(args, $ty)), None, None, None],
+            impls: KernelImpl::Whole(|args| run_compress::<$t>(args, $ty)).scalar_only(),
         })
     };
 }
@@ -103,6 +103,6 @@ pub(crate) fn register(reg: &mut Registry) {
         cost: 9,
         commutative: false,
         pattern: None,
-        impls: [Some(run_where), None, None, None],
+        impls: KernelImpl::Whole(run_where).scalar_only(),
     });
 }

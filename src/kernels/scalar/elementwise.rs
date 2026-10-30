@@ -1,14 +1,16 @@
 //! Scalar reference implementations of the single-op elementwise kernels.
 //!
-//! Every kernel is a thin wrapper over a slice function (`unary_into`, `binary_into`,
+//! Every kernel entry is a thin wrapper over a slice function (`unary_into`, `binary_into`,
 //! `select_into`) that fills exactly `out.len()` rows. A tiled executor calls the same
-//! slice function once per tile with `Operand::range` windows.
+//! entry once per tile with `Arg::Rows` windows. The scalar-only `_s` kernels share the
+//! entry of their array kernel, because a one-row destination with `Splat` operands is the
+//! same computation.
 
 use std::ops::Range;
 
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelFn, Registry};
+use crate::kernels::{ElementwiseFn, InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
 use crate::ops::Op;
-use crate::value::{Array, Elem, Scalar, ScalarType, Value, ValueType};
+use crate::value::{Arg, Array, Elem, Scalar, ScalarType, ValueType};
 
 /// An elementwise operand: a slice of rows or one value repeated for every row.
 #[derive(Clone, Copy, Debug)]
@@ -104,13 +106,6 @@ pub fn select_into<T: Elem>(cond: Operand<u8>, t: Operand<T>, e: Operand<T>, out
     }
 }
 
-/// Which kind of value a kernel produces.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Shape {
-    Array,
-    Scalar,
-}
-
 /// Typed rows of an array. Bool arrays are viewed as their `u8` storage, so `T` is `u8` then.
 pub(crate) fn slice_of<T: Elem>(a: &Array) -> &[T] {
     if a.elem() == ScalarType::Bool {
@@ -158,53 +153,20 @@ pub(crate) fn scalar_from<U: Elem>(u: U, ty: ScalarType) -> Scalar {
 }
 
 /// Reads an argument as an operand of scalar type `ty`.
-fn operand<T: Elem>(v: &Value, ty: ScalarType) -> Result<Operand<'_, T>, String> {
+fn operand<T: Elem>(arg: &Arg, ty: ScalarType) -> Result<Operand<'_, T>, String> {
     debug_assert_eq!(T::TYPE.width(), ty.width());
-    match v {
-        Value::Array(a) if a.elem() == ty => Ok(Operand::Slice(slice_of(a))),
-        Value::Scalar(s) if s.ty() == ty => Ok(Operand::Splat(scalar_to(s))),
-        other => Err(format!(
-            "expected {0} or {0}[], got {1}",
-            ty.name(),
-            other.ty()
-        )),
+    match arg {
+        Arg::Rows(a) if a.elem() == ty => Ok(Operand::Slice(slice_of(a))),
+        Arg::Splat(s) if s.ty() == ty => Ok(Operand::Splat(scalar_to(s))),
+        Arg::Rows(a) => Err(format!("expected {0} or {0}[], got {1}", ty.name(), a.ty())),
+        Arg::Splat(s) => Err(format!("expected {0} or {0}[], got {0}", s.ty().name())),
     }
 }
 
-/// The common row count of the array operands, `None` when all are scalars.
-fn unify_len(lens: &[Option<usize>]) -> Result<Option<usize>, String> {
-    let mut common: Option<usize> = None;
-    for &len in lens.iter().flatten() {
-        match common {
-            Some(n) if n != len => return Err(format!("length mismatch: {n} vs {len}")),
-            _ => common = Some(len),
-        }
-    }
-    Ok(common)
-}
-
-/// Allocates the result and lets `fill` write it. A scalar result is a one-row fill,
-/// so scalar and array kernels share the same slice function.
-fn finish<U: Elem>(
-    shape: Shape,
-    len: Option<usize>,
-    out_ty: ScalarType,
-    fill: impl FnOnce(&mut [U]),
-) -> Result<Value, String> {
-    match (shape, len) {
-        (Shape::Array, Some(n)) => Ok(Value::Array(if out_ty == ScalarType::Bool {
-            Array::build_bool(n, |o| fill(bytemuck::cast_slice_mut(o)))
-        } else {
-            Array::build::<U>(n, fill)
-        })),
-        (Shape::Scalar, None) => {
-            let mut one = [U::zeroed()];
-            fill(&mut one);
-            Ok(Value::Scalar(scalar_from(one[0], out_ty)))
-        }
-        (Shape::Array, None) => Err("an array kernel needs an array operand".into()),
-        (Shape::Scalar, Some(_)) => Err("a scalar kernel got an array operand".into()),
-    }
+/// The destination bytes as rows of `U`. Fails when the bytes are not aligned for `U` or
+/// not a whole number of rows.
+fn out_rows<U: Elem>(out: &mut [u8]) -> Result<&mut [U], String> {
+    bytemuck::try_cast_slice_mut(out).map_err(|e| format!("bad destination: {e}"))
 }
 
 pub(crate) fn arity_error(want: usize, got: usize) -> String {
@@ -212,42 +174,40 @@ pub(crate) fn arity_error(want: usize, got: usize) -> String {
 }
 
 fn run_unary<T: Elem, U: Elem>(
-    args: &[Value],
+    args: &[Arg],
+    out: &mut [u8],
     in_ty: ScalarType,
-    out_ty: ScalarType,
-    shape: Shape,
     f: impl Fn(T) -> U,
-) -> Result<Value, String> {
+) -> Result<(), String> {
     let [a] = args else {
         return Err(arity_error(1, args.len()));
     };
-    let a = operand::<T>(a, in_ty)?;
-    finish::<U>(shape, a.rows(), out_ty, |out| unary_into(a, out, f))
+    unary_into(operand::<T>(a, in_ty)?, out_rows::<U>(out)?, f);
+    Ok(())
 }
 
 fn run_binary<T: Elem, U: Elem>(
-    args: &[Value],
+    args: &[Arg],
+    out: &mut [u8],
     in_ty: ScalarType,
-    out_ty: ScalarType,
-    shape: Shape,
     f: impl Fn(T, T) -> U,
-) -> Result<Value, String> {
+) -> Result<(), String> {
     let [a, b] = args else {
         return Err(arity_error(2, args.len()));
     };
     let (a, b) = (operand::<T>(a, in_ty)?, operand::<T>(b, in_ty)?);
-    let len = unify_len(&[a.rows(), b.rows()])?;
-    finish::<U>(shape, len, out_ty, |out| binary_into(a, b, out, f))
+    binary_into(a, b, out_rows::<U>(out)?, f);
+    Ok(())
 }
 
-fn run_select<T: Elem>(args: &[Value], ty: ScalarType, shape: Shape) -> Result<Value, String> {
+fn run_select<T: Elem>(args: &[Arg], out: &mut [u8], ty: ScalarType) -> Result<(), String> {
     let [c, t, e] = args else {
         return Err(arity_error(3, args.len()));
     };
     let c = operand::<u8>(c, ScalarType::Bool)?;
     let (t, e) = (operand::<T>(t, ty)?, operand::<T>(e, ty)?);
-    let len = unify_len(&[c.rows(), t.rows(), e.rows()])?;
-    finish::<T>(shape, len, ty, |out| select_into(c, t, e, out))
+    select_into(c, t, e, out_rows::<T>(out)?);
+    Ok(())
 }
 
 /// Registers the array kernel `name` (when every type is a v1 array type) and the
@@ -260,15 +220,14 @@ fn add_entry(
     inputs: &[ScalarType],
     out: ScalarType,
     commutative: bool,
-    array: KernelFn,
-    scalar: KernelFn,
+    entry: ElementwiseFn,
 ) {
     let row_bytes: usize = inputs.iter().map(|t| t.width()).sum::<usize>() + out.width();
     let v1 = inputs
         .iter()
         .chain([&out])
         .all(|t| ScalarType::V1_ARRAY.contains(t));
-    let def = |kernel_name, input_specs, output, cost, f: KernelFn| KernelDef {
+    let def = |kernel_name, input_specs, output, cost| KernelDef {
         name: kernel_name,
         class: KernelClass::Elementwise,
         op: Some(op),
@@ -277,31 +236,19 @@ fn add_entry(
         cost,
         commutative,
         pattern: None,
-        impls: [Some(f), None, None, None],
+        impls: KernelImpl::Elementwise(entry).scalar_only(),
     };
     if v1 {
         let cost = u64::try_from(row_bytes).expect("row width fits in u64");
         let inputs = inputs.iter().map(|t| InputSpec::Either(*t)).collect();
-        reg.add(def(
-            name.clone(),
-            inputs,
-            ValueType::Array(out),
-            cost,
-            array,
-        ));
+        reg.add(def(name.clone(), inputs, ValueType::Array(out), cost));
     }
     let inputs = inputs.iter().map(|t| InputSpec::Scalar(*t)).collect();
-    reg.add(def(
-        format!("{name}_s"),
-        inputs,
-        ValueType::Scalar(out),
-        0,
-        scalar,
-    ));
+    reg.add(def(format!("{name}_s"), inputs, ValueType::Scalar(out), 0));
 }
 
-/// Registers a one-operand kernel. `$f` is a closure literal, expanded once per shape
-/// because a `KernelFn` is a bare function pointer and cannot capture it.
+/// Registers a one-operand kernel. `$f` is a closure literal, expanded into the entry
+/// because an `ElementwiseFn` is a bare function pointer and cannot capture it.
 macro_rules! unary {
     ($reg:expr, $op:expr, $name:expr, $in:expr, $out:expr, $t:ty, $o:ty, $f:expr) => {
         add_entry(
@@ -311,8 +258,7 @@ macro_rules! unary {
             &[$in],
             $out,
             false,
-            |args| run_unary::<$t, $o>(args, $in, $out, Shape::Array, $f),
-            |args| run_unary::<$t, $o>(args, $in, $out, Shape::Scalar, $f),
+            |args: &[Arg], out: &mut [u8]| run_unary::<$t, $o>(args, out, $in, $f),
         )
     };
 }
@@ -327,8 +273,7 @@ macro_rules! binary {
             &[$in, $in],
             $out,
             $comm,
-            |args| run_binary::<$t, $o>(args, $in, $out, Shape::Array, $f),
-            |args| run_binary::<$t, $o>(args, $in, $out, Shape::Scalar, $f),
+            |args: &[Arg], out: &mut [u8]| run_binary::<$t, $o>(args, out, $in, $f),
         )
     };
 }
@@ -628,8 +573,7 @@ fn register_any<T: Elem + PartialEq, const BOOL: bool>(reg: &mut Registry) {
         &[ScalarType::Bool, tag::<T, BOOL>(), tag::<T, BOOL>()],
         tag::<T, BOOL>(),
         false,
-        |args| run_select::<T>(args, tag::<T, BOOL>(), Shape::Array),
-        |args| run_select::<T>(args, tag::<T, BOOL>(), Shape::Scalar),
+        |args: &[Arg], out: &mut [u8]| run_select::<T>(args, out, tag::<T, BOOL>()),
     );
 }
 
@@ -686,23 +630,8 @@ macro_rules! cast_one {
             &[ScalarType::$fty],
             ScalarType::$tty,
             false,
-            |args| {
-                run_unary::<$f, $t>(
-                    args,
-                    ScalarType::$fty,
-                    ScalarType::$tty,
-                    Shape::Array,
-                    |a| a as $t,
-                )
-            },
-            |args| {
-                run_unary::<$f, $t>(
-                    args,
-                    ScalarType::$fty,
-                    ScalarType::$tty,
-                    Shape::Scalar,
-                    |a| a as $t,
-                )
+            |args: &[Arg], out: &mut [u8]| {
+                run_unary::<$f, $t>(args, out, ScalarType::$fty, |a| a as $t)
             },
         )
     };

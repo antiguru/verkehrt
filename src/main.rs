@@ -4,7 +4,7 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use verkehrt::kernels::Isa;
+use verkehrt::kernels::{Backend, Isa};
 use verkehrt::{Interpreter, Options};
 
 #[derive(Parser)]
@@ -35,6 +35,10 @@ struct Flags {
     /// Instruction set to run kernels with (scalar, avx2, avx512, neon)
     #[arg(long, value_parser = parse_isa)]
     isa: Option<Isa>,
+    /// How kernels are written: auto (compiler vectorized) or intrinsics (hand written, with
+    /// auto and scalar as fallbacks)
+    #[arg(long, value_parser = parse_backend, default_value = "intrinsics")]
+    backend: Backend,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
@@ -50,6 +54,7 @@ impl Flags {
     fn options(&self) -> Options {
         Options {
             isa: self.isa,
+            backend: self.backend,
             show_plan: self.plan,
             trace: self.trace,
             stats: self.stats,
@@ -59,6 +64,16 @@ impl Flags {
 
 fn parse_isa(name: &str) -> Result<Isa, String> {
     Isa::from_name(name).ok_or_else(|| format!("unknown instruction set '{name}'"))
+}
+
+fn parse_backend(name: &str) -> Result<Backend, String> {
+    match name {
+        "auto" => Ok(Backend::Auto),
+        "intrinsics" => Ok(Backend::Intrinsics),
+        _ => Err(format!(
+            "unknown backend '{name}', expected auto or intrinsics"
+        )),
+    }
 }
 
 fn main() -> ExitCode {
