@@ -1,9 +1,9 @@
-# Tier 1 kernels on the Apple M5: measurements
+# Tier 1 kernels on the Apple M5: Measurements
 
 This document compares Verkehrt's tier 1 kernels on aarch64 against native Rust loops at 10M elements, adds the float `min` and `argmin` reductions, and sweeps the vector length to find where dispatch overhead stops dominating.
 The spec's target is throughput within 1.5x of a native Rust baseline for `sum`, `sum(x * y)`, `count(x > c)`, and `filter(x, |v| v > c)`, and this document applies the same 1.5x bound to `min` and `argmin`.
 The NEON intrinsics backend is new on this branch for the selections (`filter`, `compress`, `where`) and the float extreme reductions, and it is measured here for `filter`, `min`, and `argmin`.
-The first intrinsics attempt (commit `7cdb20a` for the extremes, `d1da172` for the selections) failed the target for `filter`, and three later commits (`b70d974`, `cbf0d61`, `aa290e5`) changed the loops, so both sets of numbers appear below.
+The first intrinsics attempt (commit `bbef3bb` "Add NEON intrinsics for float extreme reductions" for the extremes, `13a5e98` "Add NEON intrinsics for compress and fused filter" for the selections) failed the target for `filter` and `argmin`, and three later commits (`1ca388a` "Step the NEON selections four vectors at a time", `eb1b552` "Split the NEON argmin and argmax into four accumulators", `1b46b65` "Keep the NEON four-vector compress step free of calls") changed the loops, so both sets of numbers appear below.
 Every number in the final tables comes from one run of the commands in the setup section, so run-to-run variation is not quantified beyond the reruns noted in the text.
 
 ## Setup
@@ -13,7 +13,7 @@ Every number in the final tables comes from one run of the commands in the setup
 | CPU | Apple M5 Max (`sysctl -n machdep.cpu.brand_string`) |
 | OS | macOS 27.2 (build 26B123) |
 | rustc | 1.99.1 (58cf8f9c3 2026-10-13), Homebrew |
-| Branch and commit | `kernels-neon`, benches at `aa290e5` plus one doc-comment commit |
+| Branch and commit | `kernels-neon`, benches at `1b46b65` "Keep the NEON four-vector compress step free of calls" plus `1a6263d` "Document the bench baselines' signed-zero and NaN limits" |
 | Power | AC power, battery 100% charged, `powermode 2` (high power mode), sleep prevented by `caffeinate`, read with `pmset -g` and `pmset -g batt` just before the runs |
 | Other work | None building. `top -l 1 -n 5 -o cpu` listed no process above 0.0% CPU (Chrome helpers, `localspeechrecog`), and the one-minute load average was 2.12 when read just before the final runs, and 1.51 before the earlier first-attempt run |
 | SME | `hw.optional.arm.FEAT_SME` is 1, so SME is present. It is out of scope, and no kernel uses it |
@@ -48,7 +48,7 @@ Raw output: `bench-tier1-final.txt` (includes the crossover sweep) and `bench-co
 * `corgi`: the same workload in corgi at the revision DDIR pins (`benches/corgi.rs`), with a column as one row holding the whole column as a list. `min` is `input fold_min`, asserted equal to Verkehrt's result. Corgi has no `argmin` or `argmax` operator (its operator table in `src/frontend/mod.rs` has `fold_add`, `fold_mul`, `fold_min`, `fold_max`, `fold_all`, `fold_any`), so its `argmin` column is n/a (not in corgi). A composition of `fold_min`, `eq`, and `filter` would be a different algorithm and is not benched.
 * Corgi's `sum` and `dot` differ from Verkehrt's in the last bits (sum 4998770.953740556 against 4998770.953739915, dot 2499047.034215136 against 2499047.034215335), and the `count`, `min`, and `filter` results are exact.
 
-## Before: the plan 2 numbers
+## Before: The plan 2 numbers
 
 The user provided these on 2026-10-31, from the plan 2 benches on this M5 before the NEON intrinsics work.
 
@@ -117,8 +117,8 @@ The intrinsics (1.199 and 1.197 ms in the reruns) and native (1.290 and 1.292 ms
 
 All three corgi `filter` results equal Verkehrt's rows bitwise, and the bench asserts that before timing.
 For `f64` rows the NEON `filter` is 6 to 11% faster than scalar (0.89 to 0.94), and it is 1.10 to 1.39 times `native-base`.
-Per the task 4a report, the same loops measured at 0.51 to 0.59 times scalar for `i32` and `f32` rows and at 0.88 to 0.92 for `i64` rows, in a scratch harness that is not committed.
-Those type breakdowns are the 4a report's measurement and are not repeated by this bench, which measures `f64` only.
+During the optimization, temporary criterion groups measured the same loops at 0.51 to 0.59 times scalar for `i32` and `f32` rows and at 0.88 to 0.92 for `i64` rows (median of 41 runs, 10M rows).
+Those harnesses are not committed, each figure is a single unrepeated measurement, and this bench measures `f64` only.
 
 ### Summary against the target
 
@@ -139,9 +139,9 @@ The `filter` intrinsics gain over scalar is small for `f64` rows, as the previou
 
 ## First intrinsics attempt and what changed
 
-The first measurement of the NEON entries at `7cdb20a` (selections from `d1da172`, extremes from `7cdb20a`) failed the target for `filter` and `argmin`.
+The first measurement of the NEON entries at `bbef3bb` (selections from `13a5e98`, extremes from `bbef3bb`) failed the target for `filter` and `argmin`.
 
-| Workload | scalar | neon-intrinsics (7cdb20a) | native-base | Intr / native | Intr / scalar | Target (1.5x) |
+| Workload | scalar | neon-intrinsics (bbef3bb) | native-base | Intr / native | Intr / scalar | Target (1.5x) |
 |---|---|---|---|---|---|---|
 | filter 1% | 3.383 ms | 4.876 ms | 2.770 ms | 1.76 | 1.44 | FAIL |
 | filter 50% | 3.902 ms | 5.122 ms | 2.789 ms | 1.84 | 1.31 | FAIL |
@@ -150,24 +150,29 @@ The first measurement of the NEON entries at `7cdb20a` (selections from `d1da172
 | argmin | 3.608 ms | 2.332 ms | 1.296 ms | 1.80 | 0.65 | FAIL |
 
 The `filter` numbers were reproduced in a second run at 50% (5.120 ms against 5.122 ms).
-The task 4a report attributes the `filter` loss to the fixed cost of each 2-row step (a horizontal mask reduction, a vector-to-register transfer, and a popcount round trip), which it evidences with a profile of the 50% group and an instruction listing.
-The fix (`b70d974`) steps the selections four vectors at a time (8 `f64` or 16 `f32` rows per step) with a prefix table instead of a popcount, and the argmin fix (`cbf0d61`) uses four (value, index) accumulators.
-The 4a report's own before and after scratch numbers for `filter` agree with this document's final run within 2% (3.05, 3.46, and 3.95 ms against 3.05, 3.45, and 3.95 ms), and its `argmin` figure of 1.20 ms equals this run's 1.196 ms.
+A profile of the 50% group, taken with samply during the optimization, put 33.1% of its 5363 samples on the transfer after the popcount in the select loop, 32.4% on the vector-to-register transfer in the count loop, and 13.4% on the bound check that waits on the popcount.
+An instruction listing showed 19 instructions per 2-row step in the `f64` select loop.
+Each 2-row step paid a horizontal mask reduction, a vector-to-register transfer, and a popcount round trip, and the time per step was about 1 ns whatever the lane count.
+Temporary criterion groups measured the first attempt at 1.22 to 1.44 times scalar for `f64` and `i64` `filter` and at 0.70 to 0.80 for `f32` and `i32`, so the 4-lane types won and the 2-lane types lost.
+These profiles and groups come from an uncommitted harness, and each is a single unrepeated measurement.
+
+The fix (`1ca388a`) steps the selections four vectors at a time (8 `f64` or 16 `f32` rows per step) with a prefix table instead of a popcount, and the argmin fix (`eb1b552`) uses four (value, index) accumulators.
+The scratch measurements after these commits agree with this document's final run within 2% for `filter` (3.05, 3.46, and 3.95 ms against 3.05, 3.45, and 3.95 ms), and the scratch `argmin` figure of 1.20 ms matches this run's 1.196 ms.
 
 ## Fragility of the hot loop
 
-The 4a report records that the speed of the four-vector step depends on the compiler inlining everything into the loop.
-After the argmin commit, the 64-bit `filter` and `compress` entries measured 6.2 ms, 1.5x to 1.8x slower than scalar, and the release binary showed a `bl core::array::map` call inside the select loop with the four vectors spilled to the stack around it.
-The call came from `[0,1,2,3].map(..)` in `compress_quad`, and commit `aa290e5` removed the closures and `array::map` from the step in favor of `#[inline(always)]` helpers.
-After that commit, a script that lists the call targets of the `aarch64::{compress,extreme}` functions finds only calls outside the hot loops, in the example binary and the bench binary.
-Nothing in the test suite guards this property, so a later edit can reintroduce a call without a test failing, and the 4a report names the call-target listing as the check to run after edits.
+The speed of the four-vector step depends on the compiler inlining everything into the loop.
+After the argmin commit (`eb1b552`), the 64-bit `filter` and `compress` entries measured 6.2 ms, 1.5x to 1.8x slower than scalar, and the release binary showed a `bl core::array::map` call inside the select loop with the four vectors spilled to the stack around it.
+The call came from `[0,1,2,3].map(..)` in `compress_quad`, and commit `1b46b65` removed the closures and `array::map` from the step in favor of `#[inline(always)]` helpers.
+After that commit, a script that lists the call targets of the `aarch64::{compress,extreme}` functions found only calls outside the hot loops, in the example binary and the bench binary.
+Nothing in the test suite guards this property, so a later edit can reintroduce a call without a test failing, and listing the call targets of the release binary is the check to run after edits.
 
 ## Count pass
 
-The 4a report observes that the `f64` and `i64` `filter` reads the 80 MB input twice, once in a count pass that sizes the output exactly and once in the select pass, while `native-base` filters in one pass with no count.
-It estimates the count pass at about 0.8 ms from the measured `sum` and `count` bandwidth, and this document's `filter` gap to native is 0.28 ms at 1% and 1.11 ms at 99%, so it is not uniformly of that size.
-This is the 4a report's observation, and this bench does not measure the count pass separately.
-A faster count would need a vector accumulator in the shared `count_rows` that x86 also uses, so the 4a report left it alone, because the x86 effect cannot be measured on this machine.
+The `f64` and `i64` `filter` reads the 80 MB input twice, once in a count pass that sizes the output exactly and once in the select pass, while `native-base` filters in one pass with no count.
+A scratch estimate from the measured `sum` and `count` bandwidth puts the count pass at about 0.8 ms, and this document's `filter` gap to native is 0.28 ms at 1% and 1.11 ms at 99%, so the gap is not uniformly of that size.
+This bench does not measure the count pass separately, and the estimate is a single unrepeated figure.
+A faster count would need a vector accumulator in the shared `count_rows` that x86 also uses, and the x86 effect cannot be measured on this machine, so the branch leaves it alone.
 
 ## Corgi
 
