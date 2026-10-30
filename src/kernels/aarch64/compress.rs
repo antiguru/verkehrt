@@ -110,6 +110,18 @@ const fn prefix_counts() -> [u32; 256] {
     table
 }
 
+/// The `PREFIX` entry of the low 8 bits of `keep`.
+#[inline(always)]
+fn prefix_entry(keep: u64) -> u32 {
+    PREFIX[usize::try_from(keep & 0xff).expect("a byte fits in usize")]
+}
+
+/// The shuffle of `table` for the lane mask `m`, which must index it.
+#[inline(always)]
+fn lane_shuffle(table: &[[u8; 16]], m: u64) -> &[u8; 16] {
+    &table[usize::try_from(m).expect("a lane mask fits in usize")]
+}
+
 /// Byte `j` of a `PREFIX` entry, as a row count.
 #[inline(always)]
 fn prefix_byte(p: u32, j: usize) -> usize {
@@ -239,38 +251,49 @@ unsafe fn compress_quad<T, const PER: usize>(
     table: &[[u8; 16]],
     dst: *mut T,
 ) -> usize {
-    let field = (1u64 << PER) - 1;
-    let shuffle = |i: usize| {
-        let m = keep >> (PER * i) & field;
-        &table[usize::try_from(m).expect("a lane mask fits in usize")]
-    };
     // The survivors before each vector. With 2 lanes per vector one `PREFIX` entry counts
     // all 8 bits. With 4 lanes the low byte counts the first two vectors and the high byte
     // the last two, which start after all survivors of the low byte.
-    let byte = |b: u64| PREFIX[usize::try_from(b & 0xff).expect("a byte fits in usize")];
-    let [at1, at2, at3, total] = if PER == 2 {
-        let p = byte(keep);
-        [0, 1, 2, 3].map(|j| prefix_byte(p, j))
+    // The steps below are plain code and `#[inline(always)]` helpers, no closures or
+    // `array::map`: the compiler once left an `array::map` here as a call in the loop, with
+    // the vectors spilled around it, which made the step slower than one vector at a time.
+    let (at1, at2, at3, total) = if PER == 2 {
+        let p = prefix_entry(keep);
+        (
+            prefix_byte(p, 0),
+            prefix_byte(p, 1),
+            prefix_byte(p, 2),
+            prefix_byte(p, 3),
+        )
     } else {
-        let (lo, hi) = (byte(keep), byte(keep >> 8));
+        let (lo, hi) = (prefix_entry(keep), prefix_entry(keep >> 8));
         let low = prefix_byte(lo, 3);
-        [
+        (
             prefix_byte(lo, 1),
             low,
             low + prefix_byte(hi, 1),
             low + prefix_byte(hi, 3),
-        ]
+        )
     };
+    let field = (1u64 << PER) - 1;
     // Each store writes a whole vector of `PER` rows at the survivors before it, which are
     // at most the rows of the vectors before it, so it ends inside the `4 * PER` rows at
     // `dst`. A later store overwrites the unspecified tail of the one before.
     // SAFETY: by the bound above every store stays inside the 64 writable bytes at `dst`
     // that the caller guarantees, and the CPU supports NEON by the caller's guarantee.
     unsafe {
-        shuffle_store(v.0, shuffle(0), dst);
-        shuffle_store(v.1, shuffle(1), dst.add(at1));
-        shuffle_store(v.2, shuffle(2), dst.add(at2));
-        shuffle_store(v.3, shuffle(3), dst.add(at3));
+        shuffle_store(v.0, lane_shuffle(table, keep & field), dst);
+        shuffle_store(v.1, lane_shuffle(table, keep >> PER & field), dst.add(at1));
+        shuffle_store(
+            v.2,
+            lane_shuffle(table, keep >> (2 * PER) & field),
+            dst.add(at2),
+        );
+        shuffle_store(
+            v.3,
+            lane_shuffle(table, keep >> (3 * PER) & field),
+            dst.add(at3),
+        );
     }
     total
 }
