@@ -10,9 +10,7 @@ use std::io::sink;
 use std::time::Duration;
 
 use criterion::measurement::WallTime;
-use criterion::{
-    BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
-};
+use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::{Array, Scalar, Value};
 use verkehrt::{Interpreter, Options, Prepared};
@@ -20,12 +18,14 @@ use verkehrt::{Interpreter, Options, Prepared};
 const N: usize = 10_000_000;
 const LANES: usize = 16;
 
-/// A native baseline compiled for one target.
+/// A native baseline compiled for one target. The ISA flavors exist on x86-64 only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Native {
-    /// Baseline x86-64, comparable with the scalar kernels.
+    /// Baseline target, comparable with the scalar kernels.
     Base,
+    #[cfg(target_arch = "x86_64")]
     Avx2,
+    #[cfg(target_arch = "x86_64")]
     Avx512,
 }
 
@@ -33,7 +33,9 @@ impl Native {
     fn label(self) -> &'static str {
         match self {
             Native::Base => "native-base",
+            #[cfg(target_arch = "x86_64")]
             Native::Avx2 => "native-avx2",
+            #[cfg(target_arch = "x86_64")]
             Native::Avx512 => "native-avx512",
         }
     }
@@ -41,11 +43,48 @@ impl Native {
     fn available(self) -> bool {
         match self {
             Native::Base => true,
+            #[cfg(target_arch = "x86_64")]
             Native::Avx2 => Isa::Avx2.is_available(),
+            #[cfg(target_arch = "x86_64")]
             Native::Avx512 => Isa::Avx512.is_available(),
         }
     }
+
+    /// Every flavor compiled for this target, available or not.
+    fn all() -> Vec<Native> {
+        vec![
+            Native::Base,
+            #[cfg(target_arch = "x86_64")]
+            Native::Avx2,
+            #[cfg(target_arch = "x86_64")]
+            Native::Avx512,
+        ]
+    }
 }
+
+mod checked {
+    use super::Native;
+
+    /// A `Native` flavor that this CPU can run. The field is private to this module, so
+    /// `Native::check` is the only way to obtain one, and it checks `available` first.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Checked(Native);
+
+    impl Native {
+        /// The flavor as `Checked` when this CPU can run it.
+        pub fn check(self) -> Option<Checked> {
+            self.available().then_some(Checked(self))
+        }
+    }
+
+    impl Checked {
+        pub fn native(self) -> Native {
+            self.0
+        }
+    }
+}
+
+use checked::Checked;
 
 /// The canonical 16-accumulator sum, with the pairwise `+8 +4 +2 +1` finish and the tail
 /// folded into accumulator 0 in index order. The 16-element chunks let it vectorize.
@@ -109,12 +148,15 @@ fn filter_body(x: &[f64], c: f64) -> Vec<f64> {
     out
 }
 
+// Only the crossover sweep, which needs x86-64, multiplies.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn mul_body(x: &[f64], y: &[f64]) -> Vec<f64> {
     x.iter().zip(y).map(|(a, b)| a * b).collect()
 }
 
-/// Defines a module with `base`, `avx2`, and `avx512` functions around one shared body.
+/// Defines a module with `base`, `avx2`, and `avx512` functions around one shared body. The
+/// `avx2` and `avx512` functions exist on x86-64 only.
 macro_rules! native_fns {
     ($name:ident, $body:ident, ($($arg:ident: $ty:ty),*) -> $ret:ty) => {
         mod $name {
@@ -122,10 +164,12 @@ macro_rules! native_fns {
             pub fn base($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
+            #[cfg(target_arch = "x86_64")]
             #[target_feature(enable = "avx2")]
             pub fn avx2($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
+            #[cfg(target_arch = "x86_64")]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
             pub fn avx512($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
@@ -138,20 +182,26 @@ native_fns!(n_sum, sum_body, (x: &[f64]) -> f64);
 native_fns!(n_dot, dot_body, (x: &[f64], y: &[f64]) -> f64);
 native_fns!(n_count, count_body, (x: &[f64], c: f64) -> i64);
 native_fns!(n_filter, filter_body, (x: &[f64], c: f64) -> Vec<f64>);
+#[cfg(target_arch = "x86_64")]
 native_fns!(n_mul, mul_body, (x: &[f64], y: &[f64]) -> Vec<f64>);
 
-/// Calls the `Native` flavor of a function module. The availability check is not repeated
-/// here so that it stays out of timed closures, callers check it once up front.
+/// Calls the flavor of a function module that a `Checked` names. The availability check
+/// happened when the `Checked` was made, once per bench group before any timing, so it stays
+/// out of timed closures.
 macro_rules! call_native {
     ($nat:expr, $m:ident ( $($arg:expr),* )) => {{
-        match $nat {
+        let checked: Checked = $nat;
+        match checked.native() {
             Native::Base => $m::base($($arg),*),
-            // SAFETY: every `Native` that reaches this macro comes from `natives()` or the
-            // `available` assert in `crossover`, both before any timing, so avx2 was detected.
-            // The arguments are ordinary safe references, so only the CPU feature is required.
+            // SAFETY: a `Checked` comes only from `Native::check`, which returned it because
+            // `available` detected avx2. The arguments are ordinary safe references, so only
+            // the CPU feature is required.
+            #[cfg(target_arch = "x86_64")]
             Native::Avx2 => unsafe { $m::avx2($($arg),*) },
-            // SAFETY: as above, `available` checked avx512f, avx512bw, avx512vl, and
-            // avx512vbmi2. The arguments are ordinary safe references.
+            // SAFETY: as above, `Native::check` returned the `Checked` because `available`
+            // detected avx512f, avx512bw, avx512vl, and avx512vbmi2. The arguments are
+            // ordinary safe references.
+            #[cfg(target_arch = "x86_64")]
             Native::Avx512 => unsafe { $m::avx512($($arg),*) },
         }
     }};
@@ -197,11 +247,11 @@ fn interpreters() -> Vec<Interp> {
     v
 }
 
-fn natives() -> Vec<Native> {
-    // Only available flavors are returned, which is what `call_native!` relies on.
-    [Native::Base, Native::Avx2, Native::Avx512]
+/// The flavors this CPU can run.
+fn natives() -> Vec<Checked> {
+    Native::all()
         .into_iter()
-        .filter(|n| n.available())
+        .filter_map(Native::check)
         .collect()
 }
 
@@ -322,7 +372,7 @@ fn tier1(c: &mut Criterion) {
             });
         }
         for n in &nats {
-            g.bench_function(n.label(), |b| {
+            g.bench_function(n.native().label(), |b| {
                 b.iter(|| call_native!(*n, n_sum(black_box(x))))
             });
         }
@@ -349,7 +399,7 @@ fn tier1(c: &mut Criterion) {
             });
         }
         for n in &nats {
-            g.bench_function(n.label(), |b| {
+            g.bench_function(n.native().label(), |b| {
                 b.iter(|| call_native!(*n, n_dot(black_box(x), black_box(y))))
             });
         }
@@ -381,7 +431,7 @@ fn tier1(c: &mut Criterion) {
             });
         }
         for n in &nats {
-            g.bench_function(n.label(), |b| {
+            g.bench_function(n.native().label(), |b| {
                 b.iter(|| call_native!(*n, n_count(black_box(x), cut)))
             });
         }
@@ -420,7 +470,7 @@ fn tier1(c: &mut Criterion) {
             });
         }
         for n in &nats {
-            g.bench_function(n.label(), |b| {
+            g.bench_function(n.native().label(), |b| {
                 b.iter(|| call_native!(*n, n_filter(black_box(x), cut)))
             });
         }
@@ -443,6 +493,7 @@ fn tier1(c: &mut Criterion) {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 fn crossover_group<'a>(
     c: &'a mut Criterion,
     name: &str,
@@ -456,16 +507,21 @@ fn crossover_group<'a>(
     g
 }
 
+/// The sweep compares an x86-64 ISA variant with native code, so other targets skip it.
+#[cfg(not(target_arch = "x86_64"))]
+fn crossover(_c: &mut Criterion) {
+    eprintln!("crossover: skipped, the sweep needs x86-64");
+}
+
+#[cfg(target_arch = "x86_64")]
 fn crossover(c: &mut Criterion) {
     let (best, nat) = if Isa::Avx512.is_available() {
         (Isa::Avx512, Native::Avx512)
     } else {
         (Isa::Avx2, Native::Avx2)
     };
-    assert!(
-        best.is_available() && nat.available(),
-        "the benchmark needs avx2"
-    );
+    assert!(best.is_available(), "the benchmark needs avx2");
+    let nat = nat.check().expect("the benchmark needs avx2");
     let interp = Interpreter::new(Options {
         isa: Some(best),
         backend: Backend::Auto,
@@ -498,10 +554,10 @@ fn crossover(c: &mut Criterion) {
             want_sum.to_bits()
         );
         let mut g = crossover_group(c, "crossover/sum", bytes);
-        g.bench_with_input(BenchmarkId::new("interp", n), &n, |b, _| {
+        g.bench_with_input(criterion::BenchmarkId::new("interp", n), &n, |b, _| {
             b.iter(|| run(&sum, &interp, black_box(&ins1)))
         });
-        g.bench_with_input(BenchmarkId::new("native", n), &n, |b, _| {
+        g.bench_with_input(criterion::BenchmarkId::new("native", n), &n, |b, _| {
             b.iter(|| call_native!(nat, n_sum(black_box(x))))
         });
         g.finish();
@@ -509,10 +565,10 @@ fn crossover(c: &mut Criterion) {
         let want_mul = call_native!(nat, n_mul(x, y));
         assert_eq!(bits(f64_rows(&run(&mul, &interp, &ins2))), bits(&want_mul));
         let mut gm = crossover_group(c, "crossover/mul", 2 * bytes);
-        gm.bench_with_input(BenchmarkId::new("interp", n), &n, |b, _| {
+        gm.bench_with_input(criterion::BenchmarkId::new("interp", n), &n, |b, _| {
             b.iter(|| run(&mul, &interp, black_box(&ins2)))
         });
-        gm.bench_with_input(BenchmarkId::new("native", n), &n, |b, _| {
+        gm.bench_with_input(criterion::BenchmarkId::new("native", n), &n, |b, _| {
             b.iter(|| call_native!(nat, n_mul(black_box(x), black_box(y))))
         });
         gm.finish();
