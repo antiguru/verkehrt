@@ -10,6 +10,8 @@ use crate::value::{Arg, ArrayBuilder, Scalar, ScalarType, Value, ValueType};
 
 pub mod dispatch;
 pub mod scalar;
+#[cfg(target_arch = "x86_64")]
+mod x86;
 
 pub use dispatch::Dispatch;
 
@@ -56,6 +58,40 @@ pub trait Reducer: Send {
 pub type SelectionFn =
     unsafe fn(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String>;
 
+/// The portable body of an elementwise kernel. It is a type rather than a function pointer
+/// so that each ISA variant can instantiate the same body under its own `#[target_feature]`.
+/// `run` has the contract of `ElementwiseFn` and needs no CPU feature.
+pub trait ElementwiseBody: 'static {
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String>;
+}
+
+/// The portable body of a reduction: a `Reducer` that starts from `new`, see `ElementwiseBody`.
+pub trait ReductionBody: Reducer + Sized + 'static {
+    fn new() -> Self;
+}
+
+/// The portable body of a selection. `run` has the contract of `SelectionFn` and needs no
+/// CPU feature, see `ElementwiseBody`.
+pub trait SelectionBody: 'static {
+    fn run(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String>;
+}
+
+fn scalar_elementwise<B: ElementwiseBody>(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+    B::run(args, out)
+}
+
+fn scalar_reducer<R: ReductionBody>() -> Box<dyn Reducer> {
+    Box::new(R::new())
+}
+
+fn scalar_selection<S: SelectionBody>(
+    args: &[Arg],
+    base: usize,
+    out: &mut ArrayBuilder,
+) -> Result<(), String> {
+    S::run(args, base, out)
+}
+
 /// A kernel that sees its whole arguments at once, for class `Whole`.
 pub type WholeFn = fn(&[Value]) -> Result<Value, String>;
 
@@ -84,6 +120,39 @@ impl KernelImpl {
     pub fn scalar_only(self) -> [Option<KernelImpl>; Variant::COUNT] {
         let mut impls = [None; Variant::COUNT];
         impls[Variant::SCALAR.index()] = Some(self);
+        impls
+    }
+
+    /// The scalar entry of an elementwise body.
+    pub fn elementwise_scalar<B: ElementwiseBody>() -> KernelImpl {
+        KernelImpl::Elementwise(scalar_elementwise::<B>)
+    }
+
+    /// The table of an elementwise body: its scalar entry, and its ISA variants on targets
+    /// that compile them.
+    pub fn elementwise<B: ElementwiseBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+        #[allow(unused_mut)]
+        let mut impls = KernelImpl::elementwise_scalar::<B>().scalar_only();
+        #[cfg(target_arch = "x86_64")]
+        x86::add_elementwise::<B>(&mut impls);
+        impls
+    }
+
+    /// The table of a reduction body, see `elementwise`.
+    pub fn reduction<R: ReductionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+        #[allow(unused_mut)]
+        let mut impls = KernelImpl::Reduction(scalar_reducer::<R>).scalar_only();
+        #[cfg(target_arch = "x86_64")]
+        x86::add_reduction::<R>(&mut impls);
+        impls
+    }
+
+    /// The table of a selection body, see `elementwise`.
+    pub fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+        #[allow(unused_mut)]
+        let mut impls = KernelImpl::Selection(scalar_selection::<S>).scalar_only();
+        #[cfg(target_arch = "x86_64")]
+        x86::add_selection::<S>(&mut impls);
         impls
     }
 }

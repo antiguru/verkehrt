@@ -6,9 +6,10 @@
 //! entry of their array kernel, because a one-row destination with `Splat` operands is the
 //! same computation.
 
+use std::marker::PhantomData;
 use std::ops::Range;
 
-use crate::kernels::{ElementwiseFn, InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
+use crate::kernels::{ElementwiseBody, InputSpec, KernelClass, KernelDef, KernelImpl, Registry};
 use crate::ops::Op;
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, ValueType};
 
@@ -36,6 +37,7 @@ impl<'a, T: Copy> Operand<'a, T> {
         }
     }
 
+    #[inline(always)]
     fn at(&self, i: usize) -> T {
         match self {
             Operand::Slice(s) => s[i],
@@ -45,6 +47,7 @@ impl<'a, T: Copy> Operand<'a, T> {
 }
 
 /// Writes `f(a[i], b[i])` for every row of `out`. Slice operands must have `out.len()` rows.
+#[inline(always)]
 pub fn binary_into<T: Elem, U: Elem>(
     a: Operand<T>,
     b: Operand<T>,
@@ -79,6 +82,7 @@ pub fn binary_into<T: Elem, U: Elem>(
 }
 
 /// Writes `f(a[i])` for every row of `out`. A slice operand must have `out.len()` rows.
+#[inline(always)]
 pub fn unary_into<T: Elem, U: Elem>(a: Operand<T>, out: &mut [U], f: impl Fn(T) -> U) {
     match a {
         Operand::Slice(a) => {
@@ -97,6 +101,7 @@ pub fn unary_into<T: Elem, U: Elem>(a: Operand<T>, out: &mut [U], f: impl Fn(T) 
 
 /// Writes `t[i]` where `cond[i]` is nonzero and `e[i]` otherwise, for every row of `out`.
 /// `cond` holds bool storage (0 or 1). Slice operands must have `out.len()` rows.
+#[inline(always)]
 pub fn select_into<T: Elem>(cond: Operand<u8>, t: Operand<T>, e: Operand<T>, out: &mut [T]) {
     for op in [cond.rows(), t.rows(), e.rows()].into_iter().flatten() {
         assert_eq!(op, out.len(), "operand rows must match the destination");
@@ -193,6 +198,7 @@ pub(crate) fn arity_error(want: usize, got: usize) -> String {
     format!("expected {want} arguments, got {got}")
 }
 
+#[inline(always)]
 fn run_unary<T: Elem, U: Elem>(
     args: &[Arg],
     out: &mut [u8],
@@ -206,6 +212,7 @@ fn run_unary<T: Elem, U: Elem>(
     Ok(())
 }
 
+#[inline(always)]
 fn run_binary<T: Elem, U: Elem>(
     args: &[Arg],
     out: &mut [u8],
@@ -220,6 +227,7 @@ fn run_binary<T: Elem, U: Elem>(
     Ok(())
 }
 
+#[inline(always)]
 fn run_select<T: Elem>(args: &[Arg], out: &mut [u8], ty: ScalarType) -> Result<(), String> {
     let [c, t, e] = args else {
         return Err(arity_error(3, args.len()));
@@ -231,23 +239,22 @@ fn run_select<T: Elem>(args: &[Arg], out: &mut [u8], ty: ScalarType) -> Result<(
 }
 
 /// Registers the array kernel `name` (when every type is a v1 array type) and the
-/// scalar-only kernel `{name}_s`.
-#[allow(clippy::too_many_arguments)]
-fn add_entry(
+/// scalar-only kernel `{name}_s`. Both run body `B`. Only the array kernel gets ISA variants,
+/// because a `_s` kernel computes one row.
+fn add_entry<B: ElementwiseBody>(
     reg: &mut Registry,
     op: Op,
     name: String,
     inputs: &[ScalarType],
     out: ScalarType,
     commutative: bool,
-    entry: ElementwiseFn,
 ) {
     let row_bytes: usize = inputs.iter().map(|t| t.width()).sum::<usize>() + out.width();
     let v1 = inputs
         .iter()
         .chain([&out])
         .all(|t| ScalarType::V1_ARRAY.contains(t));
-    let def = |kernel_name, input_specs, output, cost| KernelDef {
+    let def = |kernel_name, input_specs, output, cost, impls| KernelDef {
         name: kernel_name,
         class: KernelClass::Elementwise,
         op: Some(op),
@@ -256,46 +263,97 @@ fn add_entry(
         cost,
         commutative,
         pattern: None,
-        impls: KernelImpl::Elementwise(entry).scalar_only(),
+        impls,
     };
     if v1 {
         let cost = u64::try_from(row_bytes).expect("row width fits in u64");
         let inputs = inputs.iter().map(|t| InputSpec::Either(*t)).collect();
-        reg.add(def(name.clone(), inputs, ValueType::Array(out), cost));
+        let impls = KernelImpl::elementwise::<B>();
+        reg.add(def(
+            name.clone(),
+            inputs,
+            ValueType::Array(out),
+            cost,
+            impls,
+        ));
     }
     let inputs = inputs.iter().map(|t| InputSpec::Scalar(*t)).collect();
-    reg.add(def(format!("{name}_s"), inputs, ValueType::Scalar(out), 0));
+    let impls = KernelImpl::elementwise_scalar::<B>().scalar_only();
+    reg.add(def(
+        format!("{name}_s"),
+        inputs,
+        ValueType::Scalar(out),
+        0,
+        impls,
+    ));
 }
 
-/// Registers a one-operand kernel. `$f` is a closure literal, expanded into the entry
-/// because an `ElementwiseFn` is a bare function pointer and cannot capture it.
-macro_rules! unary {
-    ($reg:expr, $op:expr, $name:expr, $in:expr, $out:expr, $t:ty, $o:ty, $f:expr) => {
-        add_entry(
-            $reg,
-            $op,
-            $name,
-            &[$in],
-            $out,
-            false,
-            |args: &[Arg], out: &mut [u8]| run_unary::<$t, $o>(args, out, $in, $f),
-        )
-    };
+/// A one-operand row operation. It is a type, so that a kernel body can name it and every
+/// ISA variant inlines the same operation.
+pub(crate) trait UnaryOp<T, U>: 'static {
+    fn apply(a: T) -> U;
 }
 
-/// Registers a two-operand kernel, see `unary!`.
-macro_rules! binary {
-    ($reg:expr, $op:expr, $name:expr, $comm:expr, $in:expr, $out:expr, $t:ty, $o:ty, $f:expr) => {
-        add_entry(
-            $reg,
-            $op,
-            $name,
-            &[$in, $in],
-            $out,
-            $comm,
-            |args: &[Arg], out: &mut [u8]| run_binary::<$t, $o>(args, out, $in, $f),
-        )
-    };
+/// A two-operand row operation, see `UnaryOp`.
+pub(crate) trait BinaryOp<T, U>: 'static {
+    fn apply(a: T, b: T) -> U;
+}
+
+/// The body that writes `F(a[i])` as rows of `U`, for an operand of storage type `T` whose
+/// semantic type is `tag::<T, BOOL>()`.
+pub(crate) struct Unary<T, U, F, const BOOL: bool>(PhantomData<fn() -> (T, U, F)>);
+
+impl<T: Elem, U: Elem, F: UnaryOp<T, U>, const BOOL: bool> ElementwiseBody
+    for Unary<T, U, F, BOOL>
+{
+    #[inline(always)]
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+        run_unary::<T, U>(args, out, tag::<T, BOOL>(), F::apply)
+    }
+}
+
+/// The body that writes `F(a[i], b[i])`, see `Unary`.
+pub(crate) struct Binary<T, U, F, const BOOL: bool>(PhantomData<fn() -> (T, U, F)>);
+
+impl<T: Elem, U: Elem, F: BinaryOp<T, U>, const BOOL: bool> ElementwiseBody
+    for Binary<T, U, F, BOOL>
+{
+    #[inline(always)]
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+        run_binary::<T, U>(args, out, tag::<T, BOOL>(), F::apply)
+    }
+}
+
+/// The body of `select` on rows of storage type `T`, see `Unary`.
+pub(crate) struct Select<T, const BOOL: bool>(PhantomData<fn() -> T>);
+
+impl<T: Elem, const BOOL: bool> ElementwiseBody for Select<T, BOOL> {
+    #[inline(always)]
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+        run_select::<T>(args, out, tag::<T, BOOL>())
+    }
+}
+
+/// Registers a one-operand kernel of operation `F` on input type `tag::<T, BOOL>()`.
+fn unary<T: Elem, U: Elem, F: UnaryOp<T, U>, const BOOL: bool>(
+    reg: &mut Registry,
+    op: Op,
+    name: String,
+    out: ScalarType,
+) {
+    add_entry::<Unary<T, U, F, BOOL>>(reg, op, name, &[tag::<T, BOOL>()], out, false);
+}
+
+/// Registers a two-operand kernel, see `unary`.
+fn binary<T: Elem, U: Elem, F: BinaryOp<T, U>, const BOOL: bool>(
+    reg: &mut Registry,
+    op: Op,
+    name: String,
+    commutative: bool,
+    out: ScalarType,
+) {
+    let ty = tag::<T, BOOL>();
+    add_entry::<Binary<T, U, F, BOOL>>(reg, op, name, &[ty, ty], out, commutative);
 }
 
 /// Numeric element types. Integers wrap, floats follow IEEE 754.
@@ -310,10 +368,15 @@ pub trait Num: Elem + PartialOrd {
 macro_rules! impl_int_num {
     ($($t:ty),*) => {$(
         impl Num for $t {
+            #[inline(always)]
             fn add(self, o: Self) -> Self { self.wrapping_add(o) }
+            #[inline(always)]
             fn sub(self, o: Self) -> Self { self.wrapping_sub(o) }
+            #[inline(always)]
             fn mul(self, o: Self) -> Self { self.wrapping_mul(o) }
+            #[inline(always)]
             fn min2(self, o: Self) -> Self { Ord::min(self, o) }
+            #[inline(always)]
             fn max2(self, o: Self) -> Self { Ord::max(self, o) }
         }
     )*};
@@ -322,10 +385,14 @@ macro_rules! impl_int_num {
 macro_rules! impl_float_num {
     ($($t:ty),*) => {$(
         impl Num for $t {
+            #[inline(always)]
             fn add(self, o: Self) -> Self { self + o }
+            #[inline(always)]
             fn sub(self, o: Self) -> Self { self - o }
+            #[inline(always)]
             fn mul(self, o: Self) -> Self { self * o }
             /// IEEE 754-2019 `minimum`: NaN propagates and `-0.0 < +0.0`.
+            #[inline(always)]
             fn min2(self, o: Self) -> Self {
                 if self.is_nan() || o.is_nan() {
                     <$t>::NAN
@@ -339,6 +406,7 @@ macro_rules! impl_float_num {
                 }
             }
             /// IEEE 754-2019 `maximum`: NaN propagates and `+0.0 > -0.0`.
+            #[inline(always)]
             fn max2(self, o: Self) -> Self {
                 if self.is_nan() || o.is_nan() {
                     <$t>::NAN
@@ -366,8 +434,10 @@ trait Signed: Num {
 macro_rules! impl_int_signed {
     ($($t:ty),*) => {$(
         impl Signed for $t {
+            #[inline(always)]
             fn neg(self) -> Self { self.wrapping_neg() }
             // `MIN.abs()` wraps to `MIN`.
+            #[inline(always)]
             fn abs(self) -> Self { self.wrapping_abs() }
         }
     )*};
@@ -376,7 +446,9 @@ macro_rules! impl_int_signed {
 macro_rules! impl_float_signed {
     ($($t:ty),*) => {$(
         impl Signed for $t {
+            #[inline(always)]
             fn neg(self) -> Self { -self }
+            #[inline(always)]
             fn abs(self) -> Self { <$t>::abs(self) }
         }
     )*};
@@ -393,7 +465,9 @@ trait Float: Signed {
 macro_rules! impl_float {
     ($($t:ty),*) => {$(
         impl Float for $t {
+            #[inline(always)]
             fn div(self, o: Self) -> Self { self / o }
+            #[inline(always)]
             fn sqrt(self) -> Self { <$t>::sqrt(self) }
         }
     )*};
@@ -401,245 +475,166 @@ macro_rules! impl_float {
 
 impl_float!(f32, f64);
 
-// The kernel macros embed their type arguments in closures that must coerce to bare function
-// pointers, so those arguments are constant expressions such as `T::TYPE`, never locals.
+/// Defines the operation type `$name` for every element type `$t` with the bounds in brackets.
+macro_rules! op {
+    (unary $name:ident, $t:ident: [$($bound:tt)*], $u:ty, |$a:ident| $e:expr) => {
+        pub(crate) struct $name;
+
+        impl<$t: $($bound)*> UnaryOp<$t, $u> for $name {
+            #[inline(always)]
+            fn apply($a: $t) -> $u {
+                $e
+            }
+        }
+    };
+    (binary $name:ident, $t:ident: [$($bound:tt)*], $u:ty, |$a:ident, $b:ident| $e:expr) => {
+        pub(crate) struct $name;
+
+        impl<$t: $($bound)*> BinaryOp<$t, $u> for $name {
+            #[inline(always)]
+            fn apply($a: $t, $b: $t) -> $u {
+                $e
+            }
+        }
+    };
+}
+
+op!(binary AddOp, T: [Num], T, |a, b| a.add(b));
+op!(binary SubOp, T: [Num], T, |a, b| a.sub(b));
+op!(binary MulOp, T: [Num], T, |a, b| a.mul(b));
+op!(binary MinOp, T: [Num], T, |a, b| a.min2(b));
+op!(binary MaxOp, T: [Num], T, |a, b| a.max2(b));
+op!(binary LtOp, T: [Num], u8, |a, b| u8::from(a < b));
+op!(binary LeOp, T: [Num], u8, |a, b| u8::from(a <= b));
+op!(binary GtOp, T: [Num], u8, |a, b| u8::from(a > b));
+op!(binary GeOp, T: [Num], u8, |a, b| u8::from(a >= b));
+op!(unary NegOp, T: [Signed], T, |a| a.neg());
+op!(unary AbsOp, T: [Signed], T, |a| a.abs());
+op!(binary DivOp, T: [Float], T, |a, b| a.div(b));
+op!(unary SqrtOp, T: [Float], T, |a| a.sqrt());
+op!(binary EqOp, T: [Elem + PartialEq], u8, |a, b| u8::from(a == b));
+op!(binary NeOp, T: [Elem + PartialEq], u8, |a, b| u8::from(a != b));
+// The bool operations work on the 0/1 storage, so `T` is always `u8`.
+op!(binary AndOp, T: [BoolStorage], u8, |a, b| a.byte() & b.byte());
+op!(binary OrOp, T: [BoolStorage], u8, |a, b| a.byte() | b.byte());
+// Bool storage is 0 or 1.
+op!(unary NotOp, T: [BoolStorage], u8, |a| a.byte() ^ 1);
+
+/// The storage type of bool, `u8`.
+trait BoolStorage: Elem {
+    fn byte(self) -> u8;
+}
+
+impl BoolStorage for u8 {
+    #[inline(always)]
+    fn byte(self) -> u8 {
+        self
+    }
+}
+
+/// Conversion of storage type `Self` to `U` by Rust `as`.
+trait CastTo<U> {
+    fn cast(self) -> U;
+}
+
+/// `as` from `$f` to each listed type.
+macro_rules! impl_cast_to {
+    ($f:ty => $($t:ty),*) => {$(
+        impl CastTo<$t> for $f {
+            #[allow(trivial_numeric_casts, clippy::unnecessary_cast)]
+            #[inline(always)]
+            fn cast(self) -> $t {
+                self as $t
+            }
+        }
+    )*};
+}
+
+/// `as` from each listed type to every numeric type.
+macro_rules! impl_cast_from {
+    ($($f:ty),*) => {$(
+        impl_cast_to!($f => i8, i16, i32, i64, u8, u16, u32, u64, f32, f64);
+    )*};
+}
+
+impl_cast_from!(i8, i16, i32, i64, u8, u16, u32, u64, f32, f64);
+
+/// Casts follow Rust `as`: float to int saturates and maps NaN to zero, int to int truncates.
+/// Bool sources use their `u8` storage.
+pub(crate) struct CastOp;
+
+impl<T: CastTo<U> + 'static, U> UnaryOp<T, U> for CastOp {
+    #[inline(always)]
+    fn apply(a: T) -> U {
+        a.cast()
+    }
+}
+
+// The kernel bodies are types, so element types and operations are type arguments, and every
+// ISA variant instantiates the same body as the scalar entry.
 
 fn register_num<T: Num>(reg: &mut Registry) {
     let n = T::TYPE.name();
-    binary!(
-        reg,
-        Op::Add,
-        format!("add_{n}"),
-        true,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.add(b)
-    );
-    binary!(
-        reg,
-        Op::Sub,
-        format!("sub_{n}"),
-        false,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.sub(b)
-    );
-    binary!(
-        reg,
-        Op::Mul,
-        format!("mul_{n}"),
-        true,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.mul(b)
-    );
-    binary!(
-        reg,
-        Op::Min,
-        format!("min_{n}"),
-        true,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.min2(b)
-    );
-    binary!(
-        reg,
-        Op::Max,
-        format!("max_{n}"),
-        true,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.max2(b)
-    );
-    binary!(
-        reg,
-        Op::Lt,
-        format!("lt_{n}"),
-        false,
-        T::TYPE,
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a < b)
-    );
-    binary!(
-        reg,
-        Op::Le,
-        format!("le_{n}"),
-        false,
-        T::TYPE,
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a <= b)
-    );
-    binary!(
-        reg,
-        Op::Gt,
-        format!("gt_{n}"),
-        false,
-        T::TYPE,
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a > b)
-    );
-    binary!(
-        reg,
-        Op::Ge,
-        format!("ge_{n}"),
-        false,
-        T::TYPE,
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a >= b)
-    );
+    let (t, b) = (T::TYPE, ScalarType::Bool);
+    binary::<T, T, AddOp, false>(reg, Op::Add, format!("add_{n}"), true, t);
+    binary::<T, T, SubOp, false>(reg, Op::Sub, format!("sub_{n}"), false, t);
+    binary::<T, T, MulOp, false>(reg, Op::Mul, format!("mul_{n}"), true, t);
+    binary::<T, T, MinOp, false>(reg, Op::Min, format!("min_{n}"), true, t);
+    binary::<T, T, MaxOp, false>(reg, Op::Max, format!("max_{n}"), true, t);
+    binary::<T, u8, LtOp, false>(reg, Op::Lt, format!("lt_{n}"), false, b);
+    binary::<T, u8, LeOp, false>(reg, Op::Le, format!("le_{n}"), false, b);
+    binary::<T, u8, GtOp, false>(reg, Op::Gt, format!("gt_{n}"), false, b);
+    binary::<T, u8, GeOp, false>(reg, Op::Ge, format!("ge_{n}"), false, b);
 }
 
 fn register_signed<T: Signed>(reg: &mut Registry) {
     let n = T::TYPE.name();
-    unary!(
-        reg,
-        Op::Neg,
-        format!("neg_{n}"),
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T| a.neg()
-    );
-    unary!(
-        reg,
-        Op::Abs,
-        format!("abs_{n}"),
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T| a.abs()
-    );
+    unary::<T, T, NegOp, false>(reg, Op::Neg, format!("neg_{n}"), T::TYPE);
+    unary::<T, T, AbsOp, false>(reg, Op::Abs, format!("abs_{n}"), T::TYPE);
 }
 
 fn register_float<T: Float>(reg: &mut Registry) {
     let n = T::TYPE.name();
-    binary!(
-        reg,
-        Op::Div,
-        format!("div_{n}"),
-        false,
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T, b: T| a.div(b)
-    );
-    unary!(
-        reg,
-        Op::Sqrt,
-        format!("sqrt_{n}"),
-        T::TYPE,
-        T::TYPE,
-        T,
-        T,
-        |a: T| a.sqrt()
-    );
+    binary::<T, T, DivOp, false>(reg, Op::Div, format!("div_{n}"), false, T::TYPE);
+    unary::<T, T, SqrtOp, false>(reg, Op::Sqrt, format!("sqrt_{n}"), T::TYPE);
 }
 
 /// The semantic type of storage type `T`. Bool is stored as `u8`, so `BOOL` selects it.
-fn tag<T: Elem, const BOOL: bool>() -> ScalarType {
+pub(crate) fn tag<T: Elem, const BOOL: bool>() -> ScalarType {
     if BOOL { ScalarType::Bool } else { T::TYPE }
 }
 
 /// Equality and select exist for every type, with `BOOL` marking the bool instantiation on `u8`.
 fn register_any<T: Elem + PartialEq, const BOOL: bool>(reg: &mut Registry) {
-    let n = tag::<T, BOOL>().name();
-    binary!(
-        reg,
-        Op::Eq,
-        format!("eq_{n}"),
-        true,
-        tag::<T, BOOL>(),
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a == b)
-    );
-    binary!(
-        reg,
-        Op::Ne,
-        format!("ne_{n}"),
-        true,
-        tag::<T, BOOL>(),
-        ScalarType::Bool,
-        T,
-        u8,
-        |a: T, b: T| u8::from(a != b)
-    );
-    add_entry(
+    let ty = tag::<T, BOOL>();
+    let n = ty.name();
+    let b = ScalarType::Bool;
+    binary::<T, u8, EqOp, BOOL>(reg, Op::Eq, format!("eq_{n}"), true, b);
+    binary::<T, u8, NeOp, BOOL>(reg, Op::Ne, format!("ne_{n}"), true, b);
+    add_entry::<Select<T, BOOL>>(
         reg,
         Op::Select,
         format!("select_{n}"),
-        &[ScalarType::Bool, tag::<T, BOOL>(), tag::<T, BOOL>()],
-        tag::<T, BOOL>(),
+        &[ScalarType::Bool, ty, ty],
+        ty,
         false,
-        |args: &[Arg], out: &mut [u8]| run_select::<T>(args, out, tag::<T, BOOL>()),
     );
 }
 
 fn register_bool(reg: &mut Registry) {
     register_any::<u8, true>(reg);
-    binary!(
-        reg,
-        Op::And,
-        "and_bool".into(),
-        true,
-        ScalarType::Bool,
-        ScalarType::Bool,
-        u8,
-        u8,
-        |a: u8, b: u8| a & b
-    );
-    binary!(
-        reg,
-        Op::Or,
-        "or_bool".into(),
-        true,
-        ScalarType::Bool,
-        ScalarType::Bool,
-        u8,
-        u8,
-        |a: u8, b: u8| a | b
-    );
+    let b = ScalarType::Bool;
+    binary::<u8, u8, AndOp, true>(reg, Op::And, "and_bool".into(), true, b);
+    binary::<u8, u8, OrOp, true>(reg, Op::Or, "or_bool".into(), true, b);
     // Bool storage is 0 or 1.
-    unary!(
-        reg,
-        Op::Not,
-        "not_bool".into(),
-        ScalarType::Bool,
-        ScalarType::Bool,
-        u8,
-        u8,
-        |a: u8| a ^ 1
-    );
+    unary::<u8, u8, NotOp, true>(reg, Op::Not, "not_bool".into(), b);
 }
 
 /// Casts follow Rust `as`: float to int saturates and maps NaN to zero, int to int truncates.
 /// Bool sources use their `u8` storage.
-#[allow(trivial_numeric_casts, clippy::unnecessary_cast)]
 macro_rules! cast_one {
     ($reg:expr, $f:ty, $fty:ident, $t:ty, $tty:ident) => {
-        add_entry(
+        unary::<$f, $t, CastOp, { matches!(ScalarType::$fty, ScalarType::Bool) }>(
             $reg,
             Op::Cast(ScalarType::$tty),
             format!(
@@ -647,12 +642,7 @@ macro_rules! cast_one {
                 ScalarType::$fty.name(),
                 ScalarType::$tty.name()
             ),
-            &[ScalarType::$fty],
             ScalarType::$tty,
-            false,
-            |args: &[Arg], out: &mut [u8]| {
-                run_unary::<$f, $t>(args, out, ScalarType::$fty, |a| a as $t)
-            },
         )
     };
 }
@@ -673,7 +663,6 @@ macro_rules! cast_row {
     };
 }
 
-#[allow(trivial_numeric_casts, clippy::unnecessary_cast)]
 fn register_casts(reg: &mut Registry) {
     cast_row!(reg, i8, I8);
     cast_row!(reg, i16, I16);

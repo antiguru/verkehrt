@@ -8,7 +8,9 @@
 use std::marker::PhantomData;
 
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReducerFn, Registry};
+use crate::kernels::{
+    InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
+};
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -191,9 +193,15 @@ impl_ordered_float!(f64, f32);
 /// `feed` consumes `n` rows, where `f(i)` is the value of row `i` of the tile. A reducer
 /// whose result depends on the grouping of rows (the canonical float order) accepts only
 /// multiples of 16 rows in every `feed` but the last.
-pub trait Accum<T>: Send + Sized {
+pub trait Accum<T: Elem>: Send + Sized {
     /// The storage type of the result.
     type Out: Elem;
+
+    /// The semantic type of the rows, whose storage type is `T`.
+    const IN_TYPE: ScalarType = T::TYPE;
+
+    /// The semantic type of the result, whose storage type is `Out`.
+    const OUT_TYPE: ScalarType = <Self::Out as Elem>::TYPE;
 
     fn new() -> Self;
 
@@ -397,9 +405,11 @@ pub struct BoolXor(bool);
 pub struct BoolCount(usize);
 
 macro_rules! impl_bool_accum {
-    ($name:ident, $init:expr, $out:ty, |$acc:ident, $x:ident| $step:expr, |$s:ident| $done:expr) => {
+    ($name:ident, $init:expr, $out:ty, $out_ty:ident, |$acc:ident, $x:ident| $step:expr, |$s:ident| $done:expr) => {
         impl Accum<u8> for $name {
             type Out = $out;
+            const IN_TYPE: ScalarType = ScalarType::Bool;
+            const OUT_TYPE: ScalarType = ScalarType::$out_ty;
             fn new() -> Self {
                 $name($init)
             }
@@ -420,10 +430,12 @@ macro_rules! impl_bool_accum {
     };
 }
 
-impl_bool_accum!(BoolAnd, true, u8, |a, x| *a &= x, |s| Ok(u8::from(s)));
-impl_bool_accum!(BoolOr, false, u8, |a, x| *a |= x, |s| Ok(u8::from(s)));
-impl_bool_accum!(BoolXor, false, u8, |a, x| *a ^= x, |s| Ok(u8::from(s)));
-impl_bool_accum!(BoolCount, 0, i64, |a, x| *a += usize::from(x), |s| {
+impl_bool_accum!(BoolAnd, true, u8, Bool, |a, x| *a &= x, |s| Ok(u8::from(s)));
+impl_bool_accum!(BoolOr, false, u8, Bool, |a, x| *a |= x, |s| Ok(u8::from(s)));
+impl_bool_accum!(BoolXor, false, u8, Bool, |a, x| *a ^= x, |s| Ok(u8::from(
+    s
+)));
+impl_bool_accum!(BoolCount, 0, i64, I64, |a, x| *a += usize::from(x), |s| {
     i64::try_from(s).map_err(|e| e.to_string())
 });
 
@@ -466,154 +478,78 @@ pub(crate) fn array_arg(v: &Value, ty: ScalarType) -> Result<&Array, String> {
     }
 }
 
-/// The reducer of one array argument: `A` accumulates rows of storage type `T`, and the
-/// result becomes a scalar of type `out_ty`.
-struct Fold<T, A> {
+/// The reducer of one array argument: `A` accumulates rows of storage type `T`, whose
+/// semantic type is `A::IN_TYPE`, and the result becomes a scalar of type `A::OUT_TYPE`.
+pub struct Fold<T, A> {
     acc: A,
-    in_ty: ScalarType,
-    out_ty: ScalarType,
     _rows: PhantomData<fn() -> T>,
 }
 
 impl<T: Elem, A: Accum<T>> Reducer for Fold<T, A> {
+    #[inline(always)]
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let [a] = args else {
             return Err(arity_error(1, args.len()));
         };
-        let xs = rows_arg::<T>(a, self.in_ty)?;
+        let xs = rows_arg::<T>(a, A::IN_TYPE)?;
         self.acc.feed(xs.len(), |i| xs[i])
     }
 
     fn finish(self: Box<Self>) -> Result<Scalar, String> {
-        Ok(scalar_from(self.acc.finish()?, self.out_ty))
+        Ok(scalar_from(self.acc.finish()?, A::OUT_TYPE))
     }
 }
 
-/// A new reducer over one array of type `in_ty` with result type `out_ty`. `T` is the storage
-/// type of `in_ty`.
-fn fold<T: Elem, A: Accum<T> + 'static>(in_ty: ScalarType, out_ty: ScalarType) -> Box<dyn Reducer> {
-    Box::new(Fold::<T, A> {
-        acc: A::new(),
-        in_ty,
-        out_ty,
-        _rows: PhantomData,
-    })
+impl<T: Elem, A: Accum<T> + 'static> ReductionBody for Fold<T, A> {
+    fn new() -> Self {
+        Fold {
+            acc: A::new(),
+            _rows: PhantomData,
+        }
+    }
 }
 
-fn add_reduction(
-    reg: &mut Registry,
-    op: Op,
-    name: String,
-    in_ty: ScalarType,
-    out_ty: ScalarType,
-    make: ReducerFn,
-) {
+/// Registers the reduction `name` that folds one array with accumulator `A` over rows of
+/// storage type `T`. Its input and result types are `A::IN_TYPE` and `A::OUT_TYPE`.
+fn add_reduction<T: Elem, A: Accum<T> + 'static>(reg: &mut Registry, op: Op, name: String) {
     reg.add(KernelDef {
         name,
         class: KernelClass::Reduction,
         op: Some(op),
-        inputs: vec![InputSpec::Array(in_ty)],
-        output: ValueType::Scalar(out_ty),
-        cost: u64::try_from(in_ty.width()).expect("width fits in u64"),
+        inputs: vec![InputSpec::Array(A::IN_TYPE)],
+        output: ValueType::Scalar(A::OUT_TYPE),
+        cost: u64::try_from(A::IN_TYPE.width()).expect("width fits in u64"),
         commutative: false,
         pattern: None,
-        impls: KernelImpl::Reduction(make).scalar_only(),
+        impls: KernelImpl::reduction::<Fold<T, A>>(),
     });
 }
 
-// The reducer constructors must coerce to bare function pointers, so their type arguments are
-// constant expressions such as `T::TYPE`, never locals.
+// The reductions are types, so their element types and accumulators are type arguments, and
+// every ISA variant instantiates the same reducer as the scalar entry.
 
 fn register_numeric<T: Reducible>(reg: &mut Registry) {
     let n = T::TYPE.name();
-    let sum_ty = T::Sum::TYPE;
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Add),
-        format!("reduce_add_{n}"),
-        T::TYPE,
-        sum_ty,
-        || fold::<T, T::AddAcc>(T::TYPE, T::Sum::TYPE),
-    );
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Mul),
-        format!("reduce_mul_{n}"),
-        T::TYPE,
-        T::TYPE,
-        || fold::<T, T::MulAcc>(T::TYPE, T::TYPE),
-    );
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Min),
-        format!("reduce_min_{n}"),
-        T::TYPE,
-        T::TYPE,
-        || fold::<T, Extreme<T, false>>(T::TYPE, T::TYPE),
-    );
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Max),
-        format!("reduce_max_{n}"),
-        T::TYPE,
-        T::TYPE,
-        || fold::<T, Extreme<T, true>>(T::TYPE, T::TYPE),
-    );
-    add_reduction(
-        reg,
-        Op::ArgMin,
-        format!("argmin_{n}"),
-        T::TYPE,
-        ScalarType::I64,
-        || fold::<T, ArgExtreme<T, false>>(T::TYPE, ScalarType::I64),
-    );
-    add_reduction(
-        reg,
-        Op::ArgMax,
-        format!("argmax_{n}"),
-        T::TYPE,
-        ScalarType::I64,
-        || fold::<T, ArgExtreme<T, true>>(T::TYPE, ScalarType::I64),
-    );
+    let add = Op::Reduce(ReduceOp::Add);
+    add_reduction::<T, T::AddAcc>(reg, add, format!("reduce_add_{n}"));
+    let mul = Op::Reduce(ReduceOp::Mul);
+    add_reduction::<T, T::MulAcc>(reg, mul, format!("reduce_mul_{n}"));
+    let min = Op::Reduce(ReduceOp::Min);
+    add_reduction::<T, Extreme<T, false>>(reg, min, format!("reduce_min_{n}"));
+    let max = Op::Reduce(ReduceOp::Max);
+    add_reduction::<T, Extreme<T, true>>(reg, max, format!("reduce_max_{n}"));
+    add_reduction::<T, ArgExtreme<T, false>>(reg, Op::ArgMin, format!("argmin_{n}"));
+    add_reduction::<T, ArgExtreme<T, true>>(reg, Op::ArgMax, format!("argmax_{n}"));
 }
 
 /// Bool reductions read the 0/1 byte storage.
 fn register_bool(reg: &mut Registry) {
-    const B: ScalarType = ScalarType::Bool;
-    const I: ScalarType = ScalarType::I64;
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::And),
-        "reduce_and_bool".into(),
-        B,
-        B,
-        || fold::<u8, BoolAnd>(B, B),
-    );
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Or),
-        "reduce_or_bool".into(),
-        B,
-        B,
-        || fold::<u8, BoolOr>(B, B),
-    );
-    add_reduction(
-        reg,
-        Op::Reduce(ReduceOp::Xor),
-        "reduce_xor_bool".into(),
-        B,
-        B,
-        || fold::<u8, BoolXor>(B, B),
-    );
-    add_reduction(reg, Op::Count, "count".into(), B, I, || {
-        fold::<u8, BoolCount>(B, I)
-    });
-    add_reduction(reg, Op::Any, "any".into(), B, B, || {
-        fold::<u8, BoolOr>(B, B)
-    });
-    add_reduction(reg, Op::All, "all".into(), B, B, || {
-        fold::<u8, BoolAnd>(B, B)
-    });
+    add_reduction::<u8, BoolAnd>(reg, Op::Reduce(ReduceOp::And), "reduce_and_bool".into());
+    add_reduction::<u8, BoolOr>(reg, Op::Reduce(ReduceOp::Or), "reduce_or_bool".into());
+    add_reduction::<u8, BoolXor>(reg, Op::Reduce(ReduceOp::Xor), "reduce_xor_bool".into());
+    add_reduction::<u8, BoolCount>(reg, Op::Count, "count".into());
+    add_reduction::<u8, BoolOr>(reg, Op::Any, "any".into());
+    add_reduction::<u8, BoolAnd>(reg, Op::All, "all".into());
 }
 
 pub(crate) fn register(reg: &mut Registry) {

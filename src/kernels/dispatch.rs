@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use crate::kernels::scalar::elementwise::arity_error;
-use crate::kernels::{InputSpec, KernelDef, KernelId, KernelImpl, Registry, Variant};
+use crate::kernels::{InputSpec, KernelDef, KernelId, KernelImpl, Reducer, Registry, Variant};
 use crate::value::{Arg, Array, ArrayBuilder, Scalar, Value, ValueType};
 
 #[cfg(test)]
@@ -51,9 +51,7 @@ impl Dispatch {
     /// kernel is called as is. Fails when `reg` is not the registry this dispatch was resolved
     /// from, or when kernels were added to it since.
     pub fn call(&self, reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, String> {
-        if !Arc::ptr_eq(&reg.token, &self.registry) || reg.defs.len() != self.entries.len() {
-            return Err("dispatch was resolved from a different registry".into());
-        }
+        self.check_registry(reg)?;
         let def = reg.get(id);
         match self.entry(id) {
             // Whole kernels check their own arguments.
@@ -110,6 +108,72 @@ impl Dispatch {
                 Ok(Value::Array(out.finish()))
             }
         }
+    }
+}
+
+impl Dispatch {
+    /// Fails when `reg` is not the registry this dispatch was resolved from, or when kernels
+    /// were added to it since.
+    fn check_registry(&self, reg: &Registry) -> Result<(), String> {
+        if !Arc::ptr_eq(&reg.token, &self.registry) || reg.defs.len() != self.entries.len() {
+            return Err("dispatch was resolved from a different registry".into());
+        }
+        Ok(())
+    }
+
+    /// A new accumulator of reduction `id`, to be fed tile by tile under the contract of
+    /// `Reducer`. Fails for another registry or a kernel that is not a reduction.
+    pub fn reducer(&self, reg: &Registry, id: KernelId) -> Result<Box<dyn Reducer>, String> {
+        self.check_registry(reg)?;
+        match self.entry(id) {
+            // SAFETY: resolve installs an entry only for an ISA whose is_available()
+            // returned true.
+            KernelImpl::Reduction(make) => Ok(unsafe { make() }),
+            _ => Err(format!("{} is not a reduction", reg.get(id).name)),
+        }
+    }
+
+    /// Runs selection `id` over one tile whose first row is row `base` of the whole array,
+    /// appending the selected rows to `out`. Checks the argument kinds against the kernel's
+    /// inputs and that every `Rows` argument has the same row count. Fails for another
+    /// registry or a kernel that is not a selection.
+    pub fn select_tile(
+        &self,
+        reg: &Registry,
+        id: KernelId,
+        args: &[Arg],
+        base: usize,
+        out: &mut ArrayBuilder,
+    ) -> Result<(), String> {
+        self.check_registry(reg)?;
+        let def = reg.get(id);
+        let KernelImpl::Selection(f) = self.entry(id) else {
+            return Err(format!("{} is not a selection", def.name));
+        };
+        if def.inputs.len() != args.len() {
+            return Err(arity_error(def.inputs.len(), args.len()));
+        }
+        let mut rows: Option<usize> = None;
+        for (spec, arg) in def.inputs.iter().zip(args) {
+            let ty = match arg {
+                Arg::Rows(a) => a.ty(),
+                Arg::Splat(s) => ValueType::Scalar(s.ty()),
+            };
+            if !spec.accepts(ty) {
+                return Err(kind_error(*spec, ty));
+            }
+            if let Arg::Rows(a) = arg {
+                match rows {
+                    Some(n) if n != a.len() => {
+                        return Err(format!("length mismatch: {n} vs {}", a.len()));
+                    }
+                    _ => rows = Some(a.len()),
+                }
+            }
+        }
+        // SAFETY: resolve installs an entry only for an ISA whose is_available() returned
+        // true. The loop above checked the argument kinds and unified the row counts.
+        unsafe { f(args, base, out) }
     }
 }
 

@@ -393,10 +393,19 @@ fn array_kernels_exist_for_v1_types_only() {
 #[test]
 fn resolve_falls_back_to_scalar_without_variants() {
     let reg = Registry::new();
-    let id = reg.by_name("add_f64").unwrap();
+    // A `_s` kernel has only its scalar entry.
+    let id = reg.by_name("add_f64_s").unwrap();
     for isa in Isa::ALL {
         for backend in [Backend::Auto, Backend::Intrinsics] {
             assert_eq!(reg.resolve(isa, backend).variant_used(id), Variant::SCALAR);
+        }
+    }
+    // A kernel with ISA variants uses its scalar entry for `Isa::Scalar` and for an ISA
+    // without variants or support.
+    let add = reg.by_name("add_f64").unwrap();
+    for isa in [Isa::Scalar, Isa::Neon] {
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            assert_eq!(reg.resolve(isa, backend).variant_used(add), Variant::SCALAR);
         }
     }
 }

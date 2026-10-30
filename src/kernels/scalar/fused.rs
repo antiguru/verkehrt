@@ -12,7 +12,7 @@ use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_fro
 use crate::kernels::scalar::reduce::{Accum, Reducible};
 use crate::kernels::{
     Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
-    Reducer, Registry,
+    Reducer, ReductionBody, Registry, SelectionBody, Variant,
 };
 use crate::value::{Arg, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -39,6 +39,7 @@ const CMPS: [(&str, Cmp); 6] = [
 
 impl Cmp {
     /// The same predicate as the single-op comparison kernel, so NaN follows IEEE 754.
+    #[inline(always)]
     fn test<T: PartialOrd>(self, a: T, b: T) -> bool {
         match self {
             Cmp::Eq => a == b,
@@ -72,6 +73,7 @@ struct Dot<T: Reducible> {
 }
 
 impl<T: Reducible> Reducer for Dot<T> {
+    #[inline(always)]
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let [x, y] = args else {
             return Err(arity_error(2, args.len()));
@@ -86,12 +88,21 @@ impl<T: Reducible> Reducer for Dot<T> {
     }
 }
 
+impl<T: Reducible> ReductionBody for Dot<T> {
+    fn new() -> Self {
+        Dot {
+            acc: <T::AddAcc as Accum<T>>::new(),
+        }
+    }
+}
+
 /// `sumsq`: the sum of `x[i] * x[i]`.
 struct SumSq<T: Reducible> {
     acc: T::AddAcc,
 }
 
 impl<T: Reducible> Reducer for SumSq<T> {
+    #[inline(always)]
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let [x] = args else {
             return Err(arity_error(1, args.len()));
@@ -105,6 +116,14 @@ impl<T: Reducible> Reducer for SumSq<T> {
     }
 }
 
+impl<T: Reducible> ReductionBody for SumSq<T> {
+    fn new() -> Self {
+        SumSq {
+            acc: <T::AddAcc as Accum<T>>::new(),
+        }
+    }
+}
+
 /// `count_<cmp>`: the number of rows with `x[i] <cmp> c`, for comparison number `C` of `CMPS`.
 struct CountCmp<T, const C: usize> {
     count: usize,
@@ -112,6 +131,7 @@ struct CountCmp<T, const C: usize> {
 }
 
 impl<T: Elem + PartialOrd, const C: usize> Reducer for CountCmp<T, C> {
+    #[inline(always)]
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let [x, c] = args else {
             return Err(arity_error(2, args.len()));
@@ -127,12 +147,22 @@ impl<T: Elem + PartialOrd, const C: usize> Reducer for CountCmp<T, C> {
     }
 }
 
+impl<T: Elem + PartialOrd, const C: usize> ReductionBody for CountCmp<T, C> {
+    fn new() -> Self {
+        CountCmp {
+            count: 0,
+            _rows: PhantomData,
+        }
+    }
+}
+
 /// `condsum_<cmp>`: the sum of `x[i]` where `x[i] <cmp> c` and `e` elsewhere.
 struct CondSum<T: Reducible, const C: usize> {
     acc: T::AddAcc,
 }
 
 impl<T: Reducible, const C: usize> Reducer for CondSum<T, C> {
+    #[inline(always)]
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let [x, c, e] = args else {
             return Err(arity_error(3, args.len()));
@@ -148,7 +178,16 @@ impl<T: Reducible, const C: usize> Reducer for CondSum<T, C> {
     }
 }
 
+impl<T: Reducible, const C: usize> ReductionBody for CondSum<T, C> {
+    fn new() -> Self {
+        CondSum {
+            acc: <T::AddAcc as Accum<T>>::new(),
+        }
+    }
+}
+
 /// The `filter_<cmp>` entry for comparison `cmp`: appends the rows with `x[i] <cmp> c`.
+#[inline(always)]
 fn filter_tile<T: Elem + PartialOrd>(
     args: &[Arg],
     out: &mut ArrayBuilder,
@@ -163,6 +202,16 @@ fn filter_tile<T: Elem + PartialOrd>(
     Ok(())
 }
 
+/// The body of `filter_<cmp>` for comparison number `C` of `CMPS`.
+struct Filter<T, const C: usize>(PhantomData<fn() -> T>);
+
+impl<T: Elem + PartialOrd, const C: usize> SelectionBody for Filter<T, C> {
+    #[inline(always)]
+    fn run(args: &[Arg], _base: usize, out: &mut ArrayBuilder) -> Result<(), String> {
+        filter_tile::<T>(args, out, CMPS[C].1)
+    }
+}
+
 /// Registers one fused kernel. Cost is `w` times `cost_in_widths`, with `w` the element width.
 #[allow(clippy::too_many_arguments)]
 fn add_fused(
@@ -175,7 +224,7 @@ fn add_fused(
     cost_in_widths: u64,
     lhs: String,
     vars: &[&str],
-    imp: KernelImpl,
+    impls: [Option<KernelImpl>; Variant::COUNT],
 ) {
     let w = u64::try_from(ty.width()).expect("width fits in u64");
     reg.add(KernelDef {
@@ -190,12 +239,12 @@ fn add_fused(
             lhs,
             vars: vars.iter().map(|v| (*v).to_string()).collect(),
         }),
-        impls: imp.scalar_only(),
+        impls,
     });
 }
 
-/// Registers the comparison kernels for comparison number `C` of `CMPS`. The kernel
-/// closures must coerce to bare function pointers, so `T` and `C` are type-level constants.
+/// Registers the comparison kernels for comparison number `C` of `CMPS`. The kernel bodies
+/// are types, so `T` and `C` are type-level constants.
 fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
     let (cmp_name, _) = CMPS[C];
     let n = T::TYPE.name();
@@ -212,12 +261,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         1,
         format!("(count {mask})"),
         &["?x", "?c"],
-        KernelImpl::Reduction(|| {
-            Box::new(CountCmp::<T, C> {
-                count: 0,
-                _rows: PhantomData,
-            })
-        }),
+        KernelImpl::reduction::<CountCmp<T, C>>(),
     );
     add_fused(
         reg,
@@ -229,9 +273,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         2,
         format!("(compress_{n} ?x {mask})"),
         &["?x", "?c"],
-        KernelImpl::Selection(|args: &[Arg], _base: usize, out: &mut ArrayBuilder| {
-            filter_tile::<T>(args, out, CMPS[C].1)
-        }),
+        KernelImpl::selection::<Filter<T, C>>(),
     );
     add_fused(
         reg,
@@ -247,11 +289,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (select_{n} {mask} ?x (Bcast ?e)))"),
         &["?x", "?c", "?e"],
-        KernelImpl::Reduction(|| {
-            Box::new(CondSum::<T, C> {
-                acc: <T::AddAcc as Accum<T>>::new(),
-            })
-        }),
+        KernelImpl::reduction::<CondSum<T, C>>(),
     );
 }
 
@@ -268,11 +306,7 @@ fn register_type<T: Reducible>(reg: &mut Registry) {
         2,
         format!("(reduce_add_{n} (mul_{n} ?x ?y))"),
         &["?x", "?y"],
-        KernelImpl::Reduction(|| {
-            Box::new(Dot::<T> {
-                acc: <T::AddAcc as Accum<T>>::new(),
-            })
-        }),
+        KernelImpl::reduction::<Dot<T>>(),
     );
     add_fused(
         reg,
@@ -284,11 +318,7 @@ fn register_type<T: Reducible>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (mul_{n} ?x ?x))"),
         &["?x"],
-        KernelImpl::Reduction(|| {
-            Box::new(SumSq::<T> {
-                acc: <T::AddAcc as Accum<T>>::new(),
-            })
-        }),
+        KernelImpl::reduction::<SumSq<T>>(),
     );
     register_cmp::<T, 0>(reg);
     register_cmp::<T, 1>(reg);
