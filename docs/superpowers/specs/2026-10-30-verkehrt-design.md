@@ -161,6 +161,7 @@ Reductions widen their result: `sum` and `reduce(x, add)` over `i8`, `i16`, `i32
 * Indices and counts are `i64`: `where`, `argmin`, `argmax`, `count`, and `length` return `i64`, and `gather` takes `i64[]`.
 * `rand_i64` and `rand_f64` are counter-based: element `i` is SplitMix64 applied to `seed + i`, and `rand_f64` maps the top 53 bits to `[0, 1)` by multiplying with `2^-53`. That makes every variant bit-identical (my call).
 * Integer `abs` and `neg` wrap, so `abs(i64::MIN)` is `i64::MIN`.
+* An `if` whose condition is a scalar `bool` is lazy: the condition is evaluated first, then only the taken branch, so `if length(e) > 0 { reduce(e, max) } else { 0.0 }` is safe on an empty `e`. An `if` whose condition is `bool[]`, which includes every `if` inside a lifted lambda whose condition depends on the parameter, computes both branches and selects per element. Each branch of a lazy `if` is planned on its own, so fusion applies inside branches, and work is never hoisted out of a branch into unconditional code.
 
 ## Scope of the first version
 
