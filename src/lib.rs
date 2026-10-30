@@ -1,3 +1,4 @@
+pub mod check;
 pub mod error;
 pub mod kernels;
 pub mod ops;
