@@ -273,3 +273,59 @@ fn zip_map_reads_each_array_through_a_length_check() {
         ]
     );
 }
+
+#[test]
+fn lambda_parameter_shadows_outer_variable() {
+    assert_eq!(
+        run_dump("let v = [1.0]; let x = [2.0]; print(sum(v)); print(map(x, |v| v * 2.0));"),
+        ["bind v = L_c", "bind x = L_c", "print reduce_add(L_v)", "print mul(L_x, bcast(L_c))"]
+    );
+}
+
+#[test]
+fn function_local_shadows_outer_variable() {
+    assert_eq!(
+        run_dump("fn f(a: f64[]) -> f64 { let x = sum(a); x + 1.0 } let x = [1.0]; let y = [2.0]; print(f(y) + sum(x));"),
+        ["bind x = L_c", "bind y = L_c", "print add(add(reduce_add(L_y), L_c), reduce_add(L_x))"]
+    );
+}
+
+#[test]
+fn single_use_let_inlines_into_call_argument() {
+    assert_eq!(
+        run_dump("fn f(a: f64[]) -> f64 { sum(a) } let x = [1.0]; let t = x + x; print(f(t));"),
+        ["bind x = L_c", "print reduce_add(add(L_x, L_x))"]
+    );
+}
+
+#[test]
+fn single_use_let_inlines_into_lambda() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let s = sum(x) * 2.0; print(map(x, |v| v + s));"),
+        ["bind x = L_c", "print add(L_x, bcast(mul(reduce_add(L_x), L_c)))"]
+    );
+}
+
+#[test]
+fn scalar_subexpression_gets_one_broadcast() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let a = 2.0; let b = 3.0; print(x * (a + b));"),
+        ["bind x = L_c", "bind a = L_c", "bind b = L_c", "print mul(L_x, bcast(add(L_a, L_b)))"]
+    );
+}
+
+#[test]
+fn single_use_let_inlines_across_print() {
+    assert_eq!(
+        run_dump("let x = [1.0]; let t = x + x; print(sum(x)); print(sum(t));"),
+        ["bind x = L_c", "print reduce_add(L_x)", "print reduce_add(add(L_x, L_x))"]
+    );
+}
+
+#[test]
+fn array_literal_of_non_constant_is_type_error() {
+    let e = lowered_with("let x = [1.0]; print([sum(x)]);", Mode::Run).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Type);
+    assert_eq!(e.message, "array literal elements must be constants");
+    assert_eq!(e.span, Some(Span { line: 1, col: 23 }));
+}
