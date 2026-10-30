@@ -121,14 +121,20 @@ fn stats_total_per_kernel() {
     assert!(stats.contains("calls=2"), "{stats}");
 }
 
+// An ISA of another architecture is never available on the host.
+#[cfg(target_arch = "aarch64")]
+const FOREIGN_ISA: Isa = Isa::Avx2;
+#[cfg(not(target_arch = "aarch64"))]
+const FOREIGN_ISA: Isa = Isa::Neon;
+
 #[test]
 fn unavailable_isa_is_a_usage_error() {
     let e = Interpreter::new(Options {
-        isa: Some(Isa::Neon),
+        isa: Some(FOREIGN_ISA),
         ..Options::default()
     })
     .err()
-    .expect("neon is unavailable on x86");
+    .expect("an ISA of another architecture is unavailable");
     assert_eq!(e.kind, ErrorKind::Usage);
 }
 
