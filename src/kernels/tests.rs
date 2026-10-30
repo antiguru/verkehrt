@@ -166,8 +166,8 @@ fn length_mismatch_is_an_error() {
     assert!(err.contains("length mismatch"), "{err}");
     assert!(err.contains('2') && err.contains('3'), "{err}");
     let args = [bools(&[true]), f64s(&[1.0, 2.0]), f64s(&[1.0, 2.0])];
-    let err = call(&reg, "select_f64", &args).unwrap_err();
-    assert!(err.contains("length mismatch"), "{err}");
+    let select_err = call(&reg, "select_f64", &args).unwrap_err();
+    assert!(select_err.contains("length mismatch"), "{select_err}");
 }
 
 #[test]
@@ -176,17 +176,17 @@ fn integer_arithmetic_wraps() {
     let r = call(&reg, "add_i32", &[i32s(&[i32::MAX]), i32s(&[1])]).unwrap();
     assert_eq!(arr(r).as_slice::<i32>(), &[i32::MIN]);
     let u8s = |v: u8| Value::Array(Array::from_vec(vec![v]));
-    let r = call(&reg, "add_u8", &[u8s(255), u8s(1)]).unwrap();
-    assert_eq!(arr(r).as_slice::<u8>(), &[0]);
-    let r = call(
+    let add_u8_res = call(&reg, "add_u8", &[u8s(255), u8s(1)]).unwrap();
+    assert_eq!(arr(add_u8_res).as_slice::<u8>(), &[0]);
+    let abs_i64_res = call(
         &reg,
         "abs_i64",
         &[Value::Array(Array::from_vec(vec![i64::MIN]))],
     )
     .unwrap();
-    assert_eq!(arr(r).as_slice::<i64>(), &[i64::MIN]);
-    let r = call(&reg, "neg_i32", &[i32s(&[i32::MIN, 5])]).unwrap();
-    assert_eq!(arr(r).as_slice::<i32>(), &[i32::MIN, -5]);
+    assert_eq!(arr(abs_i64_res).as_slice::<i64>(), &[i64::MIN]);
+    let neg_i32_res = call(&reg, "neg_i32", &[i32s(&[i32::MIN, 5])]).unwrap();
+    assert_eq!(arr(neg_i32_res).as_slice::<i32>(), &[i32::MIN, -5]);
 }
 
 #[test]
@@ -195,16 +195,16 @@ fn scalar_kernels_return_scalars() {
     let u64s = |v| Value::Scalar(Scalar::U64(v));
     let r = call(&reg, "add_u64_s", &[u64s(u64::MAX), u64s(2)]);
     assert_eq!(r.unwrap(), u64s(1));
-    let r = call(&reg, "gt_f64_s", &[f64_s(1.0), f64_s(0.0)]);
-    assert_eq!(r.unwrap(), Value::Scalar(Scalar::Bool(true)));
-    let r = call(
+    let gt_f64_s_res = call(&reg, "gt_f64_s", &[f64_s(1.0), f64_s(0.0)]);
+    assert_eq!(gt_f64_s_res.unwrap(), Value::Scalar(Scalar::Bool(true)));
+    let cast_bool_i64_s_res = call(
         &reg,
         "cast_bool_i64_s",
         &[Value::Scalar(Scalar::Bool(true))],
     );
-    assert_eq!(r.unwrap(), Value::Scalar(Scalar::I64(1)));
-    let r = call(&reg, "not_bool_s", &[Value::Scalar(Scalar::Bool(true))]);
-    assert_eq!(r.unwrap(), Value::Scalar(Scalar::Bool(false)));
+    assert_eq!(cast_bool_i64_s_res.unwrap(), Value::Scalar(Scalar::I64(1)));
+    let not_bool_s_res = call(&reg, "not_bool_s", &[Value::Scalar(Scalar::Bool(true))]);
+    assert_eq!(not_bool_s_res.unwrap(), Value::Scalar(Scalar::Bool(false)));
     // A scalar kernel rejects arrays and an array kernel rejects all-scalar arguments.
     assert!(call(&reg, "add_f64_s", &[f64s(&[1.0]), f64_s(1.0)]).is_err());
     assert!(call(&reg, "add_f64", &[f64_s(1.0), f64_s(1.0)]).is_err());
@@ -222,20 +222,21 @@ fn float_min_max_follow_ieee_minimum_maximum() {
     let out = r.as_slice::<f64>();
     assert!(out[0].is_nan() && out[1].is_nan());
     assert_eq!(out[2].to_bits(), (-0.0f64).to_bits());
-    let r = call(&reg, "max_f64", &[f64s(&[-0.0, 0.0]), f64s(&[0.0, -0.0])]);
-    let r = arr(r.unwrap());
+    let max_f64_res = call(&reg, "max_f64", &[f64s(&[-0.0, 0.0]), f64s(&[0.0, -0.0])]);
+    let max_f64_arr = arr(max_f64_res.unwrap());
     assert!(
-        r.as_slice::<f64>()
+        max_f64_arr
+            .as_slice::<f64>()
             .iter()
             .all(|v| v.to_bits() == 0.0f64.to_bits())
     );
-    let r = call(&reg, "min_f64", &[f64s(&[0.0]), f64s(&[-0.0])]);
+    let min_f64_res = call(&reg, "min_f64", &[f64s(&[0.0]), f64s(&[-0.0])]);
     assert_eq!(
-        arr(r.unwrap()).as_slice::<f64>()[0].to_bits(),
+        arr(min_f64_res.unwrap()).as_slice::<f64>()[0].to_bits(),
         (-0.0f64).to_bits()
     );
-    let r = call(&reg, "max_f64", &[f64s(&[1.0, 2.0]), f64_s(1.5)]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.5, 2.0]);
+    let max_f64_res2 = call(&reg, "max_f64", &[f64s(&[1.0, 2.0]), f64_s(1.5)]);
+    assert_eq!(arr(max_f64_res2.unwrap()).as_slice::<f64>(), &[1.5, 2.0]);
 }
 
 #[test]
@@ -251,12 +252,15 @@ fn casts_follow_rust_as() {
         &[0, i32::MAX, i32::MIN, -1]
     );
     let big = Value::Array(Array::from_vec(vec![(1i64 << 32) + 5]));
-    let r = call(&reg, "cast_i64_i32", &[big]);
-    assert_eq!(arr(r.unwrap()).as_slice::<i32>(), &[5]);
-    let r = call(&reg, "cast_bool_i64", &[bools(&[true, false])]);
-    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[1, 0]);
-    let r = call(&reg, "cast_i32_f64", &[i32s(&[-3, 4])]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[-3.0, 4.0]);
+    let cast_i64_i32_res = call(&reg, "cast_i64_i32", &[big]);
+    assert_eq!(arr(cast_i64_i32_res.unwrap()).as_slice::<i32>(), &[5]);
+    let cast_bool_i64_res = call(&reg, "cast_bool_i64", &[bools(&[true, false])]);
+    assert_eq!(arr(cast_bool_i64_res.unwrap()).as_slice::<i64>(), &[1, 0]);
+    let cast_i32_f64_res = call(&reg, "cast_i32_f64", &[i32s(&[-3, 4])]);
+    assert_eq!(
+        arr(cast_i32_f64_res.unwrap()).as_slice::<f64>(),
+        &[-3.0, 4.0]
+    );
 }
 
 #[test]
@@ -265,38 +269,38 @@ fn comparisons_and_select() {
     let r = arr(call(&reg, "gt_f64", &[f64s(&[1.0, f64::NAN]), f64_s(0.0)]).unwrap());
     assert_eq!(r.as_bool_bytes(), &[1, 0]);
     let nans = f64s(&[f64::NAN, 1.0]);
-    let r = arr(call(&reg, "ne_f64", &[nans.clone(), nans]).unwrap());
-    assert_eq!(r.as_bool_bytes(), &[1, 0]);
+    let ne_f64_res = arr(call(&reg, "ne_f64", &[nans.clone(), nans]).unwrap());
+    assert_eq!(ne_f64_res.as_bool_bytes(), &[1, 0]);
     let cond = bools(&[true, false]);
-    let r = call(
+    let select_f64_res = call(
         &reg,
         "select_f64",
         &[cond.clone(), f64s(&[1.0, 2.0]), f64s(&[3.0, 4.0])],
     );
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.0, 4.0]);
-    let r = call(
+    assert_eq!(arr(select_f64_res.unwrap()).as_slice::<f64>(), &[1.0, 4.0]);
+    let select_f64_res2 = call(
         &reg,
         "select_f64",
         &[cond.clone(), f64s(&[1.0, 2.0]), f64_s(0.0)],
     );
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.0, 0.0]);
+    assert_eq!(arr(select_f64_res2.unwrap()).as_slice::<f64>(), &[1.0, 0.0]);
     // A scalar condition picks a whole branch.
     let no = Value::Scalar(Scalar::Bool(false));
-    let r = call(&reg, "select_f64", &[no, f64s(&[1.0, 2.0]), f64_s(7.0)]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[7.0, 7.0]);
-    let r = call(
+    let select_f64_res3 = call(&reg, "select_f64", &[no, f64s(&[1.0, 2.0]), f64_s(7.0)]);
+    assert_eq!(arr(select_f64_res3.unwrap()).as_slice::<f64>(), &[7.0, 7.0]);
+    let select_bool_res = call(
         &reg,
         "select_bool",
         &[cond, bools(&[false, false]), bools(&[true, true])],
     );
-    assert_eq!(arr(r.unwrap()).as_bool_bytes(), &[0, 1]);
+    assert_eq!(arr(select_bool_res.unwrap()).as_bool_bytes(), &[0, 1]);
     let (a, b) = (bools(&[true, true, false]), bools(&[true, false, false]));
-    let r = arr(call(&reg, "and_bool", &[a.clone(), b.clone()]).unwrap());
-    assert_eq!(r.as_bool_bytes(), &[1, 0, 0]);
-    let r = arr(call(&reg, "or_bool", &[a, b]).unwrap());
-    assert_eq!(r.as_bool_bytes(), &[1, 1, 0]);
-    let r = arr(call(&reg, "not_bool", &[bools(&[true, false])]).unwrap());
-    assert_eq!(r.as_bool_bytes(), &[0, 1]);
+    let and_bool_res = arr(call(&reg, "and_bool", &[a.clone(), b.clone()]).unwrap());
+    assert_eq!(and_bool_res.as_bool_bytes(), &[1, 0, 0]);
+    let or_bool_res = arr(call(&reg, "or_bool", &[a, b]).unwrap());
+    assert_eq!(or_bool_res.as_bool_bytes(), &[1, 1, 0]);
+    let not_bool_res = arr(call(&reg, "not_bool", &[bools(&[true, false])]).unwrap());
+    assert_eq!(not_bool_res.as_bool_bytes(), &[0, 1]);
 }
 
 #[test]
@@ -307,10 +311,10 @@ fn float_only_ops() {
         arr(r.unwrap()).as_slice::<f64>(),
         &[f64::INFINITY, f64::NEG_INFINITY]
     );
-    let r = call(&reg, "sqrt_f64", &[f64s(&[4.0, 9.0])]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[2.0, 3.0]);
-    let r = call(&reg, "abs_f64", &[f64s(&[-1.5, 2.0])]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.5, 2.0]);
+    let sqrt_f64_res = call(&reg, "sqrt_f64", &[f64s(&[4.0, 9.0])]);
+    assert_eq!(arr(sqrt_f64_res.unwrap()).as_slice::<f64>(), &[2.0, 3.0]);
+    let abs_f64_res = call(&reg, "abs_f64", &[f64s(&[-1.5, 2.0])]);
+    assert_eq!(arr(abs_f64_res.unwrap()).as_slice::<f64>(), &[1.5, 2.0]);
 }
 
 #[test]
@@ -438,19 +442,19 @@ fn tiled_calls_match_one_call() {
         bytemuck::cast_slice::<f64, u8>(&tiled)
     );
     // The same holds with a splat operand.
-    let mut whole = vec![0.0f64; n];
+    let mut whole_splat = vec![0.0f64; n];
     binary_into(
         Operand::Slice(&a),
         Operand::Splat(2.5),
-        &mut whole,
+        &mut whole_splat,
         |x, y| x * y,
     );
-    let mut tiled = vec![0.0f64; n];
+    let mut tiled_splat = vec![0.0f64; n];
     for r in [0..37, 37..100, 100..1000] {
         let x = Operand::Slice(&a).range(r.clone());
-        binary_into(x, Operand::Splat(2.5), &mut tiled[r], |x, y| x * y);
+        binary_into(x, Operand::Splat(2.5), &mut tiled_splat[r], |x, y| x * y);
     }
-    assert_eq!(whole, tiled);
+    assert_eq!(whole_splat, tiled_splat);
 }
 
 fn i64_s(v: i64) -> Value {
@@ -516,8 +520,11 @@ fn canonical_sum_follows_the_spec_order() {
     assert_eq!(canonical_sum(&xs).to_bits(), want.to_bits());
     let naive = xs.iter().fold(0.0, |a, &x| a + x);
     assert_ne!(naive.to_bits(), want.to_bits());
-    let xs = varied(35);
-    assert_eq!(canonical_sum(&xs).to_bits(), reference_sum(&xs).to_bits());
+    let varied_xs = varied(35);
+    assert_eq!(
+        canonical_sum(&varied_xs).to_bits(),
+        reference_sum(&varied_xs).to_bits()
+    );
 }
 
 #[test]
@@ -582,10 +589,10 @@ fn float_reduce_kernels_use_the_canonical_order() {
     let xs = varied(100);
     let r = scalar(call(&reg, "reduce_add_f64", &[f64s(&xs)]));
     assert_eq!(r, Scalar::F64(canonical_sum(&xs)));
-    let r = scalar(call(&reg, "reduce_mul_f64", &[f64s(&[2.0, 3.0, 4.0])]));
-    assert_eq!(r, Scalar::F64(24.0));
-    let r = scalar(call(&reg, "reduce_add_f64", &[f64s(&[])]));
-    assert_eq!(r, Scalar::F64(0.0));
+    let reduce_mul_f64_res = scalar(call(&reg, "reduce_mul_f64", &[f64s(&[2.0, 3.0, 4.0])]));
+    assert_eq!(reduce_mul_f64_res, Scalar::F64(24.0));
+    let reduce_add_f64_res = scalar(call(&reg, "reduce_add_f64", &[f64s(&[])]));
+    assert_eq!(reduce_add_f64_res, Scalar::F64(0.0));
 }
 
 #[test]
@@ -593,22 +600,22 @@ fn integer_reductions_widen_and_wrap() {
     let reg = Registry::new();
     let r = scalar(call(&reg, "reduce_add_i32", &[i32s(&[i32::MAX, 1])]));
     assert_eq!(r, Scalar::I64(2147483648));
-    let r = scalar(call(&reg, "reduce_add_u8", &[u8s(&[200, 100])]));
-    assert_eq!(r, Scalar::U64(300));
-    let r = scalar(call(
+    let reduce_add_u8_res = scalar(call(&reg, "reduce_add_u8", &[u8s(&[200, 100])]));
+    assert_eq!(reduce_add_u8_res, Scalar::U64(300));
+    let reduce_add_i64_res = scalar(call(
         &reg,
         "reduce_add_i64",
         &[Value::Array(Array::from_vec(vec![i64::MAX, 1]))],
     ));
-    assert_eq!(r, Scalar::I64(i64::MIN));
-    let r = scalar(call(&reg, "reduce_mul_u8", &[u8s(&[16, 17])]));
-    assert_eq!(r, Scalar::U8(16));
-    let r = scalar(call(&reg, "reduce_mul_i32", &[i32s(&[])]));
-    assert_eq!(r, Scalar::I32(1));
-    let r = scalar(call(&reg, "reduce_max_i32", &[i32s(&[3, 9, -1])]));
-    assert_eq!(r, Scalar::I32(9));
-    let r = scalar(call(&reg, "reduce_min_u8", &[u8s(&[3, 9, 1])]));
-    assert_eq!(r, Scalar::U8(1));
+    assert_eq!(reduce_add_i64_res, Scalar::I64(i64::MIN));
+    let reduce_mul_u8_res = scalar(call(&reg, "reduce_mul_u8", &[u8s(&[16, 17])]));
+    assert_eq!(reduce_mul_u8_res, Scalar::U8(16));
+    let reduce_mul_i32_res = scalar(call(&reg, "reduce_mul_i32", &[i32s(&[])]));
+    assert_eq!(reduce_mul_i32_res, Scalar::I32(1));
+    let reduce_max_i32_res = scalar(call(&reg, "reduce_max_i32", &[i32s(&[3, 9, -1])]));
+    assert_eq!(reduce_max_i32_res, Scalar::I32(9));
+    let reduce_min_u8_res = scalar(call(&reg, "reduce_min_u8", &[u8s(&[3, 9, 1])]));
+    assert_eq!(reduce_min_u8_res, Scalar::U8(1));
     let e = call(&reg, "reduce_min_i32", &[i32s(&[])]).unwrap_err();
     assert!(e.contains("empty"), "{e}");
     assert!(call(&reg, "reduce_max_u8", &[u8s(&[])]).is_err());
@@ -619,10 +626,10 @@ fn float_min_max_reductions_follow_ieee_minimum() {
     let reg = Registry::new();
     let r = scalar(call(&reg, "reduce_min_f64", &[f64s(&[1.0, f64::NAN, 0.0])]));
     assert!(matches!(r, Scalar::F64(v) if v.is_nan()));
-    let r = scalar(call(&reg, "reduce_min_f64", &[f64s(&[0.0, -0.0])]));
-    assert!(matches!(r, Scalar::F64(v) if v.to_bits() == (-0.0f64).to_bits()));
-    let r = scalar(call(&reg, "reduce_max_f64", &[f64s(&[-0.0, 0.0])]));
-    assert!(matches!(r, Scalar::F64(v) if v.to_bits() == 0.0f64.to_bits()));
+    let reduce_min_f64_res = scalar(call(&reg, "reduce_min_f64", &[f64s(&[0.0, -0.0])]));
+    assert!(matches!(reduce_min_f64_res, Scalar::F64(v) if v.to_bits() == (-0.0f64).to_bits()));
+    let reduce_max_f64_res = scalar(call(&reg, "reduce_max_f64", &[f64s(&[-0.0, 0.0])]));
+    assert!(matches!(reduce_max_f64_res, Scalar::F64(v) if v.to_bits() == 0.0f64.to_bits()));
     let e = call(&reg, "reduce_min_f64", &[f64s(&[])]).unwrap_err();
     assert!(e.contains("empty"), "{e}");
 }
@@ -673,28 +680,31 @@ fn compress_and_where() {
         &[f64s(&[1.0, 2.0, 3.0]), bools(&[false, true, true])],
     );
     assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[2.0, 3.0]);
-    let r = call(
+    let compress_f64_res = call(
         &reg,
         "compress_f64",
         &[f64s(&[1.0, 2.0]), bools(&[false, false])],
     );
-    assert!(arr(r.unwrap()).is_empty());
-    let r = call(&reg, "compress_f64", &[f64s(&[1.0, 2.0]), bools(&[true])]);
-    assert!(r.is_err());
-    let r = call(
+    assert!(arr(compress_f64_res.unwrap()).is_empty());
+    let compress_f64_res2 = call(&reg, "compress_f64", &[f64s(&[1.0, 2.0]), bools(&[true])]);
+    assert!(compress_f64_res2.is_err());
+    let compress_bool_res = call(
         &reg,
         "compress_bool",
         &[bools(&[true, false, true]), bools(&[true, true, false])],
     );
-    assert_eq!(arr(r.unwrap()), Array::from_bools(&[true, false]));
-    let r = call(
+    assert_eq!(
+        arr(compress_bool_res.unwrap()),
+        Array::from_bools(&[true, false])
+    );
+    let compress_u8_res = call(
         &reg,
         "compress_u8",
         &[u8s(&[7, 8, 9]), bools(&[true, false, true])],
     );
-    assert_eq!(arr(r.unwrap()).as_slice::<u8>(), &[7, 9]);
-    let r = call(&reg, "where", &[bools(&[false, true, true])]);
-    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[1, 2]);
+    assert_eq!(arr(compress_u8_res.unwrap()).as_slice::<u8>(), &[7, 9]);
+    let where_res = call(&reg, "where", &[bools(&[false, true, true])]);
+    assert_eq!(arr(where_res.unwrap()).as_slice::<i64>(), &[1, 2]);
 }
 
 #[test]
@@ -703,21 +713,24 @@ fn iota_fill_and_negative_counts() {
     let r = call(&reg, "iota", &[i64_s(3)]);
     assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[0, 1, 2]);
     assert!(call(&reg, "iota", &[i64_s(-1)]).is_err());
-    let r = call(&reg, "fill_f64", &[i64_s(2), f64_s(1.5)]);
-    assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.5, 1.5]);
-    let r = call(
+    let fill_f64_res = call(&reg, "fill_f64", &[i64_s(2), f64_s(1.5)]);
+    assert_eq!(arr(fill_f64_res.unwrap()).as_slice::<f64>(), &[1.5, 1.5]);
+    let fill_bool_res = call(
         &reg,
         "fill_bool",
         &[i64_s(2), Value::Scalar(Scalar::Bool(true))],
     );
-    assert_eq!(arr(r.unwrap()), Array::from_bools(&[true, true]));
+    assert_eq!(
+        arr(fill_bool_res.unwrap()),
+        Array::from_bools(&[true, true])
+    );
     assert!(call(&reg, "fill_f64", &[i64_s(-1), f64_s(1.5)]).is_err());
     assert!(call(&reg, "rand_i64", &[i64_s(-1), i64_s(0)]).is_err());
     assert!(call(&reg, "rand_f64", &[i64_s(-1), i64_s(0)]).is_err());
-    let r = call(&reg, "length_f64", &[f64s(&[1.0, 2.0])]);
-    assert_eq!(scalar(r), Scalar::I64(2));
-    let r = call(&reg, "length_bool", &[bools(&[])]);
-    assert_eq!(scalar(r), Scalar::I64(0));
+    let length_f64_res = call(&reg, "length_f64", &[f64s(&[1.0, 2.0])]);
+    assert_eq!(scalar(length_f64_res), Scalar::I64(2));
+    let length_bool_res = call(&reg, "length_bool", &[bools(&[])]);
+    assert_eq!(scalar(length_bool_res), Scalar::I64(0));
 }
 
 #[test]
@@ -726,10 +739,15 @@ fn splitmix_and_rand() {
     let reg = Registry::new();
     let r = arr(call(&reg, "rand_i64", &[i64_s(3), i64_s(7)]).unwrap());
     assert_eq!(r.as_slice::<i64>()[1], splitmix64(8) as i64);
-    let r = arr(call(&reg, "rand_f64", &[i64_s(1000), i64_s(1)]).unwrap());
-    assert!(r.as_slice::<f64>().iter().all(|v| (0.0..1.0).contains(v)));
+    let rand_f64_res = arr(call(&reg, "rand_f64", &[i64_s(1000), i64_s(1)]).unwrap());
+    assert!(
+        rand_f64_res
+            .as_slice::<f64>()
+            .iter()
+            .all(|v| (0.0..1.0).contains(v))
+    );
     let want = (splitmix64(1) >> 11) as f64 * (-53f64).exp2();
-    assert_eq!(r.as_slice::<f64>()[0].to_bits(), want.to_bits());
+    assert_eq!(rand_f64_res.as_slice::<f64>()[0].to_bits(), want.to_bits());
 }
 
 fn temp_file(name: &str, bytes: &[u8]) -> String {
@@ -745,20 +763,20 @@ fn load_reads_little_endian_files() {
     let path = temp_file("load.f64", &bytes);
     let r = call(&reg, "load_f64", &[Value::Str(path.as_str().into())]);
     assert_eq!(arr(r.unwrap()).as_slice::<f64>(), &[1.0, 2.5]);
-    let r = call(&reg, "load_u8", &[Value::Str(path.as_str().into())]);
-    assert_eq!(arr(r.unwrap()).len(), 16);
-    let r = call(&reg, "load_i32", &[Value::Str(path.as_str().into())]);
-    assert_eq!(arr(r.unwrap()).len(), 4);
+    let load_u8_res = call(&reg, "load_u8", &[Value::Str(path.as_str().into())]);
+    assert_eq!(arr(load_u8_res.unwrap()).len(), 16);
+    let load_i32_res = call(&reg, "load_i32", &[Value::Str(path.as_str().into())]);
+    assert_eq!(arr(load_i32_res.unwrap()).len(), 4);
     std::fs::remove_file(&path).unwrap();
 
     let missing = "/nonexistent/verkehrt-missing.bin";
     let e = call(&reg, "load_f64", &[Value::Str(missing.into())]).unwrap_err();
     assert!(e.contains(missing), "{e}");
 
-    let path = temp_file("odd.bin", &[0u8; 9]);
-    let e = call(&reg, "load_f64", &[Value::Str(path.as_str().into())]).unwrap_err();
-    assert!(e.contains("multiple of 8"), "{e}");
-    std::fs::remove_file(&path).unwrap();
+    let odd_path = temp_file("odd.bin", &[0u8; 9]);
+    let odd_err = call(&reg, "load_f64", &[Value::Str(odd_path.as_str().into())]).unwrap_err();
+    assert!(odd_err.contains("multiple of 8"), "{odd_err}");
+    std::fs::remove_file(&odd_path).unwrap();
     assert!(reg.by_name("load_bool").is_none());
 }
 

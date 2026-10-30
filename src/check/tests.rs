@@ -268,11 +268,11 @@ fn duplicate_input_and_export_are_rejected() {
         "input 'x' is declared twice",
     );
     assert_eq!(e.span, Some(Span { line: 1, col: 17 }));
-    let e = type_err(
+    let second_err = type_err(
         "export a = 1.0; export a = 2.0;",
         "export 'a' is declared twice",
     );
-    assert_eq!(e.span, Some(Span { line: 1, col: 17 }));
+    assert_eq!(second_err.span, Some(Span { line: 1, col: 17 }));
     // An input and an export are different namespaces of the host interface.
     run("input a: f64; export b = a; let b = 1.0;").unwrap();
 }

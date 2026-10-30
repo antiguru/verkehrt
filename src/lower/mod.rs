@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use crate::check::{Globals, TExpr, TExprKind, TLambda, TProgram, TStmt, VarId};
 use crate::error::{Error, Span};
@@ -256,11 +257,11 @@ impl Lowerer<'_> {
             .into_iter()
             .map(|a| match (lift, a.ty) {
                 (true, ValueType::Scalar(t)) => {
-                    let span = a.span;
+                    let operand_span = a.span;
                     Term {
                         kind: TermKind::Bcast(Box::new(a)),
                         ty: ValueType::Array(t),
-                        span,
+                        span: operand_span,
                     }
                 }
                 _ => a,
@@ -294,7 +295,7 @@ impl Lowerer<'_> {
         let span = e.span;
         match &e.kind {
             TExprKind::Lit(s) => Ok(self.leaf(Leaf::Const(Value::Scalar(s.clone())), e.ty, span)),
-            TExprKind::Str(s) => Ok(self.leaf(Leaf::Const(Value::Str(s.clone())), e.ty, span)),
+            TExprKind::Str(s) => Ok(self.leaf(Leaf::Const(Value::Str(Arc::clone(s))), e.ty, span)),
             TExprKind::ArrayLit(items) => self.array_lit(e, items),
             TExprKind::Var(v) => Ok(match self.env.get(v) {
                 Some(t) => t.clone(),

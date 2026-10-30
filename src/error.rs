@@ -99,8 +99,8 @@ mod tests {
     fn display_with_and_without_span() {
         let e = Error::ty("bad", Span { line: 3, col: 14 });
         assert_eq!(e.to_string(), "error[type] at 3:14: bad");
-        let e = Error::runtime("oops", None);
-        assert_eq!(e.to_string(), "error[runtime]: oops");
+        let runtime_err = Error::runtime("oops", None);
+        assert_eq!(runtime_err.to_string(), "error[runtime]: oops");
         assert_eq!(
             Error::parse("x", Span { line: 1, col: 1 }).kind,
             ErrorKind::Parse

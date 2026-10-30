@@ -51,9 +51,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
         let c = chars[i];
         let span = Span { line, col };
         // Advances over `n` characters on the current line.
-        let adv = |n: usize, i: &mut usize, col: &mut u32| {
-            *i += n;
-            *col += u32::try_from(n).expect("token length fits u32");
+        let adv = |n: usize, pos: &mut usize, column: &mut u32| {
+            *pos += n;
+            *column += u32::try_from(n).expect("token length fits u32");
         };
 
         if c == '\n' {

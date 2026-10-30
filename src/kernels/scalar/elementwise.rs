@@ -268,11 +268,11 @@ fn add_entry(
         .iter()
         .chain([&out])
         .all(|t| ScalarType::V1_ARRAY.contains(t));
-    let def = |name, inputs, output, cost, f: KernelFn| KernelDef {
-        name,
+    let def = |kernel_name, input_specs, output, cost, f: KernelFn| KernelDef {
+        name: kernel_name,
         class: KernelClass::Elementwise,
         op: Some(op),
-        inputs,
+        inputs: input_specs,
         output,
         cost,
         commutative,

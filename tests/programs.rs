@@ -172,10 +172,10 @@ fn input_must_be_bound_in_run() {
     assert_eq!(e.kind, ErrorKind::Usage);
     assert_eq!(e.message, "input 'x' is not bound");
     interp.bind("x", Value::Array(Array::from_vec(vec![1i64])));
-    let e = interp
+    let second_err = interp
         .run("input x: f64[];\nprint(sum(x));", &mut out, &mut diag)
         .unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(second_err.kind, ErrorKind::Usage);
     interp.bind("x", f64s(&[1.0, 2.0]));
     interp
         .run("input x: f64[];\nprint(sum(x));", &mut out, &mut diag)
@@ -238,8 +238,8 @@ fn execute_checks_inputs() {
     let e = p.execute(&interp, &[], &mut diag).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Usage);
     let ints = Value::Array(Array::from_vec(vec![1i64]));
-    let e = p.execute(&interp, &[("x", ints)], &mut diag).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Usage);
+    let second_err = p.execute(&interp, &[("x", ints)], &mut diag).unwrap_err();
+    assert_eq!(second_err.kind, ErrorKind::Usage);
 }
 
 #[test]
@@ -277,14 +277,14 @@ fn execute_rejects_undeclared_and_duplicate_inputs() {
         .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Usage);
     assert_eq!(e.message, "program does not declare input 'n'");
-    let e = p
+    let second_err = p
         .execute(
             &interp,
             &[("x", f64s(&[1.0])), ("x", f64s(&[2.0]))],
             &mut diag,
         )
         .unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(second_err.kind, ErrorKind::Usage);
 }
 
 #[test]
@@ -329,9 +329,9 @@ fn run_err(src: &str) -> verkehrt::error::Error {
 fn if_with_mask_condition_is_an_array() {
     let src = "let m = [true, false, true];\nlet y = if m { 1.0 } else { 2.0 };\nprint(y);\nprint(y + 1.0);\n";
     assert_eq!(run_ok(src), "[1.0, 2.0, 1.0]\n[2.0, 3.0, 2.0]\n");
-    let src =
+    let masked_src =
         "let m = [true, false, true];\nlet y: f64 = if m { 1.0 } else { 2.0 };\nprint(sum(y));\n";
-    let e = run_err(src);
+    let e = run_err(masked_src);
     assert_eq!(e.kind, ErrorKind::Type, "{e}");
     assert_eq!(e.span.map(|s| (s.line, s.col)), Some((2, 1)), "{e}");
 }
