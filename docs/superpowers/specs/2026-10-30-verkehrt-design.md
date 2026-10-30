@@ -37,6 +37,7 @@ The interpreter parses a program, type-checks it, plans it, then executes the pl
 Planning covers the typed program with kernel patterns (see kernel selection), producing a sequence of kernel calls over whole arrays, and scalar nodes are evaluated directly.
 Kernel variants are selected once at startup by runtime CPU feature detection and stored in a function-pointer table, so dispatch per kernel call is one indirect call.
 A command-line flag forces a variant (`--isa scalar|avx2|avx512|neon`) to compare implementations on the same program.
+Each ISA has two backends. The autovectorization backend compiles every kernel's portable body under that ISA's target features and covers every kernel. The intrinsics backend holds hand-written kernels and exists only where one was written. `--backend auto|intrinsics` picks between them (default `intrinsics`, falling back to auto, then scalar), so every hand-written kernel is measured against what the compiler produces from the same semantics.
 
 ```mermaid
 flowchart LR
