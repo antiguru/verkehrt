@@ -35,8 +35,13 @@ pub fn prelude(reg: &Registry) -> Result<String, String> {
     );
     for (_, def) in reg.iter() {
         let args = " Expr".repeat(def.inputs.len());
-        writeln!(out, "  ({}{args} :cost {})", kernel_ctor(&def.name), def.cost)
-            .expect("writing to a String cannot fail");
+        writeln!(
+            out,
+            "  ({}{args} :cost {})",
+            kernel_ctor(&def.name),
+            def.cost
+        )
+        .expect("writing to a String cannot fail");
     }
     out.push_str(")\n");
     writeln!(out, "(relation {ARR} (Expr))").expect("writing to a String cannot fail");
@@ -47,13 +52,19 @@ pub fn prelude(reg: &Registry) -> Result<String, String> {
                 .expect("writing to a String cannot fail");
         }
     }
-    for (from, to) in [(Op::Gt, Op::Lt), (Op::Lt, Op::Gt), (Op::Ge, Op::Le), (Op::Le, Op::Ge)] {
+    for (from, to) in [
+        (Op::Gt, Op::Lt),
+        (Op::Lt, Op::Gt),
+        (Op::Ge, Op::Le),
+        (Op::Le, Op::Ge),
+    ] {
         for (_, def) in reg.iter().filter(|(_, d)| d.op == Some(from)) {
             // Rules exist only for pairs in the registry. The partner takes the same operand
             // types in swapped order, which are equal here, so equal inputs identify it.
-            let partner = reg.iter().map(|(_, d)| d).find(|d| {
-                d.op == Some(to) && d.inputs == def.inputs && d.output == def.output
-            });
+            let partner = reg
+                .iter()
+                .map(|(_, d)| d)
+                .find(|d| d.op == Some(to) && d.inputs == def.inputs && d.output == def.output);
             if let Some(p) = partner {
                 let (k, pk) = (kernel_ctor(&def.name), kernel_ctor(&p.name));
                 writeln!(out, "(rewrite ({k} ?a ?b) ({pk} ?b ?a))")
@@ -80,7 +91,13 @@ fn fused_rule(def: &KernelDef) -> Result<Option<String>, String> {
     }
     let lhs = sexpr::parse(&pattern.lhs)
         .map_err(|e| format!("pattern of {}: {e}", def.name))?
-        .map_heads(&|h| if h == BCAST { h.to_string() } else { kernel_ctor(h) });
+        .map_heads(&|h| {
+            if h == BCAST {
+                h.to_string()
+            } else {
+                kernel_ctor(h)
+            }
+        });
     let mut rhs = vec![Sexp::Atom(kernel_ctor(&def.name))];
     rhs.extend(pattern.vars.iter().map(|v| Sexp::Atom(v.clone())));
     // Single-op elementwise kernels take an array or a broadcast in the same position, so

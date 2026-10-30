@@ -39,23 +39,43 @@ pub struct Error {
 
 impl Error {
     pub fn parse(msg: impl Into<String>, span: Span) -> Error {
-        Error { kind: ErrorKind::Parse, message: msg.into(), span: Some(span) }
+        Error {
+            kind: ErrorKind::Parse,
+            message: msg.into(),
+            span: Some(span),
+        }
     }
 
     pub fn ty(msg: impl Into<String>, span: Span) -> Error {
-        Error { kind: ErrorKind::Type, message: msg.into(), span: Some(span) }
+        Error {
+            kind: ErrorKind::Type,
+            message: msg.into(),
+            span: Some(span),
+        }
     }
 
     pub fn runtime(msg: impl Into<String>, span: Option<Span>) -> Error {
-        Error { kind: ErrorKind::Runtime, message: msg.into(), span }
+        Error {
+            kind: ErrorKind::Runtime,
+            message: msg.into(),
+            span,
+        }
     }
 
     pub fn usage(msg: impl Into<String>) -> Error {
-        Error { kind: ErrorKind::Usage, message: msg.into(), span: None }
+        Error {
+            kind: ErrorKind::Usage,
+            message: msg.into(),
+            span: None,
+        }
     }
 
     pub fn io(err: &std::io::Error) -> Error {
-        Error { kind: ErrorKind::Io, message: err.to_string(), span: None }
+        Error {
+            kind: ErrorKind::Io,
+            message: err.to_string(),
+            span: None,
+        }
     }
 }
 
@@ -81,6 +101,9 @@ mod tests {
         assert_eq!(e.to_string(), "error[type] at 3:14: bad");
         let e = Error::runtime("oops", None);
         assert_eq!(e.to_string(), "error[runtime]: oops");
-        assert_eq!(Error::parse("x", Span { line: 1, col: 1 }).kind, ErrorKind::Parse);
+        assert_eq!(
+            Error::parse("x", Span { line: 1, col: 1 }).kind,
+            ErrorKind::Parse
+        );
     }
 }

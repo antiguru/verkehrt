@@ -26,18 +26,33 @@ fn name(n: &str) -> ExprKind {
 const NOSPAN: Span = Span { line: 0, col: 0 };
 
 fn bin(op: BinOp, l: ExprKind, r: ExprKind) -> ExprKind {
-    let wrap = |k| Box::new(Expr { kind: k, span: NOSPAN });
+    let wrap = |k| {
+        Box::new(Expr {
+            kind: k,
+            span: NOSPAN,
+        })
+    };
     ExprKind::Binary(op, wrap(l), wrap(r))
 }
 
 /// Rewrites every span to a fixed value so shapes compare without positions.
 fn strip(k: &ExprKind) -> ExprKind {
-    let s = |e: &Expr| Box::new(Expr { kind: strip(&e.kind), span: NOSPAN });
+    let s = |e: &Expr| {
+        Box::new(Expr {
+            kind: strip(&e.kind),
+            span: NOSPAN,
+        })
+    };
     match k {
         ExprKind::Binary(op, l, r) => ExprKind::Binary(*op, s(l), s(r)),
         ExprKind::Call(n, args) => ExprKind::Call(
             n.clone(),
-            args.iter().map(|a| Expr { kind: strip(&a.kind), span: NOSPAN }).collect(),
+            args.iter()
+                .map(|a| Expr {
+                    kind: strip(&a.kind),
+                    span: NOSPAN,
+                })
+                .collect(),
         ),
         ExprKind::Lambda(ps, b) => ExprKind::Lambda(ps.clone(), s(b)),
         other => other.clone(),
@@ -139,20 +154,36 @@ fn lambda_call() {
 
 #[test]
 fn if_expression() {
-    assert!(matches!(expr("if c { 1.0 } else { 2.0 }"), ExprKind::If(..)));
+    assert!(matches!(
+        expr("if c { 1.0 } else { 2.0 }"),
+        ExprKind::If(..)
+    ));
 }
 
 #[test]
 fn whole_program() {
-    let p = parse("fn dot(x: f64[], y: f64[]) -> f64 { sum(x * y) }\nlet d = dot(a, b);\nprint(d);")
-        .unwrap();
+    let p =
+        parse("fn dot(x: f64[], y: f64[]) -> f64 { sum(x * y) }\nlet d = dot(a, b);\nprint(d);")
+            .unwrap();
     assert_eq!(p.items.len(), 3);
-    let f64a = TypeExpr { elem: ScalarType::F64, array: true };
+    let f64a = TypeExpr {
+        elem: ScalarType::F64,
+        array: true,
+    };
     match &p.items[0] {
         Item::Fn(f) => {
             assert_eq!(f.name, "dot");
-            assert_eq!(f.params, vec![("x".to_string(), f64a), ("y".to_string(), f64a)]);
-            assert_eq!(f.ret, TypeExpr { elem: ScalarType::F64, array: false });
+            assert_eq!(
+                f.params,
+                vec![("x".to_string(), f64a), ("y".to_string(), f64a)]
+            );
+            assert_eq!(
+                f.ret,
+                TypeExpr {
+                    elem: ScalarType::F64,
+                    array: false
+                }
+            );
             assert!(f.body.lets.is_empty());
         }
         i => panic!("{i:?}"),
@@ -178,7 +209,13 @@ fn typed_let_with_string() {
     let p = parse("let x: f64[] = load_f64(\"x.bin\");").unwrap();
     match &p.items[0] {
         Item::Let(l) => {
-            assert_eq!(l.ty, Some(TypeExpr { elem: ScalarType::F64, array: true }));
+            assert_eq!(
+                l.ty,
+                Some(TypeExpr {
+                    elem: ScalarType::F64,
+                    array: true
+                })
+            );
             match &l.value.kind {
                 ExprKind::Call(n, args) => {
                     assert_eq!(n, "load_f64");
@@ -204,7 +241,13 @@ fn input_and_export() {
     match &p.items[0] {
         Item::Input(n, t, _) => {
             assert_eq!(n, "x");
-            assert_eq!(*t, TypeExpr { elem: ScalarType::F64, array: true });
+            assert_eq!(
+                *t,
+                TypeExpr {
+                    elem: ScalarType::F64,
+                    array: true
+                }
+            );
         }
         i => panic!("{i:?}"),
     }
@@ -229,13 +272,19 @@ fn array_literal_and_comments() {
 #[test]
 fn binary_node_span_is_operator_span() {
     let p = parse("a + (b * c);").unwrap();
-    let Item::Expr(outer, _) = &p.items[0] else { panic!() };
+    let Item::Expr(outer, _) = &p.items[0] else {
+        panic!()
+    };
     assert_eq!(outer.span, Span { line: 1, col: 3 });
-    let ExprKind::Binary(_, l, r) = &outer.kind else { panic!() };
+    let ExprKind::Binary(_, l, r) = &outer.kind else {
+        panic!()
+    };
     assert_eq!(l.span, Span { line: 1, col: 1 });
     assert_eq!(r.span, Span { line: 1, col: 8 });
 
     let p = parse("x * 2;").unwrap();
-    let Item::Expr(e, _) = &p.items[0] else { panic!() };
+    let Item::Expr(e, _) = &p.items[0] else {
+        panic!()
+    };
     assert_eq!(e.span, Span { line: 1, col: 3 });
 }

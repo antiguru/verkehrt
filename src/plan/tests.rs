@@ -16,7 +16,9 @@ fn egglog_smoke() {
         (extract root)
     ";
     let mut eg = ::egglog::EGraph::default();
-    let outputs = eg.parse_and_run_program(None, program).expect("program runs");
+    let outputs = eg
+        .parse_and_run_program(None, program)
+        .expect("program runs");
     let best = outputs
         .iter()
         .find_map(|o| match o {
@@ -50,7 +52,9 @@ fn plan_prints(src: &str) -> Vec<(String, String)> {
             _ => None,
         })
         .map(|term| {
-            let node = planner.plan(&reg, term).unwrap_or_else(|e| panic!("{src}: {e}"));
+            let node = planner
+                .plan(&reg, term)
+                .unwrap_or_else(|e| panic!("{src}: {e}"));
             assert_broadcasts_fit(&reg, &node);
             let root = match &node {
                 PlanNode::Kernel(id, _) => reg.get(*id).name.clone(),
@@ -67,12 +71,18 @@ fn assert_broadcasts_fit(reg: &Registry, node: &PlanNode) {
     match node {
         PlanNode::Leaf(_) => {}
         PlanNode::Bcast(inner) => assert_broadcasts_fit(reg, inner),
-        PlanNode::Cond(c, t, e) => [c, t, e].into_iter().for_each(|x| assert_broadcasts_fit(reg, x)),
+        PlanNode::Cond(c, t, e) => [c, t, e]
+            .into_iter()
+            .for_each(|x| assert_broadcasts_fit(reg, x)),
         PlanNode::Kernel(id, args) => {
             let def = reg.get(*id);
             for (spec, arg) in def.inputs.iter().zip(args) {
                 if matches!(arg, PlanNode::Bcast(_)) {
-                    assert!(matches!(spec, InputSpec::Either(_)), "{} got a broadcast", def.name);
+                    assert!(
+                        matches!(spec, InputSpec::Either(_)),
+                        "{} got a broadcast",
+                        def.name
+                    );
                 }
                 assert_broadcasts_fit(reg, arg);
             }
@@ -96,7 +106,10 @@ fn sum_of_product_is_dot() {
 fn sum_of_swapped_product_is_dot() {
     let (kernel, rendered) = plan_print("print(sum(y * x));");
     assert_eq!(kernel, "dot_f64");
-    assert!(rendered == "(dot_f64 y x)" || rendered == "(dot_f64 x y)", "{rendered}");
+    assert!(
+        rendered == "(dot_f64 y x)" || rendered == "(dot_f64 x y)",
+        "{rendered}"
+    );
 }
 
 #[test]
@@ -140,19 +153,28 @@ fn conditional_sum_is_fused() {
 
 #[test]
 fn single_use_let_fuses_across_binding() {
-    assert_eq!(plan_print("let t = x * y; print(sum(t));").1, "(dot_f64 x y)");
+    assert_eq!(
+        plan_print("let t = x * y; print(sum(t));").1,
+        "(dot_f64 x y)"
+    );
 }
 
 #[test]
 fn shared_let_is_a_leaf() {
     let plans = plan_prints("let t = x * y; print(sum(t)); print(t);");
-    assert_eq!(plans[0], ("reduce_add_f64".into(), "(reduce_add_f64 t)".into()));
+    assert_eq!(
+        plans[0],
+        ("reduce_add_f64".into(), "(reduce_add_f64 t)".into())
+    );
     assert_eq!(plans[1], ("-".into(), "t".into()));
 }
 
 #[test]
 fn unfused_sum_uses_single_op_kernels() {
-    assert_eq!(plan_print("print(sum(x + y));").1, "(reduce_add_f64 (add_f64 x y))");
+    assert_eq!(
+        plan_print("print(sum(x + y));").1,
+        "(reduce_add_f64 (add_f64 x y))"
+    );
 }
 
 #[test]
@@ -173,7 +195,10 @@ fn conditional_branches_are_planned_and_fused_separately() {
     let (root, rendered) = plan_print("print(if sum(x) > 0.0 { sum(x * y) } else { 0.0 });");
     assert_eq!(root, "-");
     assert!(rendered.starts_with("(if ("), "{rendered}");
-    assert!(rendered.ends_with(" then (dot_f64 x y) else 0.0)"), "{rendered}");
+    assert!(
+        rendered.ends_with(" then (dot_f64 x y) else 0.0)"),
+        "{rendered}"
+    );
 }
 
 #[test]

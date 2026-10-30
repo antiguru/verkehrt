@@ -178,7 +178,10 @@ fn check_family(prefix: &str, mixes: &[Mix]) {
         .map(|(id, _)| id)
         .collect();
     assert!(!ids.is_empty(), "no fused kernels with prefix {prefix}");
-    for (id, &mix) in ids.iter().flat_map(|id| mixes.iter().map(move |m| (*id, m))) {
+    for (id, &mix) in ids
+        .iter()
+        .flat_map(|id| mixes.iter().map(move |m| (*id, m)))
+    {
         let def = reg.get(id);
         let strategy = pool_strategy(elem_type(&def.inputs), mix);
         let mut runner = TestRunner::new(Config {

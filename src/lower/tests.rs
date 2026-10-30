@@ -23,7 +23,12 @@ fn show(t: &Term, l: &Lowered, g: &Globals) -> String {
             Leaf::Const(_) => "L_c".to_string(),
         },
         TermKind::Bcast(a) => format!("bcast({})", show(a, l, g)),
-        TermKind::Cond(c, t, e) => format!("if({}, {}, {})", show(c, l, g), show(t, l, g), show(e, l, g)),
+        TermKind::Cond(c, t, e) => format!(
+            "if({}, {}, {})",
+            show(c, l, g),
+            show(t, l, g),
+            show(e, l, g)
+        ),
         TermKind::Op(op, args) => {
             let args: Vec<String> = args.iter().map(|a| show(a, l, g)).collect();
             format!("{}({})", op_name(*op), args.join(", "))
@@ -36,7 +41,9 @@ fn dump(l: &Lowered, g: &Globals) -> Vec<String> {
     l.stmts
         .iter()
         .map(|s| match s {
-            LStmt::Bind { var, term, .. } => format!("bind {} = {}", g.name(*var), show(term, l, g)),
+            LStmt::Bind { var, term, .. } => {
+                format!("bind {} = {}", g.name(*var), show(term, l, g))
+            }
             LStmt::Print { term, .. } => format!("print {}", show(term, l, g)),
             LStmt::Show { term, .. } => format!("show {}", show(term, l, g)),
         })
@@ -52,7 +59,11 @@ fn run_dump(src: &str) -> Vec<String> {
 fn array_lets_stay_binds() {
     assert_eq!(
         run_dump("let x = [1.0]; let y = [2.0]; print(sum(x * y));"),
-        ["bind x = L_c", "bind y = L_c", "print reduce_add(mul(L_x, L_y))"]
+        [
+            "bind x = L_c",
+            "bind y = L_c",
+            "print reduce_add(mul(L_x, L_y))"
+        ]
     );
 }
 
@@ -60,7 +71,11 @@ fn array_lets_stay_binds() {
 fn single_use_let_is_inlined() {
     assert_eq!(
         run_dump("let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));"),
-        ["bind x = L_c", "bind y = L_c", "print reduce_add(mul(L_x, L_y))"]
+        [
+            "bind x = L_c",
+            "bind y = L_c",
+            "print reduce_add(mul(L_x, L_y))"
+        ]
     );
 }
 
@@ -80,7 +95,10 @@ fn multi_use_let_stays() {
 
 #[test]
 fn repl_keeps_every_let() {
-    let (l, g) = lowered("let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));", Mode::Repl);
+    let (l, g) = lowered(
+        "let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));",
+        Mode::Repl,
+    );
     assert_eq!(
         dump(&l, &g),
         [
@@ -170,13 +188,18 @@ fn repeated_subterm_is_hoisted() {
             "print add(L_t0, L_t0)"
         ]
     );
-    let LStmt::Bind { var, .. } = &l.stmts[1] else { panic!("expected a bind") };
+    let LStmt::Bind { var, .. } = &l.stmts[1] else {
+        panic!("expected a bind")
+    };
     assert_eq!(g.name(*var), "_t0");
 }
 
 #[test]
 fn inner_term_shared_only_through_parent_is_not_hoisted_twice() {
-    let (l, g) = lowered("let x = [1.0]; let y = [2.0]; print(sum(x * y) + sum(x * y) + sum(x));", Mode::Run);
+    let (l, g) = lowered(
+        "let x = [1.0]; let y = [2.0]; print(sum(x * y) + sum(x * y) + sum(x));",
+        Mode::Run,
+    );
     assert_eq!(
         dump(&l, &g),
         [
@@ -190,7 +213,10 @@ fn inner_term_shared_only_through_parent_is_not_hoisted_twice() {
 
 #[test]
 fn inner_term_also_used_elsewhere_is_hoisted_separately() {
-    let (l, g) = lowered("let x = [1.0]; print(sum(x + x) + sum(x + x) + sum(sqrt(x + x)));", Mode::Run);
+    let (l, g) = lowered(
+        "let x = [1.0]; print(sum(x + x) + sum(x + x) + sum(sqrt(x + x)));",
+        Mode::Run,
+    );
     assert_eq!(
         dump(&l, &g),
         [
@@ -217,7 +243,11 @@ fn input_and_export() {
     let (var, _) = g.lookup("d").unwrap();
     assert_eq!(l.exports, [("d".to_string(), var)]);
     let (x, _) = g.lookup("x").unwrap();
-    assert!(l.leaves.iter().any(|leaf| matches!(leaf, Leaf::Var(v) if *v == x)));
+    assert!(
+        l.leaves
+            .iter()
+            .any(|leaf| matches!(leaf, Leaf::Var(v) if *v == x))
+    );
 }
 
 #[test]
@@ -225,7 +255,11 @@ fn export_is_never_inlined() {
     let (l, g) = lowered("let x = [1.0]; export e = x + x; print(sum(e));", Mode::Run);
     assert_eq!(
         dump(&l, &g),
-        ["bind x = L_c", "bind e = add(L_x, L_x)", "print reduce_add(L_e)"]
+        [
+            "bind x = L_c",
+            "bind e = add(L_x, L_x)",
+            "print reduce_add(L_e)"
+        ]
     );
 }
 
@@ -233,7 +267,11 @@ fn export_is_never_inlined() {
 fn zero_use_let_stays() {
     assert_eq!(
         run_dump("let x = [1.0]; let t = x + x; print(sum(x));"),
-        ["bind x = L_c", "bind t = add(L_x, L_x)", "print reduce_add(L_x)"]
+        [
+            "bind x = L_c",
+            "bind t = add(L_x, L_x)",
+            "print reduce_add(L_x)"
+        ]
     );
 }
 
@@ -252,7 +290,10 @@ fn term_equality_ignores_span() {
         ty: ValueType::Array(ScalarType::F64),
         span: Span { line: 1, col: 1 },
     };
-    let b = Term { span: Span { line: 9, col: 9 }, ..a.clone() };
+    let b = Term {
+        span: Span { line: 9, col: 9 },
+        ..a.clone()
+    };
     assert_eq!(a, b);
     let mut set = HashSet::new();
     set.insert(a);
@@ -263,7 +304,11 @@ fn term_equality_ignores_span() {
 fn zip_map_reads_each_array_through_a_length_check() {
     assert_eq!(
         run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a));"),
-        ["bind x = L_c", "bind y = L_c", "print samelen(L_x, length(L_y))"]
+        [
+            "bind x = L_c",
+            "bind y = L_c",
+            "print samelen(L_x, length(L_y))"
+        ]
     );
     assert_eq!(
         run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a + b));"),
@@ -279,15 +324,26 @@ fn zip_map_reads_each_array_through_a_length_check() {
 fn lambda_parameter_shadows_outer_variable() {
     assert_eq!(
         run_dump("let v = [1.0]; let x = [2.0]; print(sum(v)); print(map(x, |v| v * 2.0));"),
-        ["bind v = L_c", "bind x = L_c", "print reduce_add(L_v)", "print mul(L_x, bcast(L_c))"]
+        [
+            "bind v = L_c",
+            "bind x = L_c",
+            "print reduce_add(L_v)",
+            "print mul(L_x, bcast(L_c))"
+        ]
     );
 }
 
 #[test]
 fn function_local_shadows_outer_variable() {
     assert_eq!(
-        run_dump("fn f(a: f64[]) -> f64 { let x = sum(a); x + 1.0 } let x = [1.0]; let y = [2.0]; print(f(y) + sum(x));"),
-        ["bind x = L_c", "bind y = L_c", "print add(add(reduce_add(L_y), L_c), reduce_add(L_x))"]
+        run_dump(
+            "fn f(a: f64[]) -> f64 { let x = sum(a); x + 1.0 } let x = [1.0]; let y = [2.0]; print(f(y) + sum(x));"
+        ),
+        [
+            "bind x = L_c",
+            "bind y = L_c",
+            "print add(add(reduce_add(L_y), L_c), reduce_add(L_x))"
+        ]
     );
 }
 
@@ -303,7 +359,10 @@ fn single_use_let_inlines_into_call_argument() {
 fn single_use_let_inlines_into_lambda() {
     assert_eq!(
         run_dump("let x = [1.0]; let s = sum(x) * 2.0; print(map(x, |v| v + s));"),
-        ["bind x = L_c", "print add(L_x, bcast(mul(reduce_add(L_x), L_c)))"]
+        [
+            "bind x = L_c",
+            "print add(L_x, bcast(mul(reduce_add(L_x), L_c)))"
+        ]
     );
 }
 
@@ -311,7 +370,12 @@ fn single_use_let_inlines_into_lambda() {
 fn scalar_subexpression_gets_one_broadcast() {
     assert_eq!(
         run_dump("let x = [1.0]; let a = 2.0; let b = 3.0; print(x * (a + b));"),
-        ["bind x = L_c", "bind a = L_c", "bind b = L_c", "print mul(L_x, bcast(add(L_a, L_b)))"]
+        [
+            "bind x = L_c",
+            "bind a = L_c",
+            "bind b = L_c",
+            "print mul(L_x, bcast(add(L_a, L_b)))"
+        ]
     );
 }
 
@@ -319,7 +383,11 @@ fn scalar_subexpression_gets_one_broadcast() {
 fn single_use_let_inlines_across_print() {
     assert_eq!(
         run_dump("let x = [1.0]; let t = x + x; print(sum(x)); print(sum(t));"),
-        ["bind x = L_c", "print reduce_add(L_x)", "print reduce_add(add(L_x, L_x))"]
+        [
+            "bind x = L_c",
+            "print reduce_add(L_x)",
+            "print reduce_add(add(L_x, L_x))"
+        ]
     );
 }
 
@@ -335,7 +403,10 @@ fn array_literal_of_non_constant_is_type_error() {
 fn scalar_condition_if_is_lazy() {
     assert_eq!(
         run_dump("let x = [1.0]; print(if sum(x) > 0.0 { x } else { x + x });"),
-        ["bind x = L_c", "print if(gt(reduce_add(L_x), L_c), L_x, add(L_x, L_x))"]
+        [
+            "bind x = L_c",
+            "print if(gt(reduce_add(L_x), L_c), L_x, add(L_x, L_x))"
+        ]
     );
 }
 
@@ -343,12 +414,20 @@ fn scalar_condition_if_is_lazy() {
 fn mask_condition_if_and_lambda_if_select() {
     assert_eq!(
         run_dump("let x = [1.0]; print(if x > 0.0 { 1.0 } else { 0.0 });"),
-        ["bind x = L_c", "print select(gt(L_x, bcast(L_c)), bcast(L_c), bcast(L_c))"]
+        [
+            "bind x = L_c",
+            "print select(gt(L_x, bcast(L_c)), bcast(L_c), bcast(L_c))"
+        ]
     );
     // A condition on a captured scalar is still per element inside a lambda.
     assert_eq!(
-        run_dump("let x = [1.0]; let s = sum(x); print(map(x, |v| if s > 0.0 { v } else { 0.0 }));"),
-        ["bind x = L_c", "print select(bcast(gt(reduce_add(L_x), L_c)), L_x, bcast(L_c))"]
+        run_dump(
+            "let x = [1.0]; let s = sum(x); print(map(x, |v| if s > 0.0 { v } else { 0.0 }));"
+        ),
+        [
+            "bind x = L_c",
+            "print select(bcast(gt(reduce_add(L_x), L_c)), L_x, bcast(L_c))"
+        ]
     );
 }
 
@@ -383,7 +462,9 @@ fn repeated_conditional_is_hoisted_whole() {
         ]
     );
     assert_eq!(
-        run_dump("fn f(x: f64[]) -> f64 { if sum(x) > 0.0 { 1.0 } else { 2.0 } } let x = [1.0]; print(f(x) + f(x));"),
+        run_dump(
+            "fn f(x: f64[]) -> f64 { if sum(x) > 0.0 { 1.0 } else { 2.0 } } let x = [1.0]; print(f(x) + f(x));"
+        ),
         [
             "bind x = L_c",
             "bind _t0 = if(gt(reduce_add(L_x), L_c), L_c, L_c)",
@@ -396,6 +477,9 @@ fn repeated_conditional_is_hoisted_whole() {
 fn single_use_let_inlines_into_branch() {
     assert_eq!(
         run_dump("let x = [1.0]; let t = sum(x + x); print(if true { t } else { 0.0 });"),
-        ["bind x = L_c", "print if(L_c, reduce_add(add(L_x, L_x)), L_c)"]
+        [
+            "bind x = L_c",
+            "print if(L_c, reduce_add(add(L_x, L_x)), L_c)"
+        ]
     );
 }

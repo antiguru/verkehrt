@@ -228,7 +228,12 @@ impl Array {
             "slice {start}+{len} out of range for length {}",
             self.len
         );
-        Array { buf: Arc::clone(&self.buf), offset: self.offset + start, len, elem: self.elem }
+        Array {
+            buf: Arc::clone(&self.buf),
+            offset: self.offset + start,
+            len,
+            elem: self.elem,
+        }
     }
 
     fn bytes(&self) -> &[u8] {
@@ -245,7 +250,11 @@ impl Array {
 
     /// Bool storage, one byte per element holding 0 or 1. Panics unless the array is `Bool`.
     pub fn as_bool_bytes(&self) -> &[u8] {
-        assert_eq!(self.elem, ScalarType::Bool, "as_bool_bytes on non-bool array");
+        assert_eq!(
+            self.elem,
+            ScalarType::Bool,
+            "as_bool_bytes on non-bool array"
+        );
         self.bytes()
     }
 
@@ -287,8 +296,15 @@ impl Array {
     pub fn build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Array {
         let mut blocks = Array::zeroed(len, T::TYPE);
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
-        f(bytemuck::cast_slice_mut(&mut bytes[..len * T::TYPE.width()]));
-        Array { buf: Arc::new(blocks), offset: 0, len, elem: T::TYPE }
+        f(bytemuck::cast_slice_mut(
+            &mut bytes[..len * T::TYPE.width()],
+        ));
+        Array {
+            buf: Arc::new(blocks),
+            offset: 0,
+            len,
+            elem: T::TYPE,
+        }
     }
 
     /// Like `build` for `Bool`. The caller must write only 0 or 1.
@@ -296,12 +312,21 @@ impl Array {
         let mut blocks = Array::zeroed(len, ScalarType::Bool);
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
         f(&mut bytes[..len]);
-        Array { buf: Arc::new(blocks), offset: 0, len, elem: ScalarType::Bool }
+        Array {
+            buf: Arc::new(blocks),
+            offset: 0,
+            len,
+            elem: ScalarType::Bool,
+        }
     }
 
     /// Element `i` as a scalar. Panics when out of range.
     pub fn get(&self, i: usize) -> Scalar {
-        assert!(i < self.len, "index {i} out of range for length {}", self.len);
+        assert!(
+            i < self.len,
+            "index {i} out of range for length {}",
+            self.len
+        );
         match self.elem {
             ScalarType::I8 => Scalar::I8(self.as_slice::<i8>()[i]),
             ScalarType::I16 => Scalar::I16(self.as_slice::<i16>()[i]),
@@ -395,7 +420,10 @@ mod tests {
         let a = Array::from_vec(vec![1.0f64, 2.0, 3.0, 4.0]);
         let s = a.slice(1, 2);
         assert_eq!(s.as_slice::<f64>(), &[2.0, 3.0]);
-        assert_eq!(s.as_slice::<f64>().as_ptr(), a.as_slice::<f64>()[1..].as_ptr());
+        assert_eq!(
+            s.as_slice::<f64>().as_ptr(),
+            a.as_slice::<f64>()[1..].as_ptr()
+        );
     }
 
     #[test]
@@ -409,10 +437,19 @@ mod tests {
     fn display_formats() {
         assert_eq!(Value::Scalar(Scalar::F64(1.0)).to_string(), "1.0");
         assert_eq!(Value::Scalar(Scalar::Bool(true)).to_string(), "true");
-        assert_eq!(Value::Array(Array::from_vec(vec![1i64, 2])).to_string(), "[1, 2]");
-        assert_eq!(Value::Array(Array::from_vec(Vec::<f64>::new())).to_string(), "[]");
+        assert_eq!(
+            Value::Array(Array::from_vec(vec![1i64, 2])).to_string(),
+            "[1, 2]"
+        );
+        assert_eq!(
+            Value::Array(Array::from_vec(Vec::<f64>::new())).to_string(),
+            "[]"
+        );
         let long = Value::Array(Array::from_vec((0..25i64).collect::<Vec<_>>()));
-        assert_eq!(long.to_string(), "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ... 15 more]");
+        assert_eq!(
+            long.to_string(),
+            "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ... 15 more]"
+        );
     }
 
     #[test]

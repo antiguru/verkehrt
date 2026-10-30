@@ -6,7 +6,7 @@ pub mod kernels;
 pub mod lower;
 pub mod ops;
 pub mod plan;
-pub mod value;
 pub mod syntax;
+pub mod value;
 
 pub use interp::{Interpreter, Options, Prepared};

@@ -84,16 +84,32 @@ impl Interpreter {
 
     /// Runs a whole program. Every statement is checked and planned before any executes.
     /// `print` writes to `out`, plan and trace lines go to `diag`.
-    pub fn run(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+    pub fn run(
+        &mut self,
+        src: &str,
+        out: &mut dyn Write,
+        diag: &mut dyn Write,
+    ) -> Result<(), Error> {
         self.eval(src, Mode::Run, out, diag)
     }
 
     /// Like `run`, but lets stay bound and expression statements print their value to `out`.
-    pub fn eval_repl(&mut self, src: &str, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+    pub fn eval_repl(
+        &mut self,
+        src: &str,
+        out: &mut dyn Write,
+        diag: &mut dyn Write,
+    ) -> Result<(), Error> {
         self.eval(src, Mode::Repl, out, diag)
     }
 
-    fn eval(&mut self, src: &str, mode: Mode, out: &mut dyn Write, diag: &mut dyn Write) -> Result<(), Error> {
+    fn eval(
+        &mut self,
+        src: &str,
+        mode: Mode,
+        out: &mut dyn Write,
+        diag: &mut dyn Write,
+    ) -> Result<(), Error> {
         // The checker declares each `input` as a fresh variable, so the host's binding is
         // looked up in the globals as they were before this program.
         let before = self.globals.clone();
@@ -125,8 +141,16 @@ impl Interpreter {
         let var_count = before.var_count();
         self.globals = globals;
         self.env.extend(aliases);
-        let mut sinks = Sinks { out, diag, print_to_diag: false, show: mode == Mode::Repl };
-        let obs = Observe { trace: self.opts.trace, stats: self.opts.stats.then_some(&mut self.stats) };
+        let mut sinks = Sinks {
+            out,
+            diag,
+            print_to_diag: false,
+            show: mode == Mode::Repl,
+        };
+        let obs = Observe {
+            trace: self.opts.trace,
+            stats: self.opts.stats.then_some(&mut self.stats),
+        };
         let result = run_plan(&self.reg, self.isa, &c.plan, &mut self.env, obs, &mut sinks);
         if result.is_err() {
             // A failed input exposes no new names and keeps old bindings. Variables created
@@ -145,9 +169,11 @@ impl Interpreter {
             .stmts
             .iter()
             .filter_map(|s| match s {
-                TStmt::Input { var, ty, .. } => {
-                    Some(InputDecl { name: globals.name(*var).to_string(), var: *var, ty: *ty })
-                }
+                TStmt::Input { var, ty, .. } => Some(InputDecl {
+                    name: globals.name(*var).to_string(),
+                    var: *var,
+                    ty: *ty,
+                }),
                 _ => None,
             })
             .collect();
@@ -165,7 +191,11 @@ impl Interpreter {
             }
             nodes.push(node);
         }
-        Ok(Compiled { plan: Plan { lowered, nodes }, inputs, plan_lines })
+        Ok(Compiled {
+            plan: Plan { lowered, nodes },
+            inputs,
+            plan_lines,
+        })
     }
 
     /// Binds `name` to `value` at the value's type. A later `input` of the name refers to it.
@@ -197,7 +227,10 @@ impl Interpreter {
         for line in &c.plan_lines {
             writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
         }
-        Ok(Prepared { plan: c.plan, inputs: c.inputs })
+        Ok(Prepared {
+            plan: c.plan,
+            inputs: c.inputs,
+        })
     }
 }
 
@@ -213,7 +246,9 @@ impl Prepared {
     ) -> Result<Vec<(String, Value)>, Error> {
         for (i, (name, _)) in inputs.iter().enumerate() {
             if !self.inputs.iter().any(|d| d.name == *name) {
-                return Err(Error::usage(format!("program does not declare input '{name}'")));
+                return Err(Error::usage(format!(
+                    "program does not declare input '{name}'"
+                )));
             }
             if inputs[..i].iter().any(|(n, _)| n == name) {
                 return Err(Error::usage(format!("input '{name}' is supplied twice")));
@@ -222,7 +257,10 @@ impl Prepared {
         let mut env = Env::new();
         for decl in &self.inputs {
             let Some((_, v)) = inputs.iter().find(|(n, _)| *n == decl.name) else {
-                return Err(Error::usage(format!("input '{}' is not supplied", decl.name)));
+                return Err(Error::usage(format!(
+                    "input '{}' is not supplied",
+                    decl.name
+                )));
             };
             if v.ty() != decl.ty {
                 return Err(Error::usage(format!(
@@ -235,9 +273,24 @@ impl Prepared {
             env.insert(decl.var, v.clone());
         }
         let mut sink = std::io::sink();
-        let mut sinks = Sinks { out: &mut sink, diag, print_to_diag: true, show: false };
-        let obs = Observe { trace: interp.opts.trace, stats: None };
-        run_plan(&interp.reg, interp.isa, &self.plan, &mut env, obs, &mut sinks)?;
+        let mut sinks = Sinks {
+            out: &mut sink,
+            diag,
+            print_to_diag: true,
+            show: false,
+        };
+        let obs = Observe {
+            trace: interp.opts.trace,
+            stats: None,
+        };
+        run_plan(
+            &interp.reg,
+            interp.isa,
+            &self.plan,
+            &mut env,
+            obs,
+            &mut sinks,
+        )?;
         self.plan
             .lowered
             .exports

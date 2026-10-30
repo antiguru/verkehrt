@@ -37,7 +37,11 @@ impl Stats {
         for (name, s) in &self.0 {
             let micros = s.time.as_secs_f64() * 1e6;
             // Statistics are best effort, a failing sink must not fail the program.
-            let _ = writeln!(w, "stats {name} calls={} bytes={} time={micros:.1}", s.calls, s.bytes);
+            let _ = writeln!(
+                w,
+                "stats {name} calls={} bytes={} time={micros:.1}",
+                s.calls, s.bytes
+            );
         }
     }
 }
@@ -85,7 +89,11 @@ pub fn run_plan(
                 env.insert(*var, value);
             }
             LStmt::Print { .. } => {
-                let w = if sinks.print_to_diag { &mut *sinks.diag } else { &mut *sinks.out };
+                let w = if sinks.print_to_diag {
+                    &mut *sinks.diag
+                } else {
+                    &mut *sinks.out
+                };
                 writeln!(w, "{value}").map_err(|e| Error::io(&e))?;
             }
             LStmt::Show { .. } => {
@@ -119,9 +127,11 @@ impl Machine<'_> {
             PlanNode::Leaf(id) => {
                 match &self.leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
                     Leaf::Const(v) => Ok(v.clone()),
-                    Leaf::Var(v) => self.env.get(v).cloned().ok_or_else(|| {
-                        Error::runtime("variable has no value", Some(self.span))
-                    }),
+                    Leaf::Var(v) => self
+                        .env
+                        .get(v)
+                        .cloned()
+                        .ok_or_else(|| Error::runtime("variable has no value", Some(self.span))),
                 }
             }
             // Single-op array kernels take a scalar operand directly and repeat it themselves.
@@ -134,7 +144,10 @@ impl Machine<'_> {
                 )),
             },
             PlanNode::Kernel(id, args) => {
-                let args = args.iter().map(|a| self.eval(a)).collect::<Result<Vec<_>, _>>()?;
+                let args = args
+                    .iter()
+                    .map(|a| self.eval(a))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let (kernel, used) = self.reg.select_impl(*id, self.isa);
                 let observing = self.trace.is_some() || self.stats.is_some();
                 let start = observing.then(Instant::now);

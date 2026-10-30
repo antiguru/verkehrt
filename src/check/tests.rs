@@ -25,7 +25,11 @@ fn last_type(src: &str) -> ValueType {
 fn type_err(src: &str, needle: &str) -> Error {
     let e = run(src).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Type, "{e}");
-    assert!(e.message.contains(needle), "{:?} lacks {needle:?}", e.message);
+    assert!(
+        e.message.contains(needle),
+        "{:?} lacks {needle:?}",
+        e.message
+    );
     e
 }
 
@@ -64,7 +68,10 @@ fn reduction_widens() {
 
 #[test]
 fn map_lambda() {
-    assert_eq!(last_type("let x = [1.0]; let m = map(x, |v| (v * 2.0) + 1.0);"), F64A);
+    assert_eq!(
+        last_type("let x = [1.0]; let m = map(x, |v| (v * 2.0) + 1.0);"),
+        F64A
+    );
 }
 
 #[test]
@@ -171,8 +178,14 @@ fn if_rules() {
     assert_eq!(last_type("let r = if 1.0 < 2.0 { 1.0 } else { 2.0 };"), F64);
     type_err("let r = if 1.0 { 1.0 } else { 2.0 };", "bool");
     type_err("let r = if true { 1.0 } else { 2 };", "branch");
-    assert_eq!(last_type("let m = [true]; let r = if m { 1.0 } else { 2.0 };"), F64A);
-    type_err("let m = [true]; let r = if m { [1i8] } else { [2i8] };", "no kernel for 'if'");
+    assert_eq!(
+        last_type("let m = [true]; let r = if m { 1.0 } else { 2.0 };"),
+        F64A
+    );
+    type_err(
+        "let m = [true]; let r = if m { [1i8] } else { [2i8] };",
+        "no kernel for 'if'",
+    );
 }
 
 #[test]
@@ -182,7 +195,10 @@ fn array_literal_rules() {
 
 #[test]
 fn function_scope_and_shadowing() {
-    type_err("let t = 1.0; fn f(a: f64) -> f64 { a + t }", "unknown name 't'");
+    type_err(
+        "let t = 1.0; fn f(a: f64) -> f64 { a + t }",
+        "unknown name 't'",
+    );
     type_err("fn sum(a: f64) -> f64 { a }", "builtin");
     let (p, g) = run("let a = 1.0; let a = [2.0];").unwrap();
     let vars: Vec<VarId> = p
@@ -201,7 +217,10 @@ fn function_scope_and_shadowing() {
 fn load_and_print_top_level_only() {
     assert_eq!(last_type("let a = load_f64(\"x.bin\");"), F64A);
     type_err("fn f(a: f64) -> f64 { sum(load_f64(\"x\")) }", "top level");
-    type_err("let a = map([1.0], |v| sum(load_f64(\"x\")));", "inside a lambda");
+    type_err(
+        "let a = map([1.0], |v| sum(load_f64(\"x\")));",
+        "inside a lambda",
+    );
 }
 
 #[test]
@@ -222,7 +241,10 @@ fn globals_persist_and_declare() {
 fn builtins_result_types() {
     let i = ValueType::Scalar(ScalarType::I64);
     assert_eq!(last_type("let n = length([1.0]);"), i);
-    assert_eq!(last_type("let n = where([true]);"), ValueType::Array(ScalarType::I64));
+    assert_eq!(
+        last_type("let n = where([true]);"),
+        ValueType::Array(ScalarType::I64)
+    );
     assert_eq!(last_type("let n = count([true]);"), i);
     assert_eq!(last_type("let n = cast_f64([1]);"), F64A);
     assert_eq!(last_type("let n = fill(3, 1.0);"), F64A);
@@ -241,9 +263,15 @@ fn zip_map_types() {
 
 #[test]
 fn duplicate_input_and_export_are_rejected() {
-    let e = type_err("input x: f64[]; input x: i64[];", "input 'x' is declared twice");
+    let e = type_err(
+        "input x: f64[]; input x: i64[];",
+        "input 'x' is declared twice",
+    );
     assert_eq!(e.span, Some(Span { line: 1, col: 17 }));
-    let e = type_err("export a = 1.0; export a = 2.0;", "export 'a' is declared twice");
+    let e = type_err(
+        "export a = 1.0; export a = 2.0;",
+        "export 'a' is declared twice",
+    );
     assert_eq!(e.span, Some(Span { line: 1, col: 17 }));
     // An input and an export are different namespaces of the host interface.
     run("input a: f64; export b = a; let b = 1.0;").unwrap();

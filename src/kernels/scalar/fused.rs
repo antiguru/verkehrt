@@ -359,7 +359,9 @@ fn eval(reg: &Registry, sx: &Sx, env: &HashMap<&str, &Value>) -> Result<Value, S
             let def = reg.get(id);
             let types: Vec<ValueType> = args.iter().map(Value::ty).collect();
             if !def.accepts(&types) {
-                return Err(format!("kernel {head} does not accept its pattern arguments"));
+                return Err(format!(
+                    "kernel {head} does not accept its pattern arguments"
+                ));
             }
             let (f, _) = reg.select_impl(id, Isa::Scalar);
             f(&args)

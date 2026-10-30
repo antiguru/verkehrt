@@ -113,7 +113,11 @@ impl Leaves {
     }
 
     fn var(&mut self, v: VarId) -> LeafId {
-        match self.0.iter().position(|l| matches!(l, Leaf::Var(w) if *w == v)) {
+        match self
+            .0
+            .iter()
+            .position(|l| matches!(l, Leaf::Var(w) if *w == v))
+        {
             Some(i) => Leaves::id_at(i),
             None => self.push(Leaf::Var(v)),
         }
@@ -175,19 +179,33 @@ pub fn lower(
             TStmt::Input { .. } => {}
             TStmt::Let { var, value, span } => {
                 let term = lw.expr(value)?;
-                stmts.push(LStmt::Bind { var: *var, term, span: *span });
+                stmts.push(LStmt::Bind {
+                    var: *var,
+                    term,
+                    span: *span,
+                });
             }
             TStmt::Export { var, value, span } => {
                 let term = lw.expr(value)?;
                 exports.push((lw.g.name(*var).to_string(), *var));
                 exported.insert(*var);
-                stmts.push(LStmt::Bind { var: *var, term, span: *span });
+                stmts.push(LStmt::Bind {
+                    var: *var,
+                    term,
+                    span: *span,
+                });
             }
             TStmt::Print { value, span } => {
-                stmts.push(LStmt::Print { term: lw.expr(value)?, span: *span });
+                stmts.push(LStmt::Print {
+                    term: lw.expr(value)?,
+                    span: *span,
+                });
             }
             TStmt::Expr { value, span } => {
-                stmts.push(LStmt::Show { term: lw.expr(value)?, span: *span });
+                stmts.push(LStmt::Show {
+                    term: lw.expr(value)?,
+                    span: *span,
+                });
             }
         }
     }
@@ -199,7 +217,11 @@ pub fn lower(
         .into_iter()
         .flat_map(|s| hoist_repeated(s, &mut leaves, globals))
         .collect();
-    Ok(Lowered { leaves: leaves.0, stmts, exports })
+    Ok(Lowered {
+        leaves: leaves.0,
+        stmts,
+        exports,
+    })
 }
 
 struct Lowerer<'a> {
@@ -219,7 +241,11 @@ impl Lowerer<'_> {
             Leaf::Const(v) => self.leaves.constant(v),
             Leaf::Var(v) => self.leaves.var(v),
         };
-        Term { kind: TermKind::Leaf(id), ty, span }
+        Term {
+            kind: TermKind::Leaf(id),
+            ty,
+            span,
+        }
     }
 
     /// Builds an operation over lowered operands. Scalars next to an array operand are
@@ -231,7 +257,11 @@ impl Lowerer<'_> {
             .map(|a| match (lift, a.ty) {
                 (true, ValueType::Scalar(t)) => {
                     let span = a.span;
-                    Term { kind: TermKind::Bcast(Box::new(a)), ty: ValueType::Array(t), span }
+                    Term {
+                        kind: TermKind::Bcast(Box::new(a)),
+                        ty: ValueType::Array(t),
+                        span,
+                    }
                 }
                 _ => a,
             })
@@ -249,7 +279,11 @@ impl Lowerer<'_> {
                 span,
             ));
         };
-        Ok(Term { kind: TermKind::Op(op, args), ty: self.reg.get(id).output, span })
+        Ok(Term {
+            kind: TermKind::Op(op, args),
+            ty: self.reg.get(id).output,
+            span,
+        })
     }
 
     fn exprs(&mut self, es: &[TExpr]) -> Result<Vec<Term>, Error> {
@@ -352,7 +386,10 @@ impl Lowerer<'_> {
                 _ => None,
             };
             let Some(s) = constant else {
-                return Err(Error::ty("array literal elements must be constants", it.span));
+                return Err(Error::ty(
+                    "array literal elements must be constants",
+                    it.span,
+                ));
             };
             scalars.push(s);
         }
@@ -429,7 +466,10 @@ fn array_of(elem: ScalarType, items: &[Scalar]) -> Array {
         ScalarType::F32 => build!(F32, f32),
         ScalarType::F64 => build!(F64, f64),
         ScalarType::Bool => {
-            let bools: Vec<bool> = items.iter().map(|s| matches!(s, Scalar::Bool(true))).collect();
+            let bools: Vec<bool> = items
+                .iter()
+                .map(|s| matches!(s, Scalar::Bool(true)))
+                .collect();
             Array::from_bools(&bools)
         }
     }
@@ -461,16 +501,23 @@ fn substitute(t: &Term, pending: &HashMap<VarId, Term>, leaves: &Leaves) -> Term
             _ => t.kind.clone(),
         },
         TermKind::Bcast(a) => TermKind::Bcast(Box::new(substitute(a, pending, leaves))),
-        TermKind::Op(op, args) => {
-            TermKind::Op(*op, args.iter().map(|a| substitute(a, pending, leaves)).collect())
-        }
+        TermKind::Op(op, args) => TermKind::Op(
+            *op,
+            args.iter()
+                .map(|a| substitute(a, pending, leaves))
+                .collect(),
+        ),
         // A let used only in a branch moves into it and runs only when the branch does.
         TermKind::Cond(c, t, e) => {
             let sub = |a: &Term| Box::new(substitute(a, pending, leaves));
             TermKind::Cond(sub(c), sub(t), sub(e))
         }
     };
-    Term { kind, ty: t.ty, span: t.span }
+    Term {
+        kind,
+        ty: t.ty,
+        span: t.span,
+    }
 }
 
 /// Substitutes each compound let with exactly one use into its user and drops the let.
@@ -534,28 +581,46 @@ impl Hoister<'_> {
     fn go(&mut self, t: &Term) -> Term {
         match &t.kind {
             TermKind::Leaf(_) => t.clone(),
-            TermKind::Bcast(a) => {
-                Term { kind: TermKind::Bcast(Box::new(self.go(a))), ty: t.ty, span: t.span }
-            }
+            TermKind::Bcast(a) => Term {
+                kind: TermKind::Bcast(Box::new(self.go(a))),
+                ty: t.ty,
+                span: t.span,
+            },
             TermKind::Op(..) | TermKind::Cond(..) => {
                 let shared = self.counts[t] >= 2;
                 if shared && let Some(leaf) = self.done.get(t) {
                     return leaf.clone();
                 }
                 let kind = match &t.kind {
-                    TermKind::Op(op, args) => TermKind::Op(*op, args.iter().map(|a| self.go(a)).collect()),
+                    TermKind::Op(op, args) => {
+                        TermKind::Op(*op, args.iter().map(|a| self.go(a)).collect())
+                    }
                     // Branches stay as they are, see `count_ops`.
-                    TermKind::Cond(c, a, b) => TermKind::Cond(Box::new(self.go(c)), a.clone(), b.clone()),
+                    TermKind::Cond(c, a, b) => {
+                        TermKind::Cond(Box::new(self.go(c)), a.clone(), b.clone())
+                    }
                     TermKind::Leaf(_) | TermKind::Bcast(_) => unreachable!("matched above"),
                 };
-                let rebuilt = Term { kind, ty: t.ty, span: t.span };
+                let rebuilt = Term {
+                    kind,
+                    ty: t.ty,
+                    span: t.span,
+                };
                 if !shared {
                     return rebuilt;
                 }
                 let var = self.g.fresh_temp();
-                self.binds.push(LStmt::Bind { var, term: rebuilt, span: t.span });
+                self.binds.push(LStmt::Bind {
+                    var,
+                    term: rebuilt,
+                    span: t.span,
+                });
                 let id = self.leaves.var(var);
-                let leaf = Term { kind: TermKind::Leaf(id), ty: t.ty, span: t.span };
+                let leaf = Term {
+                    kind: TermKind::Leaf(id),
+                    ty: t.ty,
+                    span: t.span,
+                };
                 self.done.insert(t.clone(), leaf.clone());
                 leaf
             }
@@ -569,7 +634,13 @@ impl Hoister<'_> {
 fn hoist_repeated(mut s: LStmt, leaves: &mut Leaves, g: &mut Globals) -> Vec<LStmt> {
     let mut counts = HashMap::new();
     count_ops(stmt_term_mut(&mut s), &mut counts);
-    let mut h = Hoister { counts, done: HashMap::new(), binds: Vec::new(), leaves, g };
+    let mut h = Hoister {
+        counts,
+        done: HashMap::new(),
+        binds: Vec::new(),
+        leaves,
+        g,
+    };
     let t = stmt_term_mut(&mut s);
     *t = h.go(t);
     let mut out = h.binds;

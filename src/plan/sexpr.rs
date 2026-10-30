@@ -126,7 +126,13 @@ mod tests {
     #[test]
     fn maps_heads_only() {
         let s = parse("(count (gt_f64 ?x (Bcast ?c)))").unwrap();
-        let m = s.map_heads(&|h| if h == "Bcast" { h.into() } else { format!("K_{h}") });
+        let m = s.map_heads(&|h| {
+            if h == "Bcast" {
+                h.into()
+            } else {
+                format!("K_{h}")
+            }
+        });
         assert_eq!(m.to_string(), "(K_count (K_gt_f64 ?x (Bcast ?c)))");
     }
 }

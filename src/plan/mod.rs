@@ -56,7 +56,10 @@ impl Planner {
         }
         let fail = |msg: String| Error::runtime(format!("planner: {msg}"), Some(term.span));
         let (commands, root, holes) = egglog::emit(reg, term).map_err(fail)?;
-        let holes = holes.iter().map(|h| self.plan(reg, h)).collect::<Result<Vec<_>, _>>()?;
+        let holes = holes
+            .iter()
+            .map(|h| self.plan(reg, h))
+            .collect::<Result<Vec<_>, _>>()?;
         let extracted = egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
             .map_err(fail)?;
         let sexp = sexpr::parse(&extracted).map_err(fail)?;
@@ -86,11 +89,16 @@ fn to_node(reg: &Registry, sexp: &Sexp, holes: &[PlanNode]) -> Result<PlanNode, 
         (egglog::BCAST, [inner]) => Ok(PlanNode::Bcast(Box::new(to_node(reg, inner, holes)?))),
         _ => {
             let name = head.strip_prefix(egglog::KERNEL_PREFIX).ok_or_else(bad)?;
-            let id = reg.by_name(name).ok_or_else(|| format!("unknown kernel `{name}`"))?;
+            let id = reg
+                .by_name(name)
+                .ok_or_else(|| format!("unknown kernel `{name}`"))?;
             if reg.get(id).inputs.len() != args.len() {
                 return Err(bad());
             }
-            let args = args.iter().map(|a| to_node(reg, a, holes)).collect::<Result<_, _>>()?;
+            let args = args
+                .iter()
+                .map(|a| to_node(reg, a, holes))
+                .collect::<Result<_, _>>()?;
             Ok(PlanNode::Kernel(id, args))
         }
     }

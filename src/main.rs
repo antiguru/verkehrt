@@ -48,7 +48,12 @@ struct Flags {
 
 impl Flags {
     fn options(&self) -> Options {
-        Options { isa: self.isa, show_plan: self.plan, trace: self.trace, stats: self.stats }
+        Options {
+            isa: self.isa,
+            show_plan: self.plan,
+            trace: self.trace,
+            stats: self.stats,
+        }
     }
 }
 
@@ -72,9 +77,14 @@ fn main() -> ExitCode {
 }
 
 fn run(file: &std::path::Path, flags: &Flags) -> Result<(), String> {
-    let src = std::fs::read_to_string(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    let src = std::fs::read_to_string(file)
+        .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     let mut interp = Interpreter::new(flags.options()).map_err(|e| e.to_string())?;
-    let result = interp.run(&src, &mut std::io::stdout().lock(), &mut std::io::stderr().lock());
+    let result = interp.run(
+        &src,
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+    );
     // Stats are reported even when the program failed.
     if flags.stats {
         interp.write_stats(&mut std::io::stderr().lock());
@@ -102,7 +112,8 @@ fn repl(flags: &Flags) -> Result<(), String> {
 
 fn repl_interactive(interp: &mut Interpreter) -> Result<(), String> {
     use rustyline::error::ReadlineError;
-    let mut editor = rustyline::DefaultEditor::new().map_err(|e| format!("cannot start editor: {e}"))?;
+    let mut editor =
+        rustyline::DefaultEditor::new().map_err(|e| format!("cannot start editor: {e}"))?;
     loop {
         match editor.readline("vk> ") {
             Ok(line) => {

@@ -13,12 +13,20 @@ fn stderr_of(a: &assert_cmd::assert::Assert) -> String {
 
 #[test]
 fn run_prints_result() {
-    verkehrt().args(["run", "tests/programs/dot.vk"]).assert().success().stdout("32.0\n");
+    verkehrt()
+        .args(["run", "tests/programs/dot.vk"])
+        .assert()
+        .success()
+        .stdout("32.0\n");
 }
 
 #[test]
 fn plan_goes_to_stderr() {
-    let a = verkehrt().args(["run", "--plan", "tests/programs/dot.vk"]).assert().success().stdout("32.0\n");
+    let a = verkehrt()
+        .args(["run", "--plan", "tests/programs/dot.vk"])
+        .assert()
+        .success()
+        .stdout("32.0\n");
     assert!(stderr_of(&a).contains("dot_f64"));
 }
 
@@ -35,16 +43,29 @@ fn program_error_exits_1() {
 
 #[test]
 fn unknown_isa_is_usage_error() {
-    verkehrt().args(["run", "--isa", "bogus", "x.vk"]).assert().code(2);
+    verkehrt()
+        .args(["run", "--isa", "bogus", "x.vk"])
+        .assert()
+        .code(2);
 }
 
 #[test]
 fn repl_reads_stdin() {
-    verkehrt().arg("repl").write_stdin("let x = [1.0, 2.0];\nsum(x);\n").assert().success().stdout("3.0\n");
+    verkehrt()
+        .arg("repl")
+        .write_stdin("let x = [1.0, 2.0];\nsum(x);\n")
+        .assert()
+        .success()
+        .stdout("3.0\n");
 }
 
 #[test]
 fn repl_continues_after_error() {
-    let a = verkehrt().arg("repl").write_stdin("let x = [1.0] * 2;\nsum([1.0, 2.0]);\n").assert().success().stdout("3.0\n");
+    let a = verkehrt()
+        .arg("repl")
+        .write_stdin("let x = [1.0] * 2;\nsum([1.0, 2.0]);\n")
+        .assert()
+        .success()
+        .stdout("3.0\n");
     assert!(stderr_of(&a).contains("error[type]"));
 }

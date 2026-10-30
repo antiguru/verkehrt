@@ -5,7 +5,10 @@ use crate::value::{Scalar, ScalarType};
 
 /// Parses a whole program. Every statement ends with `;`.
 pub fn parse(src: &str) -> Result<Program, Error> {
-    let mut p = Parser { toks: lex(src)?, pos: 0 };
+    let mut p = Parser {
+        toks: lex(src)?,
+        pos: 0,
+    };
     let mut items = Vec::new();
     while p.peek() != &Tok::Eof {
         items.push(p.item()?);
@@ -90,13 +93,24 @@ fn literal(
     };
     if float && !ty.is_float() {
         return Err(Error::parse(
-            format!("float literal `{text}` cannot have integer suffix `{}`", ty.name()),
+            format!(
+                "float literal `{text}` cannot have integer suffix `{}`",
+                ty.name()
+            ),
             span,
         ));
     }
-    let s = if neg { format!("-{text}") } else { text.to_string() };
-    let out_of_range =
-        || Error::parse(format!("literal `{s}` is out of range for {}", ty.name()), span);
+    let s = if neg {
+        format!("-{text}")
+    } else {
+        text.to_string()
+    };
+    let out_of_range = || {
+        Error::parse(
+            format!("literal `{s}` is out of range for {}", ty.name()),
+            span,
+        )
+    };
     macro_rules! int {
         ($variant:ident) => {
             s.parse().map(Scalar::$variant).map_err(|_| out_of_range())
@@ -154,7 +168,10 @@ impl Parser {
     }
 
     fn unexpected(&self, expected: &str) -> Error {
-        Error::parse(format!("expected {expected}, found {}", describe(self.peek())), self.span())
+        Error::parse(
+            format!("expected {expected}, found {}", describe(self.peek())),
+            self.span(),
+        )
     }
 
     fn expect(&mut self, t: Tok) -> Result<Span, Error> {
@@ -166,7 +183,11 @@ impl Parser {
     }
 
     fn expect_kw(&mut self, kw: &str) -> Result<Span, Error> {
-        if self.is_kw(kw) { Ok(self.bump().span) } else { Err(self.unexpected(&format!("`{kw}`"))) }
+        if self.is_kw(kw) {
+            Ok(self.bump().span)
+        } else {
+            Err(self.unexpected(&format!("`{kw}`")))
+        }
     }
 
     fn ident(&mut self, what: &str) -> Result<String, Error> {
@@ -194,7 +215,12 @@ impl Parser {
             self.expect(Tok::Assign)?;
             let value = self.expr()?;
             self.expect(Tok::Semi)?;
-            return Ok(Item::Export(LetStmt { name, ty: None, value, span }));
+            return Ok(Item::Export(LetStmt {
+                name,
+                ty: None,
+                value,
+                span,
+            }));
         }
         if self.is_kw("input") {
             self.bump();
@@ -253,7 +279,13 @@ impl Parser {
         self.expect(Tok::Arrow)?;
         let ret = self.type_expr()?;
         let body = self.block()?;
-        Ok(FnDef { name, params, ret, body, span })
+        Ok(FnDef {
+            name,
+            params,
+            ret,
+            body,
+            span,
+        })
     }
 
     fn let_stmt(&mut self) -> Result<LetStmt, Error> {
@@ -268,7 +300,12 @@ impl Parser {
         self.expect(Tok::Assign)?;
         let value = self.expr()?;
         self.expect(Tok::Semi)?;
-        Ok(LetStmt { name, ty, value, span })
+        Ok(LetStmt {
+            name,
+            ty,
+            value,
+            span,
+        })
     }
 
     /// `{ let a = ...; ...; expr }`
@@ -297,7 +334,10 @@ impl Parser {
             // A binary node carries the operator's span, so type errors point at the operator.
             let span = self.bump().span;
             let rhs = self.operand()?;
-            lhs = Expr { kind: ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)), span };
+            lhs = Expr {
+                kind: ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                span,
+            };
             // Comparisons never chain, so any operator after one comparison is an error.
             if op.is_comparison() {
                 if binop(self.peek()).is_some() {
@@ -320,14 +360,24 @@ impl Parser {
         let t = self.bump();
         let span = t.span;
         let kind = match t.tok {
-            Tok::Num { text, float, suffix } => {
-                ExprKind::Lit(literal(&text, float, suffix.as_deref(), false, span)?)
-            }
+            Tok::Num {
+                text,
+                float,
+                suffix,
+            } => ExprKind::Lit(literal(&text, float, suffix.as_deref(), false, span)?),
             // A minus directly adjacent to a number is a negative literal.
             Tok::Minus => {
-                let adjacent = self.span() == Span { line: span.line, col: span.col + 1 };
+                let adjacent = self.span()
+                    == Span {
+                        line: span.line,
+                        col: span.col + 1,
+                    };
                 match self.peek().clone() {
-                    Tok::Num { text, float, suffix } if adjacent => {
+                    Tok::Num {
+                        text,
+                        float,
+                        suffix,
+                    } if adjacent => {
                         self.bump();
                         ExprKind::Lit(literal(&text, float, suffix.as_deref(), true, span)?)
                     }
@@ -410,5 +460,8 @@ impl Parser {
 }
 
 fn is_reserved(s: &str) -> bool {
-    matches!(s, "fn" | "let" | "input" | "export" | "if" | "else" | "true" | "false")
+    matches!(
+        s,
+        "fn" | "let" | "input" | "export" | "if" | "else" | "true" | "false"
+    )
 }

@@ -30,13 +30,31 @@ pub struct TFn {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TStmt {
-    Let { var: VarId, value: TExpr, span: Span },
+    Let {
+        var: VarId,
+        value: TExpr,
+        span: Span,
+    },
     /// Declares a top-level name of the type with no value. Top level only.
-    Input { var: VarId, ty: ValueType, span: Span },
+    Input {
+        var: VarId,
+        ty: ValueType,
+        span: Span,
+    },
     /// Binds a result like `Let`. Top level only.
-    Export { var: VarId, value: TExpr, span: Span },
-    Print { value: TExpr, span: Span },
-    Expr { value: TExpr, span: Span },
+    Export {
+        var: VarId,
+        value: TExpr,
+        span: Span,
+    },
+    Print {
+        value: TExpr,
+        span: Span,
+    },
+    Expr {
+        value: TExpr,
+        span: Span,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

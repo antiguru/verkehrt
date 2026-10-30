@@ -4,7 +4,11 @@ use crate::error::{Error, Span};
 pub enum Tok {
     Ident(String),
     /// A numeric literal. `float` is set when the text has a fractional part.
-    Num { text: String, float: bool, suffix: Option<String> },
+    Num {
+        text: String,
+        float: bool,
+        suffix: Option<String>,
+    },
     Str(String),
     LParen,
     RParen,
@@ -83,7 +87,14 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
             }
             let suffix = (i > sfx_start).then(|| chars[sfx_start..i].iter().collect());
             col += u32::try_from(i - start).expect("token length fits u32");
-            out.push(Token { tok: Tok::Num { text, float, suffix }, span });
+            out.push(Token {
+                tok: Tok::Num {
+                    text,
+                    float,
+                    suffix,
+                },
+                span,
+            });
         } else if c.is_ascii_alphabetic() || c == '_' {
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
@@ -94,7 +105,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
                 return Err(Error::parse("byte strings are not supported yet", span));
             }
             col += u32::try_from(i - start).expect("token length fits u32");
-            out.push(Token { tok: Tok::Ident(word), span });
+            out.push(Token {
+                tok: Tok::Ident(word),
+                span,
+            });
         } else if c == '"' {
             let start = i;
             i += 1;
@@ -117,7 +131,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
                             _ => {
                                 return Err(Error::parse(
                                     "unknown escape in string literal",
-                                    Span { line, col: col + u32::try_from(i - start).unwrap_or(0) },
+                                    Span {
+                                        line,
+                                        col: col + u32::try_from(i - start).unwrap_or(0),
+                                    },
                                 ));
                             }
                         };
@@ -131,7 +148,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
                 }
             }
             col += u32::try_from(i - start).expect("token length fits u32");
-            out.push(Token { tok: Tok::Str(s), span });
+            out.push(Token {
+                tok: Tok::Str(s),
+                span,
+            });
         } else {
             let next = chars.get(i + 1).copied();
             let (tok, n) = match (c, next) {
@@ -163,6 +183,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, Error> {
             out.push(Token { tok, span });
         }
     }
-    out.push(Token { tok: Tok::Eof, span: Span { line, col } });
+    out.push(Token {
+        tok: Tok::Eof,
+        span: Span { line, col },
+    });
     Ok(out)
 }
