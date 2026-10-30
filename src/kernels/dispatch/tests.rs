@@ -310,3 +310,80 @@ fn call_rejects_another_registry() {
     let err = dispatch.call(&other, id, &args).unwrap_err();
     assert!(err.contains("different registry"), "{err}");
 }
+
+/// 608, and 8 rows, asserts that they are equal by bits, and returns the one-shot result.
+/// 608, and 8 rows, and returns both results. They must be equal by bits.
+fn reduce_whole_and_tiled(name: &str, args: &[Value]) -> Scalar {
+    let reg = Registry::new();
+    let def = reg.get(reg.by_name(name).unwrap());
+    let KernelImpl::Reduction(make) = def.impls[Variant::SCALAR.index()].unwrap() else {
+        panic!("{name} has no reduction scalar entry");
+    };
+    let run = |tiles: &[(usize, usize)]| {
+        // SAFETY: the scalar entry is a safe function and needs no CPU feature.
+        let mut reducer: Box<dyn Reducer> = unsafe { make() };
+        for &(start, end) in tiles {
+            reducer.update(&tile_args(args, start, end)).unwrap();
+        }
+        reducer.finish().unwrap()
+    };
+    let whole = run(&[(0, 1000)]);
+    let tiled = run(&[(0, 64), (64, 384), (384, 992), (992, 1000)]);
+    assert!(
+        same_scalar(&whole, &tiled),
+        "{name}: {whole:?} vs {tiled:?}"
+    );
+    whole
+}
+
+/// 1000 rows of `fill` with the listed rows replaced.
+fn f64_rows(fill: f64, set: &[(usize, f64)]) -> Vec<Value> {
+    let mut v = vec![fill; 1000];
+    for &(i, x) in set {
+        v[i] = x;
+    }
+    vec![Value::Array(Array::from_vec(v))]
+}
+
+#[test]
+fn tiled_reductions_keep_nan_tie_and_zero_rules_across_tiles() {
+    // The first NaN sits in the first tile and a lower value in a later one, so the NaN wins.
+    let nan_early = f64_rows(5.0, &[(10, f64::NAN), (500, -100.0)]);
+    let got1 = reduce_whole_and_tiled("argmin_f64", &nan_early);
+    assert_eq!(got1, Scalar::I64(10));
+    let got2 = reduce_whole_and_tiled("argmax_f64", &nan_early);
+    assert_eq!(got2, Scalar::I64(10));
+    let min3 = reduce_whole_and_tiled("reduce_min_f64", &nan_early);
+    assert!(matches!(min3, Scalar::F64(x) if x.is_nan()));
+
+    // A tie across the boundary at row 64 keeps the first index.
+    let tie = f64_rows(5.0, &[(63, 1.0), (64, 1.0)]);
+    let got4 = reduce_whole_and_tiled("argmin_f64", &tie);
+    assert_eq!(got4, Scalar::I64(63));
+
+    // +0.0 then -0.0 across the boundary: -0.0 is the smaller, +0.0 the larger.
+    let zeros = f64_rows(3.0, &[(63, 0.0), (64, -0.0)]);
+    let got5 = reduce_whole_and_tiled("argmin_f64", &zeros);
+    assert_eq!(got5, Scalar::I64(64));
+    let min6 = reduce_whole_and_tiled("reduce_min_f64", &zeros);
+    assert!(matches!(min6, Scalar::F64(x) if x.to_bits() == (-0.0f64).to_bits()));
+    let zeros_max = f64_rows(-3.0, &[(63, -0.0), (64, 0.0)]);
+    let got7 = reduce_whole_and_tiled("argmax_f64", &zeros_max);
+    assert_eq!(got7, Scalar::I64(64));
+    let max8 = reduce_whole_and_tiled("reduce_max_f64", &zeros_max);
+    assert!(matches!(max8, Scalar::F64(x) if x.to_bits() == 0.0f64.to_bits()));
+    let zeros_tie = f64_rows(-3.0, &[(63, 0.0), (64, -0.0)]);
+    let got9 = reduce_whole_and_tiled("argmax_f64", &zeros_tie);
+    assert_eq!(got9, Scalar::I64(63));
+}
+
+#[test]
+fn tiled_narrow_integer_sums_widen_across_tiles() {
+    // 1000 rows of 200 overflow u8, and of 2e9 overflow i32, in every tile already.
+    let bytes = vec![Value::Array(Array::from_vec(vec![200u8; 1000]))];
+    let got10 = reduce_whole_and_tiled("reduce_add_u8", &bytes);
+    assert_eq!(got10, Scalar::U64(200_000));
+    let ints = vec![Value::Array(Array::from_vec(vec![2_000_000_000i32; 1000]))];
+    let got11 = reduce_whole_and_tiled("reduce_add_i32", &ints);
+    assert_eq!(got11, Scalar::I64(2_000_000_000_000));
+}

@@ -2,7 +2,7 @@
 //! types (an op on a type without a kernel is a type error) and the dispatch table.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 pub use crate::ops::Isa;
 use crate::ops::Op;
@@ -224,9 +224,9 @@ impl KernelDef {
 pub struct KernelId(pub u32);
 
 pub struct Registry {
-    /// Identifies this registry, so that a `Dispatch` can tell which registry it was
+    /// Identifies this registry by pointer, so that a `Dispatch` can tell which registry it was
     /// resolved from.
-    id: u64,
+    token: Arc<()>,
     defs: Vec<KernelDef>,
     by_name: HashMap<String, KernelId>,
     by_op: HashMap<Op, Vec<KernelId>>,
@@ -234,7 +234,7 @@ pub struct Registry {
 
 impl Registry {
     /// Builds every kernel. There is no global kernel state, each call returns an independent
-    /// registry. Only the registry id comes from a process-wide counter.
+    /// registry.
     pub fn new() -> Registry {
         let mut reg = Registry::empty();
         scalar::elementwise::register(&mut reg);
@@ -247,9 +247,8 @@ impl Registry {
 
     /// A registry without kernels.
     fn empty() -> Registry {
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         Registry {
-            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            token: Arc::new(()),
             defs: Vec::new(),
             by_name: HashMap::new(),
             by_op: HashMap::new(),
@@ -337,7 +336,7 @@ impl Registry {
                 })
             })
             .collect();
-        Dispatch::new(self.id, entries)
+        Dispatch::new(Arc::clone(&self.token), entries)
     }
 }
 

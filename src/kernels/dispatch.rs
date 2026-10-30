@@ -5,6 +5,8 @@
 //! entry, which is sound because `Registry::resolve` installs an ISA entry only for an ISA
 //! whose `is_available` returned true.
 
+use std::sync::Arc;
+
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::{InputSpec, KernelDef, KernelId, KernelImpl, Registry, Variant};
 use crate::value::{Arg, Array, ArrayBuilder, Scalar, Value, ValueType};
@@ -15,16 +17,16 @@ mod tests;
 /// One entry per kernel, indexed by `KernelId`, with the variant each was picked as.
 /// Resolving needs no feature detection at call time, so a call is a table lookup.
 ///
-/// A dispatch is tied to the registry it was resolved from by that registry's id. `call`
+/// A dispatch is tied to the registry it was resolved from by a token that the registry shares with it. `call`
 /// takes the registry for the kernel definitions and rejects any other registry with an
 /// error, so entries are never run against another registry's argument checks.
 pub struct Dispatch {
-    registry: u64,
+    registry: Arc<()>,
     entries: Vec<(KernelImpl, Variant)>,
 }
 
 impl Dispatch {
-    pub(crate) fn new(registry: u64, entries: Vec<(KernelImpl, Variant)>) -> Dispatch {
+    pub(crate) fn new(registry: Arc<()>, entries: Vec<(KernelImpl, Variant)>) -> Dispatch {
         Dispatch { registry, entries }
     }
 
@@ -49,7 +51,7 @@ impl Dispatch {
     /// kernel is called as is. Fails when `reg` is not the registry this dispatch was resolved
     /// from, or when kernels were added to it since.
     pub fn call(&self, reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, String> {
-        if reg.id != self.registry || reg.defs.len() != self.entries.len() {
+        if !Arc::ptr_eq(&reg.token, &self.registry) || reg.defs.len() != self.entries.len() {
             return Err("dispatch was resolved from a different registry".into());
         }
         let def = reg.get(id);
