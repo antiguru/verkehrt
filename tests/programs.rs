@@ -200,3 +200,37 @@ fn prepare_rejects_undeclared_names_and_returns_exports_in_order() {
     assert_eq!(names, ["b", "a"]);
     assert_eq!(String::from_utf8(diag).unwrap(), "0.0\n");
 }
+
+#[test]
+fn execute_rejects_undeclared_and_duplicate_inputs() {
+    let interp = Interpreter::new(Options::default()).unwrap();
+    let p = interp.prepare("input x: f64[]; export s = sum(x);").unwrap();
+    let mut diag = Vec::new();
+    let e = p
+        .execute(&interp, &[("x", f64s(&[1.0])), ("n", f64s(&[1.0]))], &mut diag)
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(e.message, "program does not declare input 'n'");
+    let e = p
+        .execute(&interp, &[("x", f64s(&[1.0])), ("x", f64s(&[2.0]))], &mut diag)
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+}
+
+#[test]
+fn failed_repl_input_keeps_old_bindings() {
+    let mut interp = Interpreter::new(Options::default()).unwrap();
+    let (mut out, mut diag) = (Vec::new(), Vec::new());
+    interp.eval_repl("let x = [1.0, 2.0];", &mut out, &mut diag).unwrap();
+    let e = interp
+        .eval_repl("let x = [1.0] + [1.0, 2.0]; let z = [3.0];", &mut out, &mut diag)
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert_eq!(interp.get("x").unwrap().to_string(), "[1.0, 2.0]");
+    assert!(interp.get("z").is_none());
+    interp.eval_repl("x;", &mut out, &mut diag).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "[1.0, 2.0]\n");
+    // Variable ids of the failed input are reused, which must not resurrect stale values.
+    interp.eval_repl("let z = [9.0];", &mut Vec::new(), &mut diag).unwrap();
+    assert_eq!(interp.get("z").unwrap().to_string(), "[9.0]");
+}

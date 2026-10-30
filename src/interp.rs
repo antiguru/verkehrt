@@ -117,15 +117,24 @@ impl Interpreter {
                 Some((_, v)) => aliases.push((decl.var, v.clone())),
             }
         }
-        // Everything is checked, so the new names become visible now.
-        self.globals = globals;
-        self.env.extend(aliases);
+        // Plan lines go out before anything is committed, so a failing sink changes nothing.
         for line in &c.plan_lines {
             writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
         }
+        // Everything is checked, so the new names become visible now.
+        let var_count = before.var_count();
+        self.globals = globals;
+        self.env.extend(aliases);
         let mut sinks = Sinks { out, diag, print_to_diag: false, show: mode == Mode::Repl };
         let obs = Observe { trace: self.opts.trace, stats: self.opts.stats.then_some(&mut self.stats) };
-        run_plan(&self.reg, self.isa, &c.plan, &mut self.env, obs, &mut sinks)
+        let result = run_plan(&self.reg, self.isa, &c.plan, &mut self.env, obs, &mut sinks);
+        if result.is_err() {
+            // A failed input exposes no new names and keeps old bindings. Variables created
+            // by it are dropped from the environment because their ids will be reused.
+            self.globals = before;
+            self.env.retain(|var, _| var.0 < var_count);
+        }
+        result
     }
 
     /// Parses, checks, lowers, and plans `src` as a program with no prior bindings.
@@ -202,6 +211,14 @@ impl Prepared {
         inputs: &[(&str, Value)],
         diag: &mut dyn Write,
     ) -> Result<Vec<(String, Value)>, Error> {
+        for (i, (name, _)) in inputs.iter().enumerate() {
+            if !self.inputs.iter().any(|d| d.name == *name) {
+                return Err(Error::usage(format!("program does not declare input '{name}'")));
+            }
+            if inputs[..i].iter().any(|(n, _)| n == name) {
+                return Err(Error::usage(format!("input '{name}' is supplied twice")));
+            }
+        }
         let mut env = Env::new();
         for decl in &self.inputs {
             let Some((_, v)) = inputs.iter().find(|(n, _)| *n == decl.name) else {
@@ -226,7 +243,9 @@ impl Prepared {
             .exports
             .iter()
             .map(|(name, var)| {
-                let v = env.remove(var).expect("exports are bound by their statements");
+                let v = env
+                    .remove(var)
+                    .ok_or_else(|| Error::runtime(format!("export '{name}' has no value"), None))?;
                 Ok((name.clone(), v))
             })
             .collect()

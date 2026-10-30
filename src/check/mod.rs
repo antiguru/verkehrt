@@ -54,6 +54,11 @@ impl Globals {
         var
     }
 
+    /// The number of variables created so far. Ids below it are in use.
+    pub fn var_count(&self) -> u32 {
+        u32::try_from(self.var_names.len()).expect("variable count fits in u32")
+    }
+
     pub fn name(&self, var: VarId) -> &str {
         &self.var_names[to_index(var.0)]
     }
