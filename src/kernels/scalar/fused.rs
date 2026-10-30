@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from, splat_arg};
 use crate::kernels::scalar::reduce::{Accum, LANES, Reducible};
+use crate::kernels::scalar::select::{append_chunks, predicated};
 use crate::kernels::{
     Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
     Reducer, ReductionBody, Registry, SelectionBody, Variant,
@@ -212,8 +213,10 @@ fn filter_tile<T: Elem + PartialOrd>(
         return Err(arity_error(2, args.len()));
     };
     let (x, c) = (rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?);
-    let kept: Vec<T> = x.iter().copied().filter(|&v| cmp.test(v, c)).collect();
-    out.extend(&kept);
+    append_chunks(out, x.len(), |start, dst| {
+        let rows = x[start..start + dst.len()].iter();
+        predicated(rows.map(|&v| (v, cmp.test(v, c))), dst)
+    });
     Ok(())
 }
 

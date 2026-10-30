@@ -16,11 +16,14 @@ use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value,
 const LENGTHS: [usize; 15] = [0, 1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 63, 64, 65, 300];
 /// A row count long enough for every reduction and selection tile below plus a rest.
 const TILED_LEN: usize = 1000;
+/// A row count for selections only, longer than two of the chunks that selection entries
+/// reserve output in (2048 rows), so chunk boundaries fall inside the tile `100..n`.
+const LONG_LEN: usize = 4500;
 /// Array views start at row 0 or at a random row in `1..=MAX_OFFSET` of a larger buffer,
 /// drawn per input.
 const MAX_OFFSET: usize = 7;
 /// Rows in each generated buffer.
-const BUF_LEN: usize = TILED_LEN + MAX_OFFSET;
+const BUF_LEN: usize = LONG_LEN + MAX_OFFSET;
 /// Reduction tiles of 64, 320, and 608 rows, then the rest. Values are tile ends.
 const REDUCE_CUTS: [usize; 3] = [64, 384, 992];
 /// Selection tiles `0..37`, `37..100`, and `100..n`. Values are tile ends.
@@ -302,7 +305,8 @@ fn check_case(
     case: &Case,
 ) -> Result<(), TestCaseError> {
     let def = reg.get(id);
-    for n in LENGTHS.into_iter().chain([TILED_LEN]) {
+    let long = (def.class == KernelClass::Selection).then_some(LONG_LEN);
+    for n in LENGTHS.into_iter().chain([TILED_LEN]).chain(long) {
         for aligned in [true, false] {
             let args = args_for(def, case, aligned, n);
             let want = scalar.call(reg, id, &args);

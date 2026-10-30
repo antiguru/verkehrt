@@ -8,28 +8,78 @@ use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Se
 use crate::ops::Op;
 use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
 
+/// Rows per reservation of `append_chunks`. A chunk's spare rows stay in cache between the
+/// zero fill of the builder and the selection's writes.
+pub(crate) const CHUNK: usize = 2048;
+
+/// Appends the survivors of `n` rows to `out`, `CHUNK` rows at a time. `chunk(start, dst)`
+/// selects from rows `start..start + dst.len()`, writes the survivors in order to the front
+/// of `dst`, and returns their count. It may write any value to the rest of `dst`.
+#[inline(always)]
+pub(crate) fn append_chunks<T: Elem>(
+    out: &mut ArrayBuilder,
+    n: usize,
+    mut chunk: impl FnMut(usize, &mut [T]) -> usize,
+) {
+    // Reserving for every row up front keeps the buffer from moving as it grows. The
+    // capacity is only allocated, the chunks touch it as they go.
+    out.reserve(n);
+    let mut start = 0;
+    while start < n {
+        let dst = out.spare_rows::<T>(CHUNK.min(n - start));
+        let len = dst.len();
+        let kept = chunk(start, dst);
+        out.commit(kept);
+        start += len;
+    }
+}
+
+/// Writes every row of `rows` to `dst` at the survivor count so far, which then advances by
+/// the row's keep flag, and returns the survivor count. There is no branch on the data, so
+/// the time does not depend on the selectivity. `dst` needs a slot per row.
+#[inline(always)]
+pub(crate) fn predicated<T: Copy>(rows: impl Iterator<Item = (T, bool)>, dst: &mut [T]) -> usize {
+    let mut kept = 0;
+    for (v, keep) in rows {
+        dst[kept] = v;
+        kept += usize::from(keep);
+    }
+    kept
+}
+
 /// Appends the rows of `x` whose `mask` byte is nonzero. Both slices must have the same length.
 #[inline(always)]
-pub fn compress_append<T: Copy>(x: &[T], mask: &[u8], out: &mut Vec<T>) {
+pub fn compress_append<T: Elem>(x: &[T], mask: &[u8], out: &mut ArrayBuilder) {
     assert_eq!(x.len(), mask.len(), "mask rows must match the data rows");
-    out.extend(
-        x.iter()
-            .zip(mask)
-            .filter(|&(_, &m)| m != 0)
-            .map(|(&v, _)| v),
-    );
+    append_chunks(out, x.len(), |start, dst| {
+        let end = start + dst.len();
+        predicated(
+            x[start..end]
+                .iter()
+                .zip(&mask[start..end])
+                .map(|(&v, &m)| (v, m != 0)),
+            dst,
+        )
+    });
 }
 
 /// Appends `base + i` for every row `i` of `mask` whose byte is nonzero. `base` is the
 /// index of the first row of this tile in the whole array.
 #[inline(always)]
-pub fn where_append(mask: &[u8], base: usize, out: &mut Vec<i64>) {
-    out.extend(
-        mask.iter()
-            .enumerate()
-            .filter(|&(_, &m)| m != 0)
-            .map(|(i, _)| i64::try_from(base + i).expect("row index fits in i64")),
-    );
+pub fn where_append(mask: &[u8], base: usize, out: &mut ArrayBuilder) {
+    // Every row index of the tile fits in i64 when the end does, so the indices count up
+    // from `base` without a check per row.
+    base.checked_add(mask.len())
+        .and_then(|end| i64::try_from(end).ok())
+        .expect("row index fits in i64");
+    append_chunks(out, mask.len(), |start, dst| {
+        let end = start + dst.len();
+        let first = i64::try_from(base + start).expect("row index fits in i64");
+        predicated(
+            (first..).zip(&mask[start..end]).map(|(i, &m)| (i, m != 0)),
+            dst,
+        )
+    });
 }
 
 /// An array of type `ty` from its storage rows. `T` is the storage type of `ty`.
@@ -65,9 +115,7 @@ fn compress_tile<T: Elem>(
             mask.len()
         ));
     }
-    let mut kept = Vec::new();
-    compress_append(x, mask, &mut kept);
-    out.extend(&kept);
+    compress_append(x, mask, out);
     Ok(())
 }
 
@@ -78,9 +126,7 @@ fn where_tile(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), S
         return Err(arity_error(1, args.len()));
     };
     let mask = rows_arg::<u8>(mask, ScalarType::Bool)?;
-    let mut kept = Vec::new();
-    where_append(mask, base, &mut kept);
-    out.extend(&kept);
+    where_append(mask, base, out);
     Ok(())
 }
 

@@ -803,6 +803,53 @@ fn compress_and_where() {
     assert_eq!(arr(where_res.unwrap()).as_slice::<i64>(), &[1, 2]);
 }
 
+/// The predicated selections reserve and commit in chunks, so check lengths around the chunk
+/// boundaries against plain iterator filters, one-shot and in tiles that straddle chunks.
+#[test]
+fn selections_span_chunks() {
+    use super::scalar::select::CHUNK;
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    for n in [CHUNK - 1, CHUNK, CHUNK + 1, 3 * CHUNK + 5] {
+        let xs: Vec<f64> = (0..n)
+            .map(|i| f64::from(u32::try_from(i).unwrap()))
+            .collect();
+        let mask: Vec<bool> = (0..n)
+            .map(|i| splitmix64(u64::try_from(i).unwrap()).is_multiple_of(3))
+            .collect();
+        let kept: Vec<f64> = xs
+            .iter()
+            .zip(&mask)
+            .filter(|p| *p.1)
+            .map(|p| *p.0)
+            .collect();
+        let idx: Vec<i64> = (0..n)
+            .filter(|&i| mask[i])
+            .map(|i| i64::try_from(i).unwrap())
+            .collect();
+        let cut = f64::from(u32::try_from(n / 2).unwrap());
+        let above: Vec<f64> = xs.iter().copied().filter(|&v| v > cut).collect();
+        let compress = call(&reg, "compress_f64", &[f64s(&xs), bools(&mask)]);
+        assert_eq!(arr(compress.unwrap()).as_slice::<f64>(), kept, "n={n}");
+        let r#where = call(&reg, "where", &[bools(&mask)]);
+        assert_eq!(arr(r#where.unwrap()).as_slice::<i64>(), idx, "n={n}");
+        let filter = call(&reg, "filter_gt_f64", &[f64s(&xs), f64_s(cut)]);
+        assert_eq!(arr(filter.unwrap()).as_slice::<f64>(), above, "n={n}");
+        // Tiles of `CHUNK + 3` rows put chunk boundaries at every offset into a tile.
+        let id = reg.by_name("where").unwrap();
+        let all = Array::from_bools(&mask);
+        let mut out = ArrayBuilder::new(ScalarType::I64);
+        for start in (0..n).step_by(CHUNK + 3) {
+            let len = (CHUNK + 3).min(n - start);
+            let args = [Arg::Rows(all.slice(start, len))];
+            dispatch
+                .select_tile(&reg, id, &args, start, &mut out)
+                .unwrap();
+        }
+        assert_eq!(out.finish().as_slice::<i64>(), idx, "tiled n={n}");
+    }
+}
+
 #[test]
 fn iota_fill_and_negative_counts() {
     let reg = Registry::new();
