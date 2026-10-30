@@ -290,12 +290,12 @@ impl Parser {
         let Some(op) = binop(self.peek()) else {
             return Ok(lhs);
         };
-        let span = lhs.span;
         while let Some(next) = binop(self.peek()) {
             if next != op {
                 return Err(self.paren_error());
             }
-            self.bump();
+            // A binary node carries the operator's span, so type errors point at the operator.
+            let span = self.bump().span;
             let rhs = self.operand()?;
             lhs = Expr { kind: ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)), span };
             // Comparisons never chain, so any operator after one comparison is an error.

@@ -225,3 +225,17 @@ fn array_literal_and_comments() {
         i => panic!("{i:?}"),
     }
 }
+
+#[test]
+fn binary_node_span_is_operator_span() {
+    let p = parse("a + (b * c);").unwrap();
+    let Item::Expr(outer, _) = &p.items[0] else { panic!() };
+    assert_eq!(outer.span, Span { line: 1, col: 3 });
+    let ExprKind::Binary(_, l, r) = &outer.kind else { panic!() };
+    assert_eq!(l.span, Span { line: 1, col: 1 });
+    assert_eq!(r.span, Span { line: 1, col: 8 });
+
+    let p = parse("x * 2;").unwrap();
+    let Item::Expr(e, _) = &p.items[0] else { panic!() };
+    assert_eq!(e.span, Span { line: 1, col: 3 });
+}
