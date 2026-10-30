@@ -434,3 +434,22 @@ fn tiled_narrow_integer_sums_widen_across_tiles() {
     let got11 = reduce_whole_and_tiled("reduce_add_i32", &ints);
     assert_eq!(got11, Scalar::I64(2_000_000_000_000));
 }
+
+#[test]
+fn select_tile_rejects_a_builder_of_another_type() {
+    let reg = Registry::new();
+    let id = reg.by_name("compress_f64").unwrap();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let args = [Arg::Rows(f64s(4, 1.0)), Arg::Rows(bools(4))];
+    let mut wrong = ArrayBuilder::new(ScalarType::I64);
+    let err = dispatch
+        .select_tile(&reg, id, &args, 0, &mut wrong)
+        .unwrap_err();
+    assert!(err.contains("i64 builder"), "{err}");
+    assert!(wrong.is_empty());
+    let mut right = ArrayBuilder::new(ScalarType::F64);
+    dispatch
+        .select_tile(&reg, id, &args, 0, &mut right)
+        .unwrap();
+    assert_eq!(right.finish().as_slice::<f64>(), &[-400.0, -397.0]);
+}

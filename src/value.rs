@@ -508,6 +508,11 @@ impl ArrayBuilder {
         self.len == 0
     }
 
+    /// The element type of the rows.
+    pub fn elem(&self) -> ScalarType {
+        self.elem
+    }
+
     /// Turns the buffer into an array without copying. The bytes past the last row are zero.
     pub fn finish(mut self) -> Array {
         let end = self.len * self.elem.width();

@@ -179,8 +179,9 @@ impl Dispatch {
 
     /// Runs selection `id` over one tile whose first row is row `base` of the whole array,
     /// appending the selected rows to `out`. Checks the argument kinds against the kernel's
-    /// inputs and that every `Rows` argument has the same row count. Fails for another
-    /// registry or a kernel that is not a selection.
+    /// inputs, that every `Rows` argument has the same row count, and that `out` holds rows
+    /// of the kernel's output type. Fails for another registry or a kernel that is not a
+    /// selection.
     pub fn select_tile(
         &self,
         reg: &Registry,
@@ -194,6 +195,17 @@ impl Dispatch {
         let KernelImpl::Selection(f) = self.entry(id) else {
             return Err(format!("{} is not a selection", def.name));
         };
+        let ValueType::Array(t) = def.output else {
+            return Err(format!("{} does not produce an array", def.name));
+        };
+        if out.elem() != t {
+            return Err(format!(
+                "{} produces {} rows, got a {} builder",
+                def.name,
+                t.name(),
+                out.elem().name()
+            ));
+        }
         check_tile_args(def, args)?;
         // SAFETY: resolve installs an entry only for an ISA whose is_available() returned
         // true. `check_tile_args` checked the argument kinds and unified the row counts.
