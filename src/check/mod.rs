@@ -2,7 +2,7 @@
 //! rules: kernel lookup through the registry, the lambda liftability rules, and the ban on
 //! recursion. Lambdas, calls, and `if` stay intact because lowering handles them next.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::error::{Error, Span};
 use crate::kernels::Registry;
@@ -311,6 +311,18 @@ impl<'a> Checker<'a> {
         }
         self.check_cycles(&new_fns, &graph)?;
         let mut stmts = Vec::new();
+        // A host supplies inputs and receives exports by name, so each name may occur once.
+        let (mut inputs, mut exports) = (HashSet::new(), HashSet::new());
+        for item in &prog.items {
+            let (seen, kind, name, span) = match item {
+                ast::Item::Input(name, _, span) => (&mut inputs, "input", name, *span),
+                ast::Item::Export(l) => (&mut exports, "export", &l.name, l.span),
+                _ => continue,
+            };
+            if !seen.insert(name.as_str()) {
+                return Err(Error::ty(format!("{kind} '{name}' is declared twice"), span));
+            }
+        }
         for item in &prog.items {
             if let Some(s) = self.check_item(item)? {
                 stmts.push(s);
