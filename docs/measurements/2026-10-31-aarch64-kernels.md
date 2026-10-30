@@ -15,7 +15,7 @@ Every number in the final tables comes from one run of the commands in the setup
 | rustc | 1.99.1 (58cf8f9c3 2026-10-13), Homebrew |
 | Branch and commit | `kernels-neon`, benches at `aa290e5` plus one doc-comment commit |
 | Power | AC power, battery 100% charged, `powermode 2` (high power mode), sleep prevented by `caffeinate`, read with `pmset -g` and `pmset -g batt` just before the runs |
-| Other work | None building. `top -l 1 -n 5 -o cpu` listed no process above 0.0% CPU (Chrome helpers, `localspeechrecog`), and the load average was 2.12 at the start |
+| Other work | None building. `top -l 1 -n 5 -o cpu` listed no process above 0.0% CPU (Chrome helpers, `localspeechrecog`), and the one-minute load average was 2.12 when read just before the final runs, and 1.51 before the earlier first-attempt run |
 | SME | `hw.optional.arm.FEAT_SME` is 1, so SME is present. It is out of scope, and no kernel uses it |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
 
@@ -67,7 +67,7 @@ These "Verkehrt" figures are the scalar build, since no NEON entry existed yet.
 
 ## Memory bandwidth reference
 
-A plain `copy_from_slice` of 10M `f64` (reads 80 MB, writes 80 MB) takes 1.104 ms in the final run, which criterion reports as 134.9 GiB/s of combined read and write traffic.
+A plain `copy_from_slice` of 10M `f64` (reads 80 MB, writes 80 MB) takes 1.104 ms in the final run, which criterion reports as 135.0 GiB/s of combined read and write traffic.
 A read-only bandwidth was not measured separately.
 
 ## Results at 10M elements
@@ -104,8 +104,8 @@ The scalar ratios match the before table (1.02, 1.01, 1.00) within 0.02.
 | corgi | n/a (not in corgi) | - | - | - |
 
 The scalar `argmin` median of 4.358 ms is high against three other measurements of the same variant on this machine: 3.578 ms and 3.616 ms in two isolated reruns of the `tier1/argmin` group (`bench-argmin-rerun.txt`), and 3.608 ms in the first-attempt run.
-The scalar ratio and the intrinsics-over-scalar ratio therefore range over 2.78 to 3.39 and 0.27 to 0.33 depending on which run is used.
-The intrinsics (1.196 and 1.197 ms in the reruns) and native (1.290 and 1.292 ms) medians were stable across runs.
+The scalar ratio and the intrinsics-over-scalar ratio therefore range over 2.77 to 3.39 and 0.27 to 0.33 depending on which run is used.
+The intrinsics (1.199 and 1.197 ms in the reruns) and native (1.290 and 1.292 ms) medians were stable across runs.
 
 ### filter
 
@@ -116,7 +116,7 @@ The intrinsics (1.196 and 1.197 ms in the reruns) and native (1.290 and 1.292 ms
 | 99% | 4.206 ms | 3.946 ms | 2.839 ms | 5.169 ms | 1.48 | 1.39 | pass | 0.94 | 1.31 |
 
 All three corgi `filter` results equal Verkehrt's rows bitwise, and the bench asserts that before timing.
-For `f64` rows the NEON `filter` is 6 to 12% faster than scalar (0.89 to 0.94), and it is 1.10 to 1.39 times `native-base`.
+For `f64` rows the NEON `filter` is 6 to 11% faster than scalar (0.89 to 0.94), and it is 1.10 to 1.39 times `native-base`.
 Per the task 4a report, the same loops measured at 0.51 to 0.59 times scalar for `i32` and `f32` rows and at 0.88 to 0.92 for `i64` rows, in a scratch harness that is not committed.
 Those type breakdowns are the 4a report's measurement and are not repeated by this bench, which measures `f64` only.
 
@@ -214,6 +214,6 @@ Each row is one run of 20 samples, so ratios within a few percent of each other,
 
 On the M5 the scalar build, which the compiler vectorizes with NEON, is within 2% of `native-base` for `sum`, `dot`, and `count`.
 The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from 3.39x to 0.93x, and they bring `filter` from 1.22 to 1.48x down to 1.10 to 1.39x.
-The `filter` gain for `f64` rows is 6 to 12% over scalar and still leaves a 10 to 39% gap to native.
+The `filter` gain for `f64` rows is 6 to 11% over scalar and still leaves a 10 to 39% gap to native.
 The first intrinsics attempt lost to scalar on `filter` and failed the target, and the loops that replaced it depend on inlining that no test checks.
 SME is present on this chip and out of scope for this branch.
