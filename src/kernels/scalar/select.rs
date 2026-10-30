@@ -66,7 +66,8 @@ pub fn compress_append<T: Elem>(x: &[T], mask: &[u8], out: &mut ArrayBuilder) {
 }
 
 /// Appends `base + i` for every row `i` of `mask` whose byte is nonzero. `base` is the
-/// index of the first row of this tile in the whole array.
+/// index of the first row of this tile in the whole array. Panics when `base + mask.len()`
+/// exceeds `i64::MAX`, even if no row is kept.
 #[inline(always)]
 pub fn where_append(mask: &[u8], base: usize, out: &mut ArrayBuilder) {
     check_row_indices(base, mask.len());

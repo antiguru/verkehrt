@@ -364,8 +364,10 @@ fn where_chunk(mask: &[u8], first: i64, dst: &mut [i64]) -> usize {
     let n = mask.len();
     let lanes = <i64 as Lanes>::LANES;
     let step = _mm256_set1_epi64x(4);
-    // Lane `j` holds the index of row `i + j`. The adds cannot overflow because the indices
-    // of the chunk fit in i64.
+    // Lane `j` holds the index of row `i + j`. The index of every row of the chunk fits in
+    // i64, so every lane that is stored holds its exact index. Lanes past the last row, after
+    // the final add, may wrap, which is harmless because they are never stored and SIMD adds
+    // wrap without undefined behavior.
     let mut idx = _mm256_add_epi64(_mm256_set1_epi64x(first), _mm256_setr_epi64x(0, 1, 2, 3));
     let (mut i, mut k) = (0, 0);
     while i + lanes <= n {

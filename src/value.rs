@@ -361,6 +361,13 @@ impl Array {
         })
     }
 
+    /// The bytes the underlying buffer can hold without reallocating, for tests of how much
+    /// capacity an array retains.
+    #[cfg(test)]
+    pub(crate) fn buffer_capacity_bytes(&self) -> usize {
+        self.buf.capacity() * size_of::<Block>()
+    }
+
     /// Element `i` as a scalar. Panics when out of range.
     pub fn get(&self, i: usize) -> Scalar {
         assert!(
@@ -506,10 +513,10 @@ impl ArrayBuilder {
         let end = self.len * self.elem.width();
         self.blocks.truncate(end.div_ceil(64));
         // A selection reserves for all of its rows. Shrinking copies the rows, because the
-        // system allocator cannot resize a 64-byte aligned block in place, so the capacity is
-        // kept unless more than 7 of 8 blocks are unused. The copy then costs at most an
-        // eighth of the reservation.
-        if self.blocks.capacity() / 8 > self.blocks.len() {
+        // system allocator cannot resize a 64-byte aligned block in place. The buffer still
+        // shrinks whenever more than half of it is unused, so an array never holds more than
+        // twice its blocks, and the copy costs at most the output size.
+        if self.blocks.capacity() / 2 > self.blocks.len() {
             self.blocks.shrink_to_fit();
         }
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(self.blocks.as_mut_slice());

@@ -850,6 +850,27 @@ fn selections_span_chunks() {
     }
 }
 
+/// A selection reserves capacity for every input row, and `ArrayBuilder::finish` must give
+/// back the excess, so the array keeps at most twice its rows.
+#[test]
+fn selection_retains_at_most_twice_its_rows() {
+    let reg = Registry::new();
+    let n = 10_000;
+    let xs: Vec<f64> = (0..n)
+        .map(|i| f64::from(u32::try_from(i).unwrap()))
+        .collect();
+    // Rows 0..1300 of 10_000 survive, 13%.
+    let mask: Vec<bool> = (0..n).map(|i| i < 1300).collect();
+    let kept = arr(call(&reg, "compress_f64", &[f64s(&xs), bools(&mask)]).unwrap());
+    assert_eq!(kept.len(), 1300);
+    let bytes = kept.len() * size_of::<f64>();
+    assert!(
+        kept.buffer_capacity_bytes() <= 2 * bytes,
+        "{} bytes of capacity for {bytes} bytes of rows",
+        kept.buffer_capacity_bytes()
+    );
+}
+
 #[test]
 fn iota_fill_and_negative_counts() {
     let reg = Registry::new();
