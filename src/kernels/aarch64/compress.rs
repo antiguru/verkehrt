@@ -13,7 +13,8 @@
 //! one bit per lane. It indexes a table of byte shuffles that move the kept lanes to the
 //! front, `tbl` applies the shuffle, and the shuffled vector is stored whole. `u8` and bool
 //! rows have 16 lanes, too many for one table, so each 8-byte half takes its own 8-bit
-//! shuffle and store.
+//! shuffle and store. The 64-bit and 32-bit rows step four vectors at a time, with one keep
+//! mask for all of them and one shuffle and store per vector, see `lanes!`.
 
 use std::arch::aarch64::*;
 
@@ -90,33 +91,94 @@ static SHUFFLE_32: [[u8; 16]; 16] = shuffles::<16, 16, 4>();
 /// Shuffles that pack the kept bytes of 8 bytes, indexed by an 8-bit keep mask.
 static SHUFFLE_8: [[u8; 8]; 256] = shuffles::<256, 8, 1>();
 
+/// `PREFIX[m]` holds in byte `j` the number of set bits among the low `2 * (j + 1)` bits of
+/// the 8-bit mask `m`. Byte 3 is the count of all set bits of `m`.
+static PREFIX: [u32; 256] = prefix_counts();
+
+const fn prefix_counts() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut m = 0;
+    while m < 256 {
+        let mut j = 0;
+        while j < 4 {
+            let low = m & ((4 << (2 * j)) - 1);
+            table[m] |= low.count_ones() << (8 * j);
+            j += 1;
+        }
+        m += 1;
+    }
+    table
+}
+
+/// Byte `j` of a `PREFIX` entry, as a row count.
+#[inline(always)]
+fn prefix_byte(p: u32, j: usize) -> usize {
+    usize::from(p.to_le_bytes()[j])
+}
+
 /// The weight of each byte lane in a bit mask, `1 << j` in byte `j`.
 const BYTE_WEIGHTS: u64 = 0x8040_2010_0804_0201;
+
+/// The bits of the 8 byte masks `m`, bit `j` set when byte `j` is all ones. Every byte must
+/// be all ones or zero.
+#[inline]
+#[target_feature(enable = "neon")]
+fn lane_bits_8(m: uint8x8_t) -> u64 {
+    // Each set byte becomes its distinct bit, so the wrapping byte sum is their OR.
+    u64::from(vaddv_u8(vand_u8(m, vcreate_u8(BYTE_WEIGHTS))))
+}
+
+/// The bits of the 16 byte masks `m`, bit `j` set when byte `j` is all ones. Every byte must
+/// be all ones or zero.
+#[inline]
+#[target_feature(enable = "neon")]
+fn lane_bits_16(m: uint8x16_t) -> u64 {
+    lane_bits_8(vget_low_u8(m)) | lane_bits_8(vget_high_u8(m)) << 8
+}
 
 /// The keep mask of the 8 bytes of `v`, bit `j` set when byte `j` is nonzero.
 #[inline]
 #[target_feature(enable = "neon")]
 fn byte_bits(v: uint8x8_t) -> u64 {
-    // Each nonzero byte becomes its distinct bit, so the wrapping byte sum is their OR.
-    let weighted = vand_u8(vtst_u8(v, v), vcreate_u8(BYTE_WEIGHTS));
-    u64::from(vaddv_u8(weighted))
+    lane_bits_8(vtst_u8(v, v))
 }
 
-/// The bits of the 64-bit compare result `m`, bit `j` set when lane `j` is all ones.
+/// The keep mask of the 16 bytes of `v`, bit `j` set when byte `j` is nonzero.
 #[inline]
 #[target_feature(enable = "neon")]
-fn bits_64(m: uint64x2_t) -> u64 {
-    let weights = vcombine_u64(vcreate_u64(1), vcreate_u64(2));
-    vaddvq_u64(vandq_u64(m, weights))
+fn byte_bits_16(v: uint8x16_t) -> u64 {
+    lane_bits_16(vtstq_u8(v, v))
 }
 
-/// The bits of the 32-bit compare result `m`, bit `j` set when lane `j` is all ones.
+/// The bits of the 64-bit compare results `m`, bit `2 * i + j` set when lane `j` of `m[i]` is
+/// all ones.
 #[inline]
 #[target_feature(enable = "neon")]
-fn bits_32(m: uint32x4_t) -> u64 {
-    // `vcreate_u32` puts the low 32 bits in lane 0.
-    let weights = vcombine_u32(vcreate_u32(1 | 2 << 32), vcreate_u32(4 | 8 << 32));
-    u64::from(vaddvq_u32(vandq_u32(m, weights)))
+fn bits_64(m: [uint64x2_t; 4]) -> u64 {
+    // Each step keeps the low half of every lane of two vectors, in order, which narrows
+    // the all ones or zero lanes to bytes without a transfer per vector.
+    let half = |a: uint64x2_t, b: uint64x2_t| {
+        vuzp1q_u32(vreinterpretq_u32_u64(a), vreinterpretq_u32_u64(b))
+    };
+    let (lo, hi) = (half(m[0], m[1]), half(m[2], m[3]));
+    let words = vuzp1q_u16(vreinterpretq_u16_u32(lo), vreinterpretq_u16_u32(hi));
+    lane_bits_8(vmovn_u16(words))
+}
+
+/// The bits of the 32-bit compare results `m`, bit `4 * i + j` set when lane `j` of `m[i]` is
+/// all ones.
+#[inline]
+#[target_feature(enable = "neon")]
+fn bits_32(m: [uint32x4_t; 4]) -> u64 {
+    // As in `bits_64`, each step keeps the low half of every lane of two vectors, in order.
+    let half = |a: uint32x4_t, b: uint32x4_t| {
+        vuzp1q_u16(vreinterpretq_u16_u32(a), vreinterpretq_u16_u32(b))
+    };
+    let (lo, hi) = (half(m[0], m[1]), half(m[2], m[3]));
+    lane_bits_16(vuzp1q_u8(
+        vreinterpretq_u8_u16(lo),
+        vreinterpretq_u8_u16(hi),
+    ))
 }
 
 /// The 16 bytes at `src` as a vector.
@@ -130,6 +192,19 @@ unsafe fn load_bytes<T>(src: *const T) -> uint8x16_t {
     // SAFETY: the caller guarantees 16 readable bytes at `src`, and `ld1` of bytes has no
     // alignment requirement.
     unsafe { vld1q_u8(src.cast()) }
+}
+
+/// The 64 bytes at `src` as four vectors, in order.
+///
+/// # Safety
+///
+/// `src` must be valid for reading 64 bytes, and the CPU must support NEON.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn load_quad<T>(src: *const T) -> uint8x16x4_t {
+    // SAFETY: the caller guarantees 64 readable bytes at `src`, and `ld1` of bytes has no
+    // alignment requirement.
+    unsafe { vld1q_u8_x4(src.cast()) }
 }
 
 /// Stores `v` shuffled by `shuffle` at `dst`.
@@ -148,86 +223,151 @@ unsafe fn shuffle_store<T>(v: uint8x16_t, shuffle: &[u8; 16], dst: *mut T) {
     }
 }
 
-/// A row type that NEON selects `LANES` rows, one 128-bit vector, at a time.
+/// Stores the kept lanes of the four vectors `v`, in order, to the front of the 64 bytes at
+/// `dst`, and returns their count. `keep` has one bit per lane, the lanes of `v.0` first,
+/// and bits at `4 * PER` and above are ignored. `PER` is the number of lanes of one vector,
+/// 2 or 4, and `table` the shuffles of that lane width.
+///
+/// # Safety
+///
+/// `dst` must be valid for writing 64 bytes, and the CPU must support NEON.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn compress_quad<T, const PER: usize>(
+    v: uint8x16x4_t,
+    keep: u64,
+    table: &[[u8; 16]],
+    dst: *mut T,
+) -> usize {
+    let field = (1u64 << PER) - 1;
+    let shuffle = |i: usize| {
+        let m = keep >> (PER * i) & field;
+        &table[usize::try_from(m).expect("a lane mask fits in usize")]
+    };
+    // The survivors before each vector. With 2 lanes per vector one `PREFIX` entry counts
+    // all 8 bits. With 4 lanes the low byte counts the first two vectors and the high byte
+    // the last two, which start after all survivors of the low byte.
+    let byte = |b: u64| PREFIX[usize::try_from(b & 0xff).expect("a byte fits in usize")];
+    let [at1, at2, at3, total] = if PER == 2 {
+        let p = byte(keep);
+        [0, 1, 2, 3].map(|j| prefix_byte(p, j))
+    } else {
+        let (lo, hi) = (byte(keep), byte(keep >> 8));
+        let low = prefix_byte(lo, 3);
+        [
+            prefix_byte(lo, 1),
+            low,
+            low + prefix_byte(hi, 1),
+            low + prefix_byte(hi, 3),
+        ]
+    };
+    // Each store writes a whole vector of `PER` rows at the survivors before it, which are
+    // at most the rows of the vectors before it, so it ends inside the `4 * PER` rows at
+    // `dst`. A later store overwrites the unspecified tail of the one before.
+    // SAFETY: by the bound above every store stays inside the 64 writable bytes at `dst`
+    // that the caller guarantees, and the CPU supports NEON by the caller's guarantee.
+    unsafe {
+        shuffle_store(v.0, shuffle(0), dst);
+        shuffle_store(v.1, shuffle(1), dst.add(at1));
+        shuffle_store(v.2, shuffle(2), dst.add(at2));
+        shuffle_store(v.3, shuffle(3), dst.add(at3));
+    }
+    total
+}
+
+/// A row type that NEON selects `LANES` rows, a `Vector` of one or more 128-bit registers, at
+/// a time.
 ///
 /// The methods are `unsafe` because they read and write through raw pointers and need NEON.
 /// Each states the memory its pointers must cover.
 pub(super) trait Lanes: Elem {
     const LANES: usize;
 
+    /// `LANES` rows in registers.
+    type Vector: Copy;
+
     /// The keep mask of the `LANES` bool bytes at `mask`, bit `j` set when byte `j` is
     /// nonzero. `mask` must be valid for reading `LANES` bytes.
     unsafe fn keep(mask: *const u8) -> u64;
 
     /// The `LANES` rows at `src`, which must be valid for reading them.
-    unsafe fn load(src: *const Self) -> uint8x16_t;
+    unsafe fn load(src: *const Self) -> Self::Vector;
 
     /// Stores the lanes of `v` whose bit in `keep` is set, in lane order, to the front of the
     /// `LANES` rows at `dst`, and returns their count. Bits of `keep` at `LANES` and above are
     /// ignored. The other rows at `dst` get unspecified values. `dst` must be valid for
     /// writing `LANES` rows.
-    unsafe fn compress(v: uint8x16_t, keep: u64, dst: *mut Self) -> usize;
+    unsafe fn compress(v: Self::Vector, keep: u64, dst: *mut Self) -> usize;
 }
 
 /// A row type whose comparisons NEON evaluates `LANES` rows at a time.
 pub(super) trait Compare: Lanes + PartialOrd {
     /// The mask of the lanes of `v` with `v[j] <cmp> c`, for comparison number `C` of `CMPS`,
     /// with the predicate of `Cmp::test`.
-    unsafe fn compare<const C: usize>(v: uint8x16_t, c: Self) -> u64;
+    unsafe fn compare<const C: usize>(v: Self::Vector, c: Self) -> u64;
 }
 
+// The 64-bit and 32-bit row types take four vectors, 64 bytes, per step. A step pays for
+// one transfer of the keep mask to a general register and one loop iteration, so with one
+// vector of 2 or 4 lanes that fixed cost dominated and the 64-bit rows were slower than the
+// compiler's scalar loop. Four vectors spread it over 8 or 16 rows, and 64 bytes are the
+// spare rows that `append_chunks` reserves past the survivors.
 // SAFETY (all `Lanes` methods below): each method is compiled for, and needs, NEON, which
 // its callers in this file have because they are compiled for the same feature. Pointer
 // requirements are the trait's, and the unsafe blocks rely on exactly those.
 macro_rules! lanes {
-    ($t:ty, $lanes:literal, $word:ty, $table:ident) => {
+    ($t:ty, $lanes:literal, $per:literal, $table:ident) => {
         impl Lanes for $t {
             const LANES: usize = $lanes;
+            type Vector = uint8x16x4_t;
 
             // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::keep`
             // states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "neon")]
             unsafe fn keep(mask: *const u8) -> u64 {
-                // SAFETY: the caller guarantees `LANES` readable bytes at `mask`, the size of
-                // the word read here, and `read_unaligned` has no alignment requirement.
-                let word = unsafe { mask.cast::<$word>().read_unaligned() };
-                // The bytes past `LANES` are zero, so their bits stay clear.
-                byte_bits(vcreate_u8(u64::from(word)))
+                if $lanes == 8 {
+                    // SAFETY: the caller guarantees `LANES` (8) readable bytes at `mask`, the
+                    // size of the word read here, and `read_unaligned` has no alignment
+                    // requirement.
+                    let word = unsafe { mask.cast::<u64>().read_unaligned() };
+                    byte_bits(vcreate_u8(word))
+                } else {
+                    // SAFETY: the caller guarantees `LANES` (16) readable bytes at `mask`.
+                    byte_bits_16(unsafe { load_bytes(mask) })
+                }
             }
 
             // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::load`
             // states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "neon")]
-            unsafe fn load(src: *const $t) -> uint8x16_t {
-                // SAFETY: the caller guarantees `LANES` readable rows (16 bytes) at `src`.
-                unsafe { load_bytes(src) }
+            unsafe fn load(src: *const $t) -> uint8x16x4_t {
+                // SAFETY: the caller guarantees `LANES` readable rows (64 bytes) at `src`.
+                unsafe { load_quad(src) }
             }
 
             // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::compress`
             // states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "neon")]
-            unsafe fn compress(v: uint8x16_t, keep: u64, dst: *mut $t) -> usize {
-                let m = keep & ((1 << $lanes) - 1);
-                let shuffle = &$table[usize::try_from(m).expect("a lane mask fits in usize")];
-                // The shuffle moves bytes, so float rows keep their exact bits.
-                // SAFETY: the caller guarantees `LANES` writable rows (16 bytes) at `dst`.
-                unsafe { shuffle_store(v, shuffle, dst) };
-                ones(m)
+            unsafe fn compress(v: uint8x16x4_t, keep: u64, dst: *mut $t) -> usize {
+                // The shuffles move bytes, so float rows keep their exact bits.
+                // SAFETY: the caller guarantees `LANES` writable rows (64 bytes) at `dst`.
+                unsafe { compress_quad::<$t, $per>(v, keep, &$table, dst) }
             }
         }
     };
 }
 
-lanes!(f64, 2, u16, SHUFFLE_64);
-lanes!(i64, 2, u16, SHUFFLE_64);
-lanes!(f32, 4, u32, SHUFFLE_32);
-lanes!(i32, 4, u32, SHUFFLE_32);
+lanes!(f64, 8, 2, SHUFFLE_64);
+lanes!(i64, 8, 2, SHUFFLE_64);
+lanes!(f32, 16, 4, SHUFFLE_32);
+lanes!(i32, 16, 4, SHUFFLE_32);
 
 impl Lanes for u8 {
     const LANES: usize = 16;
+    type Vector = uint8x16_t;
 
     // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::keep` states.
     // Nothing assumes more than element alignment.
@@ -235,8 +375,7 @@ impl Lanes for u8 {
     #[target_feature(enable = "neon")]
     unsafe fn keep(mask: *const u8) -> u64 {
         // SAFETY: the caller guarantees 16 readable bytes at `mask`.
-        let v = unsafe { load_bytes(mask) };
-        byte_bits(vget_low_u8(v)) | byte_bits(vget_high_u8(v)) << 8
+        byte_bits_16(unsafe { load_bytes(mask) })
     }
 
     // SAFETY: the caller guarantees NEON and the pointer ranges that `Lanes::load` states.
@@ -273,22 +412,51 @@ impl Lanes for u8 {
     }
 }
 
+/// Applies `$cmp` with comparison number `$c` of `CMPS` to each of the four vectors of `$v`
+/// against the splat `$s`, reinterpreted by `$as`, and gathers the lane bits with `$bits`.
+/// `!=` is the negation of `==`, which is true on NaN like Rust's `!=`.
+macro_rules! compare_quad {
+    ($c:ident, $v:ident, $s:ident, $as:ident, $bits:ident, $all:literal,
+     $eq:ident, $lt:ident, $le:ident, $gt:ident, $ge:ident) => {{
+        let one = |x: uint8x16_t| {
+            let x = $as(x);
+            match CMPS[$c].1 {
+                Cmp::Eq | Cmp::Ne => $eq(x, $s),
+                Cmp::Lt => $lt(x, $s),
+                Cmp::Le => $le(x, $s),
+                Cmp::Gt => $gt(x, $s),
+                Cmp::Ge => $ge(x, $s),
+            }
+        };
+        let bits = $bits([one($v.0), one($v.1), one($v.2), one($v.3)]);
+        match CMPS[$c].1 {
+            Cmp::Ne => bits ^ $all,
+            _ => bits,
+        }
+    }};
+}
+
 impl Compare for f64 {
     // SAFETY: the caller guarantees NEON. The method reads no memory.
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn compare<const C: usize>(v: uint8x16_t, c: f64) -> u64 {
-        let (v, c) = (vreinterpretq_f64_u8(v), vdupq_n_f64(c));
+    unsafe fn compare<const C: usize>(v: uint8x16x4_t, c: f64) -> u64 {
+        let s = vdupq_n_f64(c);
         // The NEON float compares are ordered, false on NaN like `<`. `!=` is the negation
         // of `==`, which is true on NaN like Rust's `!=`.
-        match CMPS[C].1 {
-            Cmp::Eq => bits_64(vceqq_f64(v, c)),
-            Cmp::Ne => bits_64(vceqq_f64(v, c)) ^ 0b11,
-            Cmp::Lt => bits_64(vcltq_f64(v, c)),
-            Cmp::Le => bits_64(vcleq_f64(v, c)),
-            Cmp::Gt => bits_64(vcgtq_f64(v, c)),
-            Cmp::Ge => bits_64(vcgeq_f64(v, c)),
-        }
+        compare_quad!(
+            C,
+            v,
+            s,
+            vreinterpretq_f64_u8,
+            bits_64,
+            0xff,
+            vceqq_f64,
+            vcltq_f64,
+            vcleq_f64,
+            vcgtq_f64,
+            vcgeq_f64
+        )
     }
 }
 
@@ -296,17 +464,22 @@ impl Compare for f32 {
     // SAFETY: the caller guarantees NEON. The method reads no memory.
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn compare<const C: usize>(v: uint8x16_t, c: f32) -> u64 {
-        let (v, c) = (vreinterpretq_f32_u8(v), vdupq_n_f32(c));
+    unsafe fn compare<const C: usize>(v: uint8x16x4_t, c: f32) -> u64 {
+        let s = vdupq_n_f32(c);
         // The predicates of the f64 case.
-        match CMPS[C].1 {
-            Cmp::Eq => bits_32(vceqq_f32(v, c)),
-            Cmp::Ne => bits_32(vceqq_f32(v, c)) ^ 0b1111,
-            Cmp::Lt => bits_32(vcltq_f32(v, c)),
-            Cmp::Le => bits_32(vcleq_f32(v, c)),
-            Cmp::Gt => bits_32(vcgtq_f32(v, c)),
-            Cmp::Ge => bits_32(vcgeq_f32(v, c)),
-        }
+        compare_quad!(
+            C,
+            v,
+            s,
+            vreinterpretq_f32_u8,
+            bits_32,
+            0xffff,
+            vceqq_f32,
+            vcltq_f32,
+            vcleq_f32,
+            vcgtq_f32,
+            vcgeq_f32
+        )
     }
 }
 
@@ -314,17 +487,22 @@ impl Compare for i64 {
     // SAFETY: the caller guarantees NEON. The method reads no memory.
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn compare<const C: usize>(v: uint8x16_t, c: i64) -> u64 {
-        let (v, c) = (vreinterpretq_s64_u8(v), vdupq_n_s64(c));
+    unsafe fn compare<const C: usize>(v: uint8x16x4_t, c: i64) -> u64 {
+        let s = vdupq_n_s64(c);
         // The signed compares, and `!=` as the negation of `==`.
-        match CMPS[C].1 {
-            Cmp::Eq => bits_64(vceqq_s64(v, c)),
-            Cmp::Ne => bits_64(vceqq_s64(v, c)) ^ 0b11,
-            Cmp::Lt => bits_64(vcltq_s64(v, c)),
-            Cmp::Le => bits_64(vcleq_s64(v, c)),
-            Cmp::Gt => bits_64(vcgtq_s64(v, c)),
-            Cmp::Ge => bits_64(vcgeq_s64(v, c)),
-        }
+        compare_quad!(
+            C,
+            v,
+            s,
+            vreinterpretq_s64_u8,
+            bits_64,
+            0xff,
+            vceqq_s64,
+            vcltq_s64,
+            vcleq_s64,
+            vcgtq_s64,
+            vcgeq_s64
+        )
     }
 }
 
@@ -332,33 +510,43 @@ impl Compare for i32 {
     // SAFETY: the caller guarantees NEON. The method reads no memory.
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn compare<const C: usize>(v: uint8x16_t, c: i32) -> u64 {
-        let (v, c) = (vreinterpretq_s32_u8(v), vdupq_n_s32(c));
+    unsafe fn compare<const C: usize>(v: uint8x16x4_t, c: i32) -> u64 {
+        let s = vdupq_n_s32(c);
         // As for i64.
-        match CMPS[C].1 {
-            Cmp::Eq => bits_32(vceqq_s32(v, c)),
-            Cmp::Ne => bits_32(vceqq_s32(v, c)) ^ 0b1111,
-            Cmp::Lt => bits_32(vcltq_s32(v, c)),
-            Cmp::Le => bits_32(vcleq_s32(v, c)),
-            Cmp::Gt => bits_32(vcgtq_s32(v, c)),
-            Cmp::Ge => bits_32(vcgeq_s32(v, c)),
-        }
+        compare_quad!(
+            C,
+            v,
+            s,
+            vreinterpretq_s32_u8,
+            bits_32,
+            0xffff,
+            vceqq_s32,
+            vcltq_s32,
+            vcleq_s32,
+            vcgtq_s32,
+            vcgeq_s32
+        )
     }
 }
 
 /// The `i64` rows `first + j` of lanes `j`, see `selection_loops`.
 #[inline]
 #[target_feature(enable = "neon")]
-fn first_indices(first: i64) -> uint8x16_t {
-    let lanes = vcombine_s64(vcreate_s64(0), vcreate_s64(1));
-    vreinterpretq_u8_s64(vaddq_s64(vdupq_n_s64(first), lanes))
+fn first_indices(first: i64) -> uint8x16x4_t {
+    let at = |j: i64| {
+        let lanes = vcombine_s64(vcreate_s64(0), vcreate_s64(1));
+        vreinterpretq_u8_s64(vaddq_s64(vdupq_n_s64(first.wrapping_add(j)), lanes))
+    };
+    uint8x16x4_t(at(0), at(2), at(4), at(6))
 }
 
-/// `idx` advanced by the 2 `i64` lanes of a vector, see `selection_loops`.
+/// `idx` advanced by the 8 `i64` lanes of a step, see `selection_loops`.
 #[inline]
 #[target_feature(enable = "neon")]
-fn next_indices(idx: uint8x16_t) -> uint8x16_t {
-    vreinterpretq_u8_s64(vaddq_s64(vreinterpretq_s64_u8(idx), vdupq_n_s64(2)))
+fn next_indices(idx: uint8x16x4_t) -> uint8x16x4_t {
+    let step =
+        |v: uint8x16_t| vreinterpretq_u8_s64(vaddq_s64(vreinterpretq_s64_u8(v), vdupq_n_s64(8)));
+    uint8x16x4_t(step(idx.0), step(idx.1), step(idx.2), step(idx.3))
 }
 
 selection_loops!("NEON", "neon");
@@ -387,6 +575,20 @@ mod tests {
                 shuffle[kept.len()..].iter().all(|&s| s == 0xff),
                 "mask {m:#b}"
             );
+        }
+    }
+
+    #[test]
+    fn prefix_table_counts_low_bits() {
+        for (m, &p) in PREFIX.iter().enumerate() {
+            for j in 0..4 {
+                let low = m & ((4 << (2 * j)) - 1);
+                assert_eq!(
+                    prefix_byte(p, j),
+                    ones(u64::try_from(low).unwrap()),
+                    "{m:#b}"
+                );
+            }
         }
     }
 
