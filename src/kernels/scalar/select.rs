@@ -4,7 +4,9 @@
 use std::marker::PhantomData;
 
 use crate::kernels::scalar::elementwise::{arity_error, rows_arg, tag};
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, SelectionBody};
+use crate::kernels::{
+    InputSpec, KernelClass, KernelDef, KernelImpl, Registry, SelectionBody, Variant,
+};
 use crate::ops::Op;
 use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
 
@@ -67,11 +69,7 @@ pub fn compress_append<T: Elem>(x: &[T], mask: &[u8], out: &mut ArrayBuilder) {
 /// index of the first row of this tile in the whole array.
 #[inline(always)]
 pub fn where_append(mask: &[u8], base: usize, out: &mut ArrayBuilder) {
-    // Every row index of the tile fits in i64 when the end does, so the indices count up
-    // from `base` without a check per row.
-    base.checked_add(mask.len())
-        .and_then(|end| i64::try_from(end).ok())
-        .expect("row index fits in i64");
+    check_row_indices(base, mask.len());
     append_chunks(out, mask.len(), |start, dst| {
         let end = start + dst.len();
         let first = i64::try_from(base + start).expect("row index fits in i64");
@@ -80,6 +78,15 @@ pub fn where_append(mask: &[u8], base: usize, out: &mut ArrayBuilder) {
             dst,
         )
     });
+}
+
+/// Panics unless the row indices `base..base + len` all fit in i64. Every row index of a
+/// tile fits when the end does, so a `where` entry counts up from `base` without a check per
+/// row.
+pub(crate) fn check_row_indices(base: usize, len: usize) {
+    base.checked_add(len)
+        .and_then(|end| i64::try_from(end).ok())
+        .expect("row index fits in i64");
 }
 
 /// An array of type `ty` from its storage rows. `T` is the storage type of `ty`.
@@ -93,14 +100,14 @@ pub(crate) fn array_of<T: Elem>(rows: Vec<T>, ty: ScalarType) -> Array {
     }
 }
 
-/// The `compress` entry for rows of type `ty`, whose storage type is `T`. The tile's base
-/// does not matter because the survivors are rows, not indices.
+/// The rows and the mask of a `compress` tile on rows of type `ty`, whose storage type is
+/// `T`. Fails on a wrong arity, wrong argument kinds, or row counts that differ, so the two
+/// slices it returns have the same length.
 #[inline(always)]
-fn compress_tile<T: Elem>(
+pub(crate) fn compress_args<T: Elem>(
     args: &[Arg],
-    out: &mut ArrayBuilder,
     ty: ScalarType,
-) -> Result<(), String> {
+) -> Result<(&[T], &[u8]), String> {
     let [x, mask] = args else {
         return Err(arity_error(2, args.len()));
     };
@@ -115,18 +122,35 @@ fn compress_tile<T: Elem>(
             mask.len()
         ));
     }
+    Ok((x, mask))
+}
+
+/// The `compress` entry for rows of type `ty`, whose storage type is `T`. The tile's base
+/// does not matter because the survivors are rows, not indices.
+#[inline(always)]
+fn compress_tile<T: Elem>(
+    args: &[Arg],
+    out: &mut ArrayBuilder,
+    ty: ScalarType,
+) -> Result<(), String> {
+    let (x, mask) = compress_args::<T>(args, ty)?;
     compress_append(x, mask, out);
     Ok(())
+}
+
+/// The mask of a `where` tile. Fails on a wrong arity or argument kind.
+#[inline(always)]
+pub(crate) fn where_args(args: &[Arg]) -> Result<&[u8], String> {
+    let [mask] = args else {
+        return Err(arity_error(1, args.len()));
+    };
+    rows_arg::<u8>(mask, ScalarType::Bool)
 }
 
 /// The `where` entry. `base` makes the tile's row indices global.
 #[inline(always)]
 fn where_tile(args: &[Arg], base: usize, out: &mut ArrayBuilder) -> Result<(), String> {
-    let [mask] = args else {
-        return Err(arity_error(1, args.len()));
-    };
-    let mask = rows_arg::<u8>(mask, ScalarType::Bool)?;
-    where_append(mask, base, out);
+    where_append(where_args(args)?, base, out);
     Ok(())
 }
 
@@ -166,8 +190,27 @@ fn compress<T: Elem, const BOOL: bool>(reg: &mut Registry) {
         cost: 2 * u64::try_from(ty.width()).expect("width fits in u64") + 1,
         commutative: false,
         pattern: None,
-        impls: KernelImpl::selection::<Compress<T, BOOL>>(),
+        impls: compress_impls::<T, BOOL>(),
     });
+}
+
+/// The entries of `compress` on rows of storage type `T`: the scalar and auto entries of its
+/// body, plus intrinsics entries where they exist.
+fn compress_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
+    #[allow(unused_mut)]
+    let mut impls = KernelImpl::selection::<Compress<T, BOOL>>();
+    #[cfg(target_arch = "x86_64")]
+    crate::kernels::x86::add_compress::<T, BOOL>(&mut impls);
+    impls
+}
+
+/// The entries of `where`, see `compress_impls`.
+fn where_impls() -> [Option<KernelImpl>; Variant::COUNT] {
+    #[allow(unused_mut)]
+    let mut impls = KernelImpl::selection::<Where>();
+    #[cfg(target_arch = "x86_64")]
+    crate::kernels::x86::add_where(&mut impls);
+    impls
 }
 
 pub(crate) fn register(reg: &mut Registry) {
@@ -187,6 +230,6 @@ pub(crate) fn register(reg: &mut Registry) {
         cost: 9,
         commutative: false,
         pattern: None,
-        impls: KernelImpl::selection::<Where>(),
+        impls: where_impls(),
     });
 }

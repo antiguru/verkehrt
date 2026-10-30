@@ -19,7 +19,7 @@ use crate::value::{Arg, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType
 
 /// The comparisons that fuse with `count`, `filter`, and `condsum`.
 #[derive(Clone, Copy)]
-enum Cmp {
+pub(crate) enum Cmp {
     Eq,
     Ne,
     Lt,
@@ -29,7 +29,7 @@ enum Cmp {
 }
 
 /// Kernel name part and comparison, in the order of the const generic index `C`.
-const CMPS: [(&str, Cmp); 6] = [
+pub(crate) const CMPS: [(&str, Cmp); 6] = [
     ("eq", Cmp::Eq),
     ("ne", Cmp::Ne),
     ("lt", Cmp::Lt),
@@ -41,7 +41,7 @@ const CMPS: [(&str, Cmp); 6] = [
 impl Cmp {
     /// The same predicate as the single-op comparison kernel, so NaN follows IEEE 754.
     #[inline(always)]
-    fn test<T: PartialOrd>(self, a: T, b: T) -> bool {
+    pub(crate) fn test<T: PartialOrd>(self, a: T, b: T) -> bool {
         match self {
             Cmp::Eq => a == b,
             Cmp::Ne => a != b,
@@ -202,6 +202,16 @@ impl<T: Reducible, const C: usize> ReductionBody for CondSum<T, C> {
     }
 }
 
+/// The rows and the constant of a `filter_<cmp>` tile. Fails on a wrong arity or wrong
+/// argument kinds.
+#[inline(always)]
+pub(crate) fn filter_args<T: Elem>(args: &[Arg]) -> Result<(&[T], T), String> {
+    let [x, c] = args else {
+        return Err(arity_error(2, args.len()));
+    };
+    Ok((rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?))
+}
+
 /// The `filter_<cmp>` entry for comparison `cmp`: appends the rows with `x[i] <cmp> c`.
 #[inline(always)]
 fn filter_tile<T: Elem + PartialOrd>(
@@ -209,10 +219,7 @@ fn filter_tile<T: Elem + PartialOrd>(
     out: &mut ArrayBuilder,
     cmp: Cmp,
 ) -> Result<(), String> {
-    let [x, c] = args else {
-        return Err(arity_error(2, args.len()));
-    };
-    let (x, c) = (rows_arg::<T>(x, T::TYPE)?, splat_arg::<T>(c, T::TYPE)?);
+    let (x, c) = filter_args::<T>(args)?;
     append_chunks(out, x.len(), |start, dst| {
         let rows = x[start..start + dst.len()].iter();
         predicated(rows.map(|&v| (v, cmp.test(v, c))), dst)
@@ -261,6 +268,16 @@ fn add_fused(
     });
 }
 
+/// The entries of `filter_<cmp>` for comparison number `C` of `CMPS`: the scalar and auto
+/// entries of its body, plus intrinsics entries where they exist.
+fn filter_impls<T: Reducible, const C: usize>() -> [Option<KernelImpl>; Variant::COUNT] {
+    #[allow(unused_mut)]
+    let mut impls = KernelImpl::selection::<Filter<T, C>>();
+    #[cfg(target_arch = "x86_64")]
+    crate::kernels::x86::add_filter::<T, C>(&mut impls);
+    impls
+}
+
 /// Registers the comparison kernels for comparison number `C` of `CMPS`. The kernel bodies
 /// are types, so `T` and `C` are type-level constants.
 fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
@@ -291,7 +308,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         2,
         format!("(compress_{n} ?x {mask})"),
         &["?x", "?c"],
-        KernelImpl::selection::<Filter<T, C>>(),
+        filter_impls::<T, C>(),
     );
     add_fused(
         reg,

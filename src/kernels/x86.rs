@@ -1,4 +1,5 @@
-//! x86-64 variants of the kernels. `auto` compiles the portable bodies for AVX2 and AVX-512.
+//! x86-64 variants of the kernels. `auto` compiles the portable bodies for AVX2 and AVX-512,
+//! and `compress` holds the hand-written intrinsics entries of the selections.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
@@ -6,8 +7,10 @@
 use crate::kernels::{
     Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, SelectionBody, Variant,
 };
+use crate::value::Elem;
 
 mod auto;
+mod compress;
 
 const AVX2_AUTO: Variant = Variant {
     isa: Isa::Avx2,
@@ -17,6 +20,16 @@ const AVX2_AUTO: Variant = Variant {
 const AVX512_AUTO: Variant = Variant {
     isa: Isa::Avx512,
     backend: Backend::Auto,
+};
+
+const AVX2_INTRINSICS: Variant = Variant {
+    isa: Isa::Avx2,
+    backend: Backend::Intrinsics,
+};
+
+const AVX512_INTRINSICS: Variant = Variant {
+    isa: Isa::Avx512,
+    backend: Backend::Intrinsics,
 };
 
 /// Adds the AVX2 and AVX-512 auto entries of an elementwise body to its table.
@@ -35,4 +48,27 @@ pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut [Option<KernelImpl>]) 
 pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) {
     impls[AVX2_AUTO.index()] = Some(KernelImpl::Selection(auto::avx2::selection::<S>));
     impls[AVX512_AUTO.index()] = Some(KernelImpl::Selection(auto::avx512::selection::<S>));
+}
+
+/// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic type
+/// is `tag::<T, BOOL>()`. AVX2 has none for `u8` and bool.
+pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
+    let (avx2, avx512) = compress::compress_entries::<T, BOOL>();
+    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
+    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+}
+
+/// Adds the intrinsics entries of `where`.
+pub(crate) fn add_where(impls: &mut [Option<KernelImpl>]) {
+    let (avx2, avx512) = compress::where_entries();
+    impls[AVX2_INTRINSICS.index()] = Some(KernelImpl::Selection(avx2));
+    impls[AVX512_INTRINSICS.index()] = Some(KernelImpl::Selection(avx512));
+}
+
+/// Adds the intrinsics entries of `filter_<cmp>` on rows of type `T`, for comparison number
+/// `C` of `CMPS`.
+pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl>]) {
+    let (avx2, avx512) = compress::filter_entries::<T, C>();
+    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
+    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
 }

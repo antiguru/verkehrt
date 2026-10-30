@@ -436,13 +436,36 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             isa,
             backend: Backend::Auto,
         };
+        let intrinsics = Variant {
+            isa,
+            backend: Backend::Intrinsics,
+        };
         let by_auto = reg.resolve(isa, Backend::Auto);
         let by_intrinsics = reg.resolve(isa, Backend::Intrinsics);
-        for name in ["add_f64", "reduce_add_f64", "dot_f64", "compress_f64"] {
+        for name in ["add_f64", "reduce_add_f64", "dot_f64"] {
             let id = reg.by_name(name).unwrap();
             assert_eq!(by_auto.variant_used(id), auto, "{name}");
-            // No intrinsics entries exist yet, so the intrinsics backend uses the auto entry.
+            // These kernels have no intrinsics entry, so the intrinsics backend uses the auto
+            // entry.
             assert_eq!(by_intrinsics.variant_used(id), auto, "{name}");
+        }
+        let mut selections = vec!["where".to_string()];
+        for t in ["f64", "f32", "i64", "i32"] {
+            selections.push(format!("compress_{t}"));
+            for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
+                selections.push(format!("filter_{cmp}_{t}"));
+            }
+        }
+        // AVX2 has no byte compress, so `u8` and bool fall back to auto there.
+        let bytes = if isa == Isa::Avx2 { auto } else { intrinsics };
+        let expected = selections
+            .iter()
+            .map(|n| (n.as_str(), intrinsics))
+            .chain([("compress_u8", bytes), ("compress_bool", bytes)]);
+        for (name, want) in expected {
+            let id = reg.by_name(name).unwrap();
+            assert_eq!(by_auto.variant_used(id), auto, "{name}");
+            assert_eq!(by_intrinsics.variant_used(id), want, "{name}");
         }
     }
 }

@@ -161,6 +161,9 @@ macro_rules! call_native {
 struct Interp {
     label: String,
     interp: Interpreter,
+    /// Whether it uses the intrinsics backend. Only the selections have intrinsics entries,
+    /// so only the `filter` groups measure these variants.
+    intrinsics: bool,
 }
 
 fn interpreters() -> Vec<Interp> {
@@ -172,22 +175,24 @@ fn interpreters() -> Vec<Interp> {
             ..Options::default()
         })
         .unwrap(),
+        intrinsics: false,
     }];
     for (isa, name) in [(Isa::Avx2, "avx2"), (Isa::Avx512, "avx512")] {
         if !isa.is_available() {
             continue;
         }
-        // The intrinsics backend resolves to the auto entries until the intrinsics kernels
-        // exist, so only `auto` is measured.
-        v.push(Interp {
-            label: format!("{name}-auto"),
-            interp: Interpreter::new(Options {
-                isa: Some(isa),
-                backend: Backend::Auto,
-                ..Options::default()
-            })
-            .unwrap(),
-        });
+        for (backend, suffix) in [(Backend::Auto, "auto"), (Backend::Intrinsics, "intrinsics")] {
+            v.push(Interp {
+                label: format!("{name}-{suffix}"),
+                interp: Interpreter::new(Options {
+                    isa: Some(isa),
+                    backend,
+                    ..Options::default()
+                })
+                .unwrap(),
+                intrinsics: backend == Backend::Intrinsics,
+            });
+        }
     }
     v
 }
@@ -259,7 +264,9 @@ fn tier1(c: &mut Criterion) {
     let y = ya.as_slice::<f64>();
     let xv = Value::Array(xa.clone());
     let yv = Value::Array(ya.clone());
-    let interps = interpreters();
+    let all_interps = interpreters();
+    // Every workload but `filter` resolves the intrinsics backend to its auto entries.
+    let interps: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<f64>()).unwrap();
 
@@ -403,7 +410,7 @@ fn tier1(c: &mut Criterion) {
         let mut g = c.benchmark_group(format!("tier1/{name}"));
         configure(&mut g);
         g.throughput(Throughput::Bytes(bytes));
-        for it in &interps {
+        for it in &all_interps {
             let p = it.interp.prepare(&src).unwrap();
             let ins = [("x", xv.clone())];
             let out = run(&p, &it.interp, &ins);
