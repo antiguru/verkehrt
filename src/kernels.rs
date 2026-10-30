@@ -32,7 +32,10 @@ pub type ElementwiseFn = unsafe fn(args: &[Arg], out: &mut [u8]) -> Result<(), S
 /// entry's ISA.
 ///
 /// The `Rows` windows that the accumulator's `update` receives are aligned for their element
-/// type only, as for `ElementwiseFn`. A `Bool` result must be 0 or 1.
+/// type only, as for `ElementwiseFn`. A `Bool` result must be 0 or 1. The arguments of
+/// `update` are not checked by the caller, because `Dispatch::reducer` hands the accumulator
+/// out for tiles, so an `update` that relies on equal row counts or argument kinds for memory
+/// safety must check them itself.
 pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
 
 /// The running state of one reduction.
@@ -43,6 +46,8 @@ pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
 /// and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
 /// local index is offset by the rows consumed before it.
 pub trait Reducer: Send {
+    /// Consumes one tile. `args` may arrive with unchecked kinds and row counts, see
+    /// `ReducerFn`.
     fn update(&mut self, args: &[Arg]) -> Result<(), String>;
     fn finish(self: Box<Self>) -> Result<Scalar, String>;
 }
@@ -124,13 +129,13 @@ impl KernelImpl {
     }
 
     /// The scalar entry of an elementwise body.
-    pub fn elementwise_scalar<B: ElementwiseBody>() -> KernelImpl {
+    pub(crate) fn elementwise_scalar<B: ElementwiseBody>() -> KernelImpl {
         KernelImpl::Elementwise(scalar_elementwise::<B>)
     }
 
     /// The table of an elementwise body: its scalar entry, and its ISA variants on targets
     /// that compile them.
-    pub fn elementwise<B: ElementwiseBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn elementwise<B: ElementwiseBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         #[allow(unused_mut)]
         let mut impls = KernelImpl::elementwise_scalar::<B>().scalar_only();
         #[cfg(target_arch = "x86_64")]
@@ -139,7 +144,7 @@ impl KernelImpl {
     }
 
     /// The table of a reduction body, see `elementwise`.
-    pub fn reduction<R: ReductionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn reduction<R: ReductionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         #[allow(unused_mut)]
         let mut impls = KernelImpl::Reduction(scalar_reducer::<R>).scalar_only();
         #[cfg(target_arch = "x86_64")]
@@ -148,7 +153,7 @@ impl KernelImpl {
     }
 
     /// The table of a selection body, see `elementwise`.
-    pub fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         #[allow(unused_mut)]
         let mut impls = KernelImpl::Selection(scalar_selection::<S>).scalar_only();
         #[cfg(target_arch = "x86_64")]

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from, splat_arg};
-use crate::kernels::scalar::reduce::{Accum, Reducible};
+use crate::kernels::scalar::reduce::{Accum, LANES, Reducible};
 use crate::kernels::{
     Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
     Reducer, ReductionBody, Registry, SelectionBody, Variant,
@@ -80,7 +80,14 @@ impl<T: Reducible> Reducer for Dot<T> {
         };
         let (x, y) = (rows_arg::<T>(x, T::TYPE)?, rows_arg::<T>(y, T::TYPE)?);
         same_len(x.len(), y.len())?;
-        self.acc.feed(x.len(), |i| Num::mul(x[i], y[i]))
+        let ((xb, xr), (yb, yr)) = (x.as_chunks::<LANES>(), y.as_chunks::<LANES>());
+        // The lengths are equal, the minimums only let the compiler drop the bounds checks.
+        self.acc.feed_blocks(
+            xb.len().min(yb.len()),
+            |b, j| Num::mul(xb[b][j], yb[b][j]),
+            xr.len().min(yr.len()),
+            |j| Num::mul(xr[j], yr[j]),
+        )
     }
 
     fn finish(self: Box<Self>) -> Result<Scalar, String> {
@@ -108,7 +115,13 @@ impl<T: Reducible> Reducer for SumSq<T> {
             return Err(arity_error(1, args.len()));
         };
         let x = rows_arg::<T>(x, T::TYPE)?;
-        self.acc.feed(x.len(), |i| Num::mul(x[i], x[i]))
+        let (xb, xr) = x.as_chunks::<LANES>();
+        self.acc.feed_blocks(
+            xb.len(),
+            |b, j| Num::mul(xb[b][j], xb[b][j]),
+            xr.len(),
+            |j| Num::mul(xr[j], xr[j]),
+        )
     }
 
     fn finish(self: Box<Self>) -> Result<Scalar, String> {
@@ -169,8 +182,10 @@ impl<T: Reducible, const C: usize> Reducer for CondSum<T, C> {
         };
         let x = rows_arg::<T>(x, T::TYPE)?;
         let (c, e) = (splat_arg::<T>(c, T::TYPE)?, splat_arg::<T>(e, T::TYPE)?);
+        let pick = |v: T| if CMPS[C].1.test(v, c) { v } else { e };
+        let (xb, xr) = x.as_chunks::<LANES>();
         self.acc
-            .feed(x.len(), |i| if CMPS[C].1.test(x[i], c) { x[i] } else { e })
+            .feed_blocks(xb.len(), |b, j| pick(xb[b][j]), xr.len(), |j| pick(xr[j]))
     }
 
     fn finish(self: Box<Self>) -> Result<Scalar, String> {

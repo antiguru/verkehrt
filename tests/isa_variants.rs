@@ -16,7 +16,8 @@ use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value,
 const LENGTHS: [usize; 15] = [0, 1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 63, 64, 65, 300];
 /// A row count long enough for every reduction and selection tile below plus a rest.
 const TILED_LEN: usize = 1000;
-/// Array views start at row 0 or at a random row in `1..=MAX_OFFSET` of a larger buffer.
+/// Array views start at row 0 or at a random row in `1..=MAX_OFFSET` of a larger buffer,
+/// drawn per input.
 const MAX_OFFSET: usize = 7;
 /// Rows in each generated buffer.
 const BUF_LEN: usize = TILED_LEN + MAX_OFFSET;
@@ -29,19 +30,21 @@ const CASES: u32 = 6;
 
 /// One generated input: a buffer of `BUF_LEN` rows and a scalar of the same element type.
 /// `splat` picks the scalar for an `Either` input, `pick` replaces the scalar by a row of
-/// the first array input of the same type, so comparisons hit equal values.
+/// the first array input of the same type, so comparisons hit equal values. `offset` is the
+/// view's first row in the misaligned run, drawn per input so that operands are misaligned
+/// relative to each other.
 #[derive(Clone, Debug)]
 struct Input {
     rows: Array,
     scalar: Scalar,
     splat: bool,
     pick: Option<Index>,
+    offset: usize,
 }
 
 #[derive(Clone, Debug)]
 struct Case {
     inputs: Vec<Input>,
-    offset: usize,
 }
 
 /// `specials` is `[0.0, -0.0, inf, -inf, NaN]`. Without `special`, only the signed zeros
@@ -81,12 +84,14 @@ fn input_of<T: Elem + std::fmt::Debug>(
         elem,
         any::<bool>(),
         proptest::option::of(any::<Index>()),
+        1..=MAX_OFFSET,
     )
-        .prop_map(move |(rows, s, splat, pick)| Input {
+        .prop_map(move |(rows, s, splat, pick, offset)| Input {
             rows: Array::from_vec(rows),
             scalar: wrap(s),
             splat,
             pick,
+            offset,
         })
         .boxed()
 }
@@ -119,12 +124,14 @@ fn input_strategy(ty: ScalarType, special: bool) -> BoxedStrategy<Input> {
             any::<bool>(),
             any::<bool>(),
             proptest::option::of(any::<Index>()),
+            1..=MAX_OFFSET,
         )
-            .prop_map(|(rows, s, splat, pick)| Input {
+            .prop_map(|(rows, s, splat, pick, offset)| Input {
                 rows: Array::from_bools(&rows),
                 scalar: Scalar::Bool(s),
                 splat,
                 pick,
+                offset,
             })
             .boxed(),
         other => panic!("no generator for {other:?}"),
@@ -146,14 +153,16 @@ fn case_strategy(def: &KernelDef) -> BoxedStrategy<Case> {
                 .iter()
                 .map(|s| input_strategy(spec_type(*s), special))
                 .collect();
-            (per_input, 1..=MAX_OFFSET)
+            per_input
         })
-        .prop_map(|(inputs, offset)| Case { inputs, offset })
+        .prop_map(|inputs| Case { inputs })
         .boxed()
 }
 
-/// The arguments for `n` rows starting at row `offset` of each buffer.
-fn args_for(def: &KernelDef, case: &Case, offset: usize, n: usize) -> Vec<Value> {
+/// The arguments for `n` rows, starting at row 0 of each buffer when `aligned`, else at each
+/// input's own offset.
+fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value> {
+    let start = |input: &Input| if aligned { 0 } else { input.offset };
     // An elementwise array kernel needs one array operand, so the first `Either` input is an
     // array when every `Either` input asks for a scalar.
     let all_splat = def
@@ -174,14 +183,16 @@ fn args_for(def: &KernelDef, case: &Case, offset: usize, n: usize) -> Vec<Value>
         .map(|k| {
             let input = &case.inputs[k];
             if is_array(k) {
-                return Value::Array(input.rows.slice(offset, n));
+                return Value::Array(input.rows.slice(start(input), n));
             }
             let ty = spec_type(def.inputs[k]);
             let source = (0..def.inputs.len())
                 .find(|&j| is_array(j) && spec_type(def.inputs[j]) == ty)
-                .map(|j| &case.inputs[j].rows);
+                .map(|j| &case.inputs[j]);
             match (input.pick, source) {
-                (Some(i), Some(rows)) if n > 0 => Value::Scalar(rows.get(offset + i.index(n))),
+                (Some(i), Some(src)) if n > 0 => {
+                    Value::Scalar(src.rows.get(start(src) + i.index(n)))
+                }
                 _ => Value::Scalar(input.scalar.clone()),
             }
         })
@@ -292,13 +303,13 @@ fn check_case(
 ) -> Result<(), TestCaseError> {
     let def = reg.get(id);
     for n in LENGTHS.into_iter().chain([TILED_LEN]) {
-        for offset in [0, case.offset] {
-            let args = args_for(def, case, offset, n);
+        for aligned in [true, false] {
+            let args = args_for(def, case, aligned, n);
             let want = scalar.call(reg, id, &args);
             let got = variant.call(reg, id, &args);
             prop_assert!(
                 same(&want, &got),
-                "{} n={n} offset={offset}: scalar {} vs variant {}",
+                "{} n={n} aligned={aligned}: scalar {} vs variant {}",
                 def.name,
                 show(&want),
                 show(&got)
@@ -311,7 +322,7 @@ fn check_case(
             if let Some(tiled) = tiled {
                 prop_assert!(
                     same(&want, &tiled),
-                    "{} n={n} offset={offset} tiled: scalar {} vs variant {}",
+                    "{} n={n} aligned={aligned} tiled: scalar {} vs variant {}",
                     def.name,
                     show(&want),
                     show(&tiled)

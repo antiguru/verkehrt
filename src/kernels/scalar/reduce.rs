@@ -14,8 +14,9 @@ use crate::kernels::{
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, Value, ValueType};
 
-/// Number of independent accumulators in the canonical order.
-const LANES: usize = 16;
+/// Number of independent accumulators in the canonical order, and the rows in a block of
+/// `Accum::feed_blocks`.
+pub(crate) const LANES: usize = 16;
 
 /// Float element types of the canonical reductions.
 pub trait Float: Num {
@@ -33,30 +34,39 @@ impl Float for f64 {
     const ONE: f64 = 1.0;
 }
 
-/// Adds `n` elements `f(0)..f(n)` into the accumulators, element `i` into accumulator
-/// `i mod 16`. `n` must be a multiple of 16. This is the one loop over a tile's rows that
-/// every canonical reduction shares, with `f` reading and combining the operands of a row.
+/// Adds `blocks` blocks of 16 elements into the accumulators, element `f(b, j)` (row
+/// `16 * b + j`) into accumulator `j`, block after block. This is the one loop over a tile's
+/// rows that every canonical reduction shares, with `f` reading and combining the operands
+/// of a row.
 #[inline(always)]
 fn update_lanes_with<T: Float>(
     acc: &mut [T; LANES],
-    n: usize,
-    f: impl Fn(usize) -> T,
+    blocks: usize,
+    f: impl Fn(usize, usize) -> T,
     op: fn(T, T) -> T,
 ) {
-    assert!(
-        n.is_multiple_of(LANES),
-        "canonical update needs a multiple of {LANES} elements, got {n}"
-    );
-    for start in (0..n).step_by(LANES) {
-        for (j, a) in acc.iter_mut().enumerate() {
-            *a = op(*a, f(start + j));
+    // The callers index fixed-size blocks, so `f` has no per-element bounds check, and the
+    // local copy keeps the accumulators in registers instead of storing them after every
+    // element. Together they let an ISA variant vectorize the loop. The order of operations
+    // per accumulator is the same as one element at a time.
+    let mut local = *acc;
+    for b in 0..blocks {
+        for (j, a) in local.iter_mut().enumerate() {
+            *a = op(*a, f(b, j));
         }
     }
+    *acc = local;
 }
 
 /// Adds whole blocks of 16 into the accumulators, one element per accumulator.
 fn update_lanes<T: Float>(acc: &mut [T; LANES], block: &[T], op: fn(T, T) -> T) {
-    update_lanes_with(acc, block.len(), |i| block[i], op);
+    let (blocks, rest) = block.as_chunks::<LANES>();
+    assert!(
+        rest.is_empty(),
+        "canonical update needs a multiple of {LANES} elements, got {}",
+        block.len()
+    );
+    update_lanes_with(acc, blocks.len(), |b, j| blocks[b][j], op);
 }
 
 /// Combines the accumulators pairwise (`+8`, `+4`, `+2`, `+1`), then folds the tail into
@@ -207,6 +217,29 @@ pub trait Accum<T: Elem>: Send + Sized {
 
     fn feed(&mut self, n: usize, f: impl Fn(usize) -> T) -> Result<(), String>;
 
+    /// Consumes `blocks` blocks of 16 rows, where `block(b, j)` is row `16 * b + j` of the
+    /// tile, followed by `rest_len` rows, where `rest(j)` is row `16 * blocks + j`. The same
+    /// as one `feed` of all those rows. Callers pass blocks from `as_chunks`, so the reads
+    /// need no per-row bounds check and the canonical loop vectorizes.
+    #[inline(always)]
+    fn feed_blocks(
+        &mut self,
+        blocks: usize,
+        block: impl Fn(usize, usize) -> T,
+        rest_len: usize,
+        rest: impl Fn(usize) -> T,
+    ) -> Result<(), String> {
+        // The first feed is a multiple of 16 rows, so splitting the rows keeps the result.
+        self.feed(blocks * LANES, |i| block(i / LANES, i % LANES))?;
+        self.feed(rest_len, rest)
+    }
+
+    /// Consumes the rows of `xs`, the same as `feed(xs.len(), |i| xs[i])`.
+    #[inline(always)]
+    fn feed_slice(&mut self, xs: &[T]) -> Result<(), String> {
+        self.feed(xs.len(), |i| xs[i])
+    }
+
     fn finish(self) -> Result<Self::Out, String>;
 }
 
@@ -242,16 +275,39 @@ impl<T: Float, const MUL: bool> Accum<T> for CanonicalAcc<T, MUL> {
 
     #[inline(always)]
     fn feed(&mut self, n: usize, f: impl Fn(usize) -> T) -> Result<(), String> {
+        let blocks = n / LANES;
+        let start = blocks * LANES;
+        self.feed_blocks(blocks, |b, j| f(b * LANES + j), n - start, |j| f(start + j))
+    }
+
+    #[inline(always)]
+    fn feed_blocks(
+        &mut self,
+        blocks: usize,
+        block: impl Fn(usize, usize) -> T,
+        rest_len: usize,
+        rest: impl Fn(usize) -> T,
+    ) -> Result<(), String> {
         if self.tail_len != 0 {
             return Err("canonical update after a partial block".into());
         }
-        let blocks = n - n % LANES;
-        update_lanes_with(&mut self.acc, blocks, &f, Self::op);
-        self.tail_len = n - blocks;
-        for (j, slot) in self.tail[..self.tail_len].iter_mut().enumerate() {
-            *slot = f(blocks + j);
+        if rest_len >= LANES {
+            return Err(format!(
+                "canonical rest must be shorter than {LANES}, got {rest_len}"
+            ));
+        }
+        update_lanes_with(&mut self.acc, blocks, block, Self::op);
+        self.tail_len = rest_len;
+        for (j, slot) in self.tail[..rest_len].iter_mut().enumerate() {
+            *slot = rest(j);
         }
         Ok(())
+    }
+
+    #[inline(always)]
+    fn feed_slice(&mut self, xs: &[T]) -> Result<(), String> {
+        let (blocks, rest) = xs.as_chunks::<LANES>();
+        self.feed_blocks(blocks.len(), |b, j| blocks[b][j], rest.len(), |j| rest[j])
     }
 
     fn finish(self) -> Result<T, String> {
@@ -280,6 +336,22 @@ macro_rules! impl_int_accum {
                     self.0 = self.0.wrapping_add(<$w>::from(f(i)));
                 }
                 Ok(())
+            }
+            // Nested loops over the blocks vectorize, the flat default does not.
+            #[inline(always)]
+            fn feed_blocks(
+                &mut self,
+                blocks: usize,
+                block: impl Fn(usize, usize) -> $t,
+                rest_len: usize,
+                rest: impl Fn(usize) -> $t,
+            ) -> Result<(), String> {
+                for b in 0..blocks {
+                    for j in 0..LANES {
+                        self.0 = self.0.wrapping_add(<$w>::from(block(b, j)));
+                    }
+                }
+                self.feed(rest_len, rest)
             }
             fn finish(self) -> Result<$w, String> { Ok(self.0) }
         }
@@ -492,7 +564,7 @@ impl<T: Elem, A: Accum<T>> Reducer for Fold<T, A> {
             return Err(arity_error(1, args.len()));
         };
         let xs = rows_arg::<T>(a, A::IN_TYPE)?;
-        self.acc.feed(xs.len(), |i| xs[i])
+        self.acc.feed_slice(xs)
     }
 
     fn finish(self: Box<Self>) -> Result<Scalar, String> {
