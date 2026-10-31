@@ -62,7 +62,7 @@ Kernels cover the first version's element types plus `u64` where the operation i
 * `histogram` and the key arguments take `i64[]` only.
 
 `scan`, `scan_by`, and `reduce_into` take the same operators as `reduce`.
-`scan`, `scan_by`, and `reduce_into` with `add` or `mul` widen like `sum`, so `i32` values give `i64` results and `out[n - 1]` of a scan equals `sum(x)`. Over `u8` they widen to `u64`, as `sum` does (user decision). `min`, `max`, `and`, `or`, and `xor` keep the element type.
+`scan`, `scan_by`, and `reduce_into` with `add` widen like `sum` and `reduce(x, add)`, so `i32` values give `i64` results and `out[n - 1]` of a scan equals `sum(x)`. Over `u8` they widen to `u64`, as `sum` does (user decision). `mul`, `min`, `max`, `and`, `or`, and `xor` keep the element type, as `reduce(x, mul)` already does, so every operator has the same result type in `reduce`, `scan`, and `reduce_into` (my call).
 `div_const` wraps like the rest of integer arithmetic (user decision), see below.
 
 Plan 4 therefore adds `u64` as a kernel type, so a widened result is usable: `u64` gets every kernel family that `i64` has, including the tier 1 arithmetic, comparisons, casts, reductions, and selections, and the tier 2 primitives with the coverage of `i64`. A partial `u64` would be the next wrinkle in the surface. AVX2 has no unsigned 64-bit compare and needs the sign-bias trick, and AVX2 has no `u64` to `f64` conversion, which the catalog records like the existing `i64` cast strain case.
