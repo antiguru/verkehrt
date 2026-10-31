@@ -4,7 +4,7 @@ This document measures the change from the `avx2` and `avx512` instruction sets 
 The levels widen the feature strings: `x86-64-v3` adds BMI1, BMI2, FMA, F16C, LZCNT, MOVBE and more to AVX2, and `x86-64-v4` adds AVX-512 CD and DQ to F, BW, and VL.
 The measurements answer three questions: whether the DQ instructions now appear in the `auto` entries of the casts and `mul_i64`, what the byte `compress` costs without VBMI2, and which kernels or queries got slower under the wider strings.
 Every number comes from one run group on the x86 host below, with the baseline build `6033fe9` (main before this branch) and the new build run interleaved in the same session.
-Six rows are listed under "Regressions" and one scalar-entry shift beside them, every row lies inside the build-to-build shift that scalar entries show (see "Build-to-build shift"), and the cause of none is established.
+Six rows are listed under "Regressions" and one scalar-entry shift beside them, every row except `compress_u8` lies inside the build-to-build shift that scalar entries show (see "Build-to-build shift"), and the cause of none is established.
 
 ## Setup
 
@@ -109,8 +109,8 @@ This document therefore treats a shift of -6% to +14% as the build-to-build shif
 ### Regressions
 
 A row is listed when the new means of all passes are slower than the baseline means of all passes (no overlap) by more than 3%, at the level whose name replaced the old ISA.
-Each row keeps its numbers and a verdict, and every row lies inside the -6% to +14% range of the build-to-build shift, so none is established as caused by the levels.
-The `x86-64-v4` `argmin` row (+3.0%, 6.31 to 6.43 ms against 6.49 to 6.67 ms) is below the 3% threshold and is not listed.
+Each row keeps its numbers and a verdict, and every row except `compress_u8` (+24%) lies inside the -6% to +14% range of the build-to-build shift, so none is established as caused by the levels.
+The `x86-64-v4` `argmin` row (ratio 1.0296, +2.96%, which the comparison file rounds to 1.030, 6.31 to 6.43 ms against 6.49 to 6.67 ms) is below the 3% threshold and is not listed.
 
 | Row | Baseline ms (passes) | New ms (passes) | Change | Verdict |
 |---|---|---|---|---|
@@ -118,13 +118,13 @@ The `x86-64-v4` `argmin` row (+3.0%, 6.31 to 6.43 ms against 6.49 to 6.67 ms) is
 | `tier2/gather-i64` `x86-64-v3-auto` | 47.3, 47.5, 48.4, 47.4 | 49.8, 50.4, 50.4, 50.3 | +5% to +6% | Within the observed build-to-build shift. Scalar row loop behind a vectorized bounds pass in both builds. Entry grew from 0x7b7 to 0x7e4 bytes with the same instruction mix within three instructions. The `intrinsics` entry did not move (37.8 to 39.1 against 37.7 to 38.3) |
 | `acceptance/tpch/q06` `x86-64-v3-auto` | 3.05, 3.14, 3.08, 3.11 | 3.51, 3.52, 3.50, 3.49 | +14% | At the upper end of the observed shift (ClickBench q01 `scalar` is +14%). Not disassembled. The plan is `dot_i64` over two `compress_i64` outputs behind comparison and `and_bool` kernels, run with the `auto` entries. The `x86-64-v3-intrinsics` row is faster (2.60 to 2.65 against 2.73 to 2.78) |
 | `acceptance/clickbench/q42` `x86-64-v3-auto` | 2.86, 2.80, 2.88, 2.88 | 2.99, 3.10, 3.05, 3.07 | +6% to +8% | Within the observed build-to-build shift. Not disassembled. The scalar row moved by +2% in the same runs (4.44 to 4.53 against 4.55 to 4.56 ms) |
-| `compress_u8` `x86-64-v3` (`auto`, casts-and-compress run) | 13.22 to 14.37 (median 13.78) | 16.48 to 17.72 (median 17.16) | +24% on the medians | Entry code identical, consistent with build/layout shift. The `auto` entry for `u8` is the same in both builds: both symbols are 0x46c bytes, and the disassemblies differ only in rip-relative and jump targets. The called helpers were not compared. The change exceeds the shift seen on scalar code, so this row is the least explained |
+| `compress_u8` `x86-64-v3` (`auto`, casts-and-compress run) | 13.22 to 14.37 (median 13.78) | 16.48 to 17.72 (median 17.16) | +24% on the medians | Entry code identical, cause not established. The `auto` entry for `u8` is the same in both builds: both symbols are 0x46c bytes, and the disassemblies differ only in rip-relative and jump targets. The called helpers were not compared. The change exceeds the shift seen on scalar code, so this row is the least explained |
 | `cast_f64_i64` and `cast_f64_u64` `x86-64-v4` | 9.63 to 10.50 and 11.04 to 11.54 | 10.59 to 12.03 and 11.83 to 14.53 | +9% and +12% (medians) | Scalar loop in both builds. Inside the observed shift. At `x86-64-v4` `cast_f64_i64` is also 16% slower than the new scalar entry (10.84 against 9.38 ms medians) |
 
 Rows that moved but are not level regressions or are within the spread:
 
 * ClickBench q01 `scalar`: 0.2232 to 0.2237 ms in the baseline and 0.2543 to 0.2548 ms in the new build, +14%, in all four passes. The scalar entry is not a level, and the same query at both levels did not move (`x86-64-v3` 0.0956 to 0.1023 against 0.0958 to 0.1026 ms). The cause was not investigated.
-* `tier1/argmin` `x86-64-v4-auto`: 6.31 to 6.43 ms in the baseline and 6.49 to 6.67 ms in the new build, +3.0%, below the threshold and inside the shift.
+* `tier1/argmin` `x86-64-v4-auto`: 6.31 to 6.43 ms in the baseline and 6.49 to 6.67 ms in the new build, ratio 1.0296 (+2.96%), below the threshold and inside the shift.
 * TPC-H q01 `x86-64-v4-auto` and `-intrinsics`: the baseline passes range 17.98 to 20.79 ms for `auto` (a 16% span) and 16.18 to 18.33 ms for the intrinsics variant (13%), and the new passes 19.52 to 20.82 ms and 18.02 to 18.84 ms. The sides overlap, so this is within the spread.
 * ClickBench q02 `x86-64-v4-auto`: 0.175 to 0.184 ms against 0.175 to 0.189 ms, overlapping, within the spread.
 * `tier2/scan-by-add-i64` `x86-64-v4-intrinsics`: 7.91 to 8.29 ms against 7.88 to 8.64 ms, within the spread.
