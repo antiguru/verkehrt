@@ -78,7 +78,7 @@ The output above comes from a single run on an AVX-512 machine, so the times are
 
 Every kernel has a scalar reference entry, and each instruction set adds up to two backends on top of it.
 The `auto` backend compiles the kernel's portable body under the instruction set's target features and covers every kernel on x86-64.
-NEON has no `auto` entries, because the baseline aarch64 build already targets NEON, so the scalar entries are the compiler's NEON output.
+NEON has no `auto` entries, because the baseline aarch64 build already targets NEON, so the scalar entries are what the compiler produces for NEON, vectorized or not.
 The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, plus float min, max, argmin, and argmax on NEON.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
 `--isa scalar|avx2|avx512|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
@@ -87,7 +87,7 @@ The `intrinsics` backend holds hand-written kernels and exists only where one wa
 |---|---|---|
 | x86-64 | AVX2 | `auto` and `intrinsics` |
 | x86-64 | AVX-512 (F, BW, VL, VBMI2) | `auto` and `intrinsics` |
-| aarch64 | NEON | `intrinsics` for compress, `where`, the fused filter, and float min, max, argmin, and argmax, other kernels run their scalar entries, which the baseline build already vectorizes for NEON |
+| aarch64 | NEON | `intrinsics` for compress, `where`, the fused filter, and float min, max, argmin, and argmax, other kernels run their scalar entries, which the baseline build compiles for NEON and the compiler may vectorize |
 
 Every variant must return the scalar kernel's result bit for bit, and a NaN result only has to be NaN.
 The property test `tests/isa_variants.rs` checks this for every installed variant, over aligned and misaligned views and lengths around the vector widths.

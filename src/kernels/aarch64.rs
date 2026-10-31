@@ -2,7 +2,7 @@
 //! `crate::kernels::arch`.
 //!
 //! The auto backend on aarch64 is the baseline build, because NEON is mandatory on every
-//! aarch64 target and the compiler already vectorizes the portable bodies for it. So no
+//! aarch64 target and the compiler may vectorize the portable bodies for it. So no
 //! `neon/auto` entries exist, the `neon/auto` slot stays empty, and `Registry::resolve` falls
 //! back to the scalar entry for it. A later pivot to an auto backend with optional features
 //! (for example `"dotprod,fp16,rdm"`) is one invocation of `crate::kernels::auto::auto_backend`
