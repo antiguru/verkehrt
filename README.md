@@ -79,7 +79,7 @@ The output above comes from a single run on an AVX-512 machine, so the times are
 Every kernel has a scalar reference entry, and each instruction set adds up to two backends on top of it.
 The `auto` backend compiles the kernel's portable body under the instruction set's target features and covers every kernel on x86-64.
 NEON has no `auto` entries, because the baseline aarch64 build already targets NEON, so the scalar entries are what the compiler produces for NEON, vectorized or not.
-The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, plus float min, max, argmin, and argmax on NEON.
+The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, float min, max, argmin, and argmax on NEON, `gather` on 64-bit rows on AVX2 and AVX-512, and `scan_by` with `add` on AVX-512.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
 `--isa scalar|avx2|avx512|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
 
@@ -102,7 +102,7 @@ For `filter(x, |v| v > c)` with the default `intrinsics` backend, the largest ra
 Each call has a fixed cost of roughly 270 ns, so the interpreter stays within 1.5x of native from about 2^17 elements for `sum` and 2^13 elements for `x * y`, good to about one power of two.
 
 These numbers come from one AMD Ryzen AI MAX+ 395 with boost off and other work running, and most rows are single runs.
-The clock moved between 2.0 and 3.0 GHz under load, so absolute throughput is below what the CPU reaches with boost on, while ratios share the same conditions.
+The clock runs at 3.0 GHz under load (user-reported, 2.0 to 3.0 GHz is the scaling range), so absolute throughput is below what the CPU reaches with boost on, while ratios share the same conditions.
 The `auto` and baseline medians drifted by up to 1.36x between builds of unchanged code, and the cause was not measured.
 Read [docs/measurements/2026-10-30-x86-kernels.md](docs/measurements/2026-10-30-x86-kernels.md) for the full tables, the setup, and the caveats before quoting any number.
 
@@ -112,6 +112,22 @@ The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from 
 The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 for `x * y`, and 2^12 for `min`.
 These are single runs on AC power in high power mode, except two reruns of `argmin`, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
 Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
+
+On the tier 2 workloads, six of the seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
+ClickBench q42 is the exception, at 3.05x DuckDB and 2.61x corgi, and it is the first gap to close.
+Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop on AVX2, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
+The bucket loops of `histogram` and `reduce_into`, 64-bit `div_const`, integer `scan`, and `argsort` stay scalar loops on x86, and the measurement document records why for each.
+Benching the tier 2 kernels found that the `auto` entries of whole kernels called the scalar build of their bodies, which was fixed, and no test guards against it recurring.
+These are single runs on the same host with other work running and load averages between 1.6 and 18, and the aarch64 numbers are pending.
+Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.md) for the tables, the data, the strain cases, and the known limit that empty inputs give 0 or an error where SQL gives NULL.
+
+## Tier 2 primitives
+
+Tier 2 adds scans (`scan`, `scan_by`, `prev`), `gather`, grouping (`histogram`, `reduce_into`), `div_const`, `slice`, and `argsort`, plus bitwise `and`, `or`, `xor`, and `not` on the integer types and `u64` kernels throughout.
+Group-by on a few distinct keys is `histogram` or `reduce_into` over a key column, and group-by on sorted keys is `scan_by` over run starts found with `prev`.
+Float `add` and `mul` in `scan`, `scan_by`, and `reduce_into`, float `argsort`, `reverse`, `rotate`, and packed bitmasks are not available yet, and the base spec lists them under "Surface gaps".
+Seven queries from corgi's ClickBench and TPC-H suites run as Verkehrt programs in `tests/acceptance/`, and the test suite checks their output against DuckDB's answers when the data is prepared (`scripts/prepare-acceptance.sh`).
+The data is not in the repository.
 
 ## Building and testing
 
@@ -145,6 +161,9 @@ CARGO_INCREMENTAL=0 cargo bench --locked --bench corgi
 * [x86 measurements](docs/measurements/2026-10-30-x86-kernels.md): results, setup, and caveats.
 * [NEON kernels plan](docs/superpowers/plans/2026-10-31-verkehrt-kernels-neon.md): NEON intrinsics for the selections and float extremes, benchmarks, and crossover measurements.
 * [aarch64 measurements](docs/measurements/2026-10-31-aarch64-kernels.md): results, setup, and caveats.
+* [Tier 2 plan](docs/superpowers/plans/2026-10-31-verkehrt-tier2.md): the tier 2 primitives, `u64` kernels, bitwise operations, and the acceptance harness.
+* [Tier 2 design](docs/superpowers/specs/2026-10-31-verkehrt-tier2-design.md): scans, gather, grouping, `div_const`, `argsort`, and the acceptance workloads.
+* [Tier 2 measurements](docs/measurements/2026-10-31-tier2.md): kernels, acceptance queries against corgi and DuckDB, and strain cases.
 
 ## Prior art
 
