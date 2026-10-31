@@ -6,7 +6,8 @@
 //! for their ISA, which is what makes calling them sound.
 
 use crate::kernels::{
-    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, SelectionBody, Variant,
+    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, ScanBody, SelectionBody, Variant,
+    WholeBody,
 };
 use crate::value::Elem;
 
@@ -56,6 +57,19 @@ pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut [Option<KernelImpl>]) 
 pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) {
     impls[AVX2_AUTO.index()] = Some(KernelImpl::Selection(auto::avx2::selection::<S>));
     impls[AVX512_AUTO.index()] = Some(KernelImpl::Selection(auto::avx512::selection::<S>));
+}
+
+/// Adds the AVX2 and AVX-512 auto entries of a scan body to its table.
+pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
+    impls[AVX2_AUTO.index()] = Some(KernelImpl::Scan(auto::avx2::scanner::<S>));
+    impls[AVX512_AUTO.index()] = Some(KernelImpl::Scan(auto::avx512::scanner::<S>));
+}
+
+/// Adds the AVX2 and AVX-512 auto entries of a whole body to its table.
+#[allow(dead_code)]
+pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
+    impls[AVX2_AUTO.index()] = Some(KernelImpl::Whole(auto::avx2::whole::<W>));
+    impls[AVX512_AUTO.index()] = Some(KernelImpl::Whole(auto::avx512::whole::<W>));
 }
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic type

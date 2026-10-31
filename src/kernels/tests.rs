@@ -347,6 +347,7 @@ fn kernel_names_are_unique_valid_identifiers() {
                 KernelClass::Reduction
             }
             Some(Op::Compress | Op::Where) => KernelClass::Selection,
+            Some(Op::Prev) => KernelClass::Scan,
             Some(
                 Op::Iota
                 | Op::Fill
@@ -972,6 +973,57 @@ fn iota_fill_and_negative_counts() {
 }
 
 #[test]
+fn prev_shifts_rows_and_fills_row_zero() {
+    let reg = Registry::new();
+    let i64s = |v: &[i64]| Value::Array(Array::from_vec(v.to_vec()));
+    let shifted = call(&reg, "prev_i64", &[i64s(&[1, 2, 3]), i64_s(9)]);
+    assert_eq!(arr(shifted.unwrap()).as_slice::<i64>(), &[9, 1, 2]);
+    let empty = call(&reg, "prev_i64", &[i64s(&[]), i64_s(9)]);
+    assert_eq!(arr(empty.unwrap()).len(), 0);
+    let flags = call(
+        &reg,
+        "prev_bool",
+        &[
+            bools(&[true, false, true]),
+            Value::Scalar(Scalar::Bool(true)),
+        ],
+    );
+    let flags = arr(flags.unwrap());
+    assert_eq!(flags.as_bool_bytes(), &[1, 1, 0]);
+    // A fill of the wrong type is an error, not a reinterpretation.
+    assert!(call(&reg, "prev_i64", &[i64s(&[1]), f64_s(1.0)]).is_err());
+}
+
+/// A whole body with auto entries, which no registered kernel is built from yet.
+struct Echo;
+
+impl WholeBody for Echo {
+    fn run(args: &[Value]) -> Result<Value, String> {
+        args.first().cloned().ok_or_else(|| "no argument".into())
+    }
+}
+
+#[test]
+fn whole_tables_have_scalar_and_auto_entries() {
+    let impls = KernelImpl::whole::<Echo>();
+    assert!(impls[Variant::SCALAR.index()].is_some());
+    let auto = |isa| Variant {
+        isa,
+        backend: Backend::Auto,
+    };
+    let x86 = cfg!(target_arch = "x86_64");
+    assert_eq!(impls[auto(Isa::Avx2).index()].is_some(), x86);
+    assert_eq!(impls[auto(Isa::Avx512).index()].is_some(), x86);
+    let isa = Isa::detect();
+    if let Some(KernelImpl::Whole(f)) = impls[auto(isa).index()] {
+        let args = [i64_s(5)];
+        // SAFETY: `Isa::detect` returned an ISA this CPU supports, and the body is safe Rust.
+        let got = unsafe { f(&args) };
+        assert_eq!(scalar(got), Scalar::I64(5));
+    }
+}
+
+#[test]
 fn splitmix_and_rand() {
     assert_eq!(splitmix64(0), 0xE220A8397B1DCDAF);
     let reg = Registry::new();
@@ -1074,9 +1126,9 @@ fn variant_entry_counts_are_stable() {
     // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
     // recorded before the architecture layer existed.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [509, 231, 29, 231, 31, 0, 0]);
+    assert_eq!(counts, [515, 237, 29, 237, 31, 0, 0]);
     // NEON intrinsics cover 6 compress kernels, `where`, 24 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [509, 0, 0, 0, 0, 0, 39]);
+    assert_eq!(counts, [515, 0, 0, 0, 0, 0, 39]);
 }

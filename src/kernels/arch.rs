@@ -6,7 +6,9 @@
 use crate::kernels::aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::kernels::x86;
-use crate::kernels::{ElementwiseBody, KernelImpl, ReductionBody, SelectionBody};
+use crate::kernels::{
+    ElementwiseBody, KernelImpl, ReductionBody, ScanBody, SelectionBody, WholeBody,
+};
 use crate::value::Elem;
 
 /// Adds the ISA variants of an elementwise body to its table.
@@ -35,6 +37,27 @@ pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) 
     x86::add_selection::<S>(impls);
     #[cfg(target_arch = "aarch64")]
     aarch64::add_selection::<S>(impls);
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    let _ = impls;
+}
+
+/// Adds the ISA variants of a scan body to its table.
+pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
+    #[cfg(target_arch = "x86_64")]
+    x86::add_scan::<S>(impls);
+    #[cfg(target_arch = "aarch64")]
+    aarch64::add_scan::<S>(impls);
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    let _ = impls;
+}
+
+/// Adds the ISA variants of a whole body to its table.
+#[allow(dead_code)]
+pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
+    #[cfg(target_arch = "x86_64")]
+    x86::add_whole::<W>(impls);
+    #[cfg(target_arch = "aarch64")]
+    aarch64::add_whole::<W>(impls);
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     let _ = impls;
 }

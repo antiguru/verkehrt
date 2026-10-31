@@ -83,6 +83,14 @@ fn lambda_rejects_reduction() {
 }
 
 #[test]
+fn prev_is_rejected_inside_a_lambda() {
+    type_err(
+        "let x = [1, 2]; let m = map(x, |v| prev(v, 0));",
+        "'prev' cannot be used inside a lambda",
+    );
+}
+
+#[test]
 fn lambda_rejects_array_capture() {
     type_err(
         "let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * y);",

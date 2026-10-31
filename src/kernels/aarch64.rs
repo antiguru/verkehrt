@@ -15,7 +15,8 @@
 //! for their ISA, which is what makes calling them sound.
 
 use crate::kernels::{
-    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, SelectionBody, Variant,
+    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, ScanBody, SelectionBody, Variant,
+    WholeBody,
 };
 use crate::value::Elem;
 
@@ -35,6 +36,13 @@ pub(crate) fn add_reduction<R: ReductionBody>(_impls: &mut [Option<KernelImpl>])
 
 /// Adds the ISA variants of a selection body to its table.
 pub(crate) fn add_selection<S: SelectionBody>(_impls: &mut [Option<KernelImpl>]) {}
+
+/// Adds the ISA variants of a scan body to its table.
+pub(crate) fn add_scan<S: ScanBody>(_impls: &mut [Option<KernelImpl>]) {}
+
+/// Adds the ISA variants of a whole body to its table.
+#[allow(dead_code)]
+pub(crate) fn add_whole<W: WholeBody>(_impls: &mut [Option<KernelImpl>]) {}
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic
 /// type is `tag::<T, BOOL>()`.

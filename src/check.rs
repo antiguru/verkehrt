@@ -116,6 +116,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "argmax" => (Op::ArgMax, 1),
         "compress" => (Op::Compress, 2),
         "where" => (Op::Where, 1),
+        "prev" => (Op::Prev, 2),
         "iota" => (Op::Iota, 1),
         "fill" => (Op::Fill, 2),
         "rand_i64" => (Op::RandI64, 2),

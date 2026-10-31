@@ -127,6 +127,19 @@ fn filter_compresses_by_lifted_predicate() {
 }
 
 #[test]
+fn prev_keeps_its_scalar_operand() {
+    assert_eq!(
+        run_dump("let x = [1, 2]; print(prev(x, 0));"),
+        ["bind x = L_c", "print prev(L_x, L_c)"]
+    );
+    // Elementwise kernels still broadcast their scalar operands.
+    assert_eq!(
+        run_dump("let x = [1, 2]; print(x + 1);"),
+        ["bind x = L_c", "print add(L_x, bcast(L_c))"]
+    );
+}
+
+#[test]
 fn constant_body_is_filled() {
     assert_eq!(
         run_dump("let x = [1.0]; print(map(x, |v| 1.0));"),

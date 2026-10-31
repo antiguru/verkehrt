@@ -317,6 +317,46 @@ fn tiled_reductions_match_whole() {
 }
 
 #[test]
+fn scanner_tiles_match_whole_call() {
+    let reg = Registry::new();
+    let id = reg.by_name("prev_i64").unwrap();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let args = random_args(&reg.get(id).inputs, 37, None);
+    let whole = dispatch.call(&reg, id, &args).unwrap();
+    let Value::Array(whole) = whole else {
+        panic!("prev_i64 must produce an array");
+    };
+    let tiled = Array::build_bytes(37, ScalarType::I64, |out| {
+        let mut scanner = dispatch.scanner(&reg, id)?;
+        for (start, end) in [(0, 5), (5, 21), (21, 37)] {
+            let dst = &mut out[start * 8..end * 8];
+            scanner.update(&tile_args(&args, start, end), dst)?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert!(same_array(&whole, &tiled), "{whole:?} vs {tiled:?}");
+    // Row 0 is the fill, every other row is its predecessor.
+    let Value::Array(x) = &args[0] else {
+        unreachable!()
+    };
+    let Value::Scalar(fill) = &args[1] else {
+        unreachable!()
+    };
+    assert_eq!(tiled.get(0), *fill);
+    assert!((1..37).all(|i| tiled.get(i) == x.get(i - 1)));
+}
+
+#[test]
+fn scanner_rejects_a_kernel_of_another_class() {
+    let reg = Registry::new();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let id = reg.by_name("add_f64").unwrap();
+    let err = dispatch.scanner(&reg, id).err().expect("not a scan");
+    assert!(err.contains("not a scan"), "{err}");
+}
+
+#[test]
 fn tiled_selections_match_whole() {
     let reg = Registry::new();
     let mut checked = 0;

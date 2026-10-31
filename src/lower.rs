@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::check::{Globals, TExpr, TExprKind, TLambda, TProgram, TStmt, VarId};
 use crate::error::{Error, Span};
-use crate::kernels::Registry;
+use crate::kernels::{InputSpec, Registry};
 use crate::ops::Op;
 use crate::value::{Array, Scalar, ScalarType, Value, ValueType};
 
@@ -249,24 +249,43 @@ impl Lowerer<'_> {
         }
     }
 
-    /// Builds an operation over lowered operands. Scalars next to an array operand are
-    /// broadcast, then the kernel lookup on the lifted types decides the result type.
+    /// Builds an operation over lowered operands. The kernel lookup on the operands as given
+    /// decides which scalars next to an array operand are broadcast: those at `Either`
+    /// positions, while a `Scalar` input keeps its scalar. When no kernel accepts the operands
+    /// as given, every scalar next to an array is broadcast and the lookup runs on the lifted
+    /// types.
     fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
         let lift = args.iter().any(|a| is_array(a.ty));
-        let args: Vec<Term> = args
-            .into_iter()
-            .map(|a| match (lift, a.ty) {
-                (true, ValueType::Scalar(t)) => {
-                    let operand_span = a.span;
-                    Term {
-                        kind: TermKind::Bcast(Box::new(a)),
-                        ty: ValueType::Array(t),
-                        span: operand_span,
-                    }
+        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+        let specs = self
+            .reg
+            .lookup(op, &tys)
+            .map(|id| self.reg.get(id).inputs.clone());
+        let bcast = |a: Term| match a.ty {
+            ValueType::Scalar(t) => {
+                let operand_span = a.span;
+                Term {
+                    kind: TermKind::Bcast(Box::new(a)),
+                    ty: ValueType::Array(t),
+                    span: operand_span,
                 }
-                _ => a,
-            })
-            .collect();
+            }
+            _ => a,
+        };
+        let args: Vec<Term> = match specs {
+            Some(specs) => args
+                .into_iter()
+                .zip(specs)
+                .map(|(a, spec)| match spec {
+                    InputSpec::Either(_) if lift => bcast(a),
+                    _ => a,
+                })
+                .collect(),
+            None => args
+                .into_iter()
+                .map(|a| if lift { bcast(a) } else { a })
+                .collect(),
+        };
         self.op_exact(op, args, span)
     }
 

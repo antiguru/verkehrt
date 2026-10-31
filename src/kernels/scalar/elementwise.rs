@@ -190,7 +190,7 @@ pub(crate) fn splat_arg<T: Elem>(arg: &Arg, ty: ScalarType) -> Result<T, String>
 
 /// The destination bytes as rows of `U`. Fails when the bytes are not aligned for `U` or
 /// not a whole number of rows.
-fn out_rows<U: Elem>(out: &mut [u8]) -> Result<&mut [U], String> {
+pub(crate) fn out_rows<U: Elem>(out: &mut [u8]) -> Result<&mut [U], String> {
     bytemuck::try_cast_slice_mut(out).map_err(|e| format!("bad destination: {e}"))
 }
 

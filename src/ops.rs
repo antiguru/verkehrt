@@ -44,6 +44,8 @@ pub enum Op {
     ArgMax,
     Compress,
     Where,
+    /// Each row's predecessor, with the second operand in row 0.
+    Prev,
     Iota,
     Fill,
     RandI64,

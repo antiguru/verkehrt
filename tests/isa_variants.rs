@@ -283,6 +283,31 @@ fn reduce_tiled(
     reducer.finish().map(Value::Scalar)
 }
 
+/// The variant's scan fed tile by tile into one destination. An empty input gets no update.
+fn scan_tiled(
+    reg: &Registry,
+    dispatch: &Dispatch,
+    id: KernelId,
+    args: &[Value],
+    n: usize,
+) -> Result<Value, String> {
+    let ValueType::Array(t) = reg.get(id).output else {
+        return Err("a scan must produce an array".into());
+    };
+    let w = t.width();
+    let mut scanner = dispatch.scanner(reg, id)?;
+    Array::build_bytes(n, t, |out| {
+        if n > 0 {
+            for (start, end) in tiles(n, &TILE_CUTS) {
+                let dst = &mut out[start * w..end * w];
+                scanner.update(&tile_args(args, start, end), dst)?;
+            }
+        }
+        Ok(())
+    })
+    .map(Value::Array)
+}
+
 /// The variant's elementwise kernel called once per tile into one destination. `None` when
 /// the kernel does not produce an array from an array operand, which `call` covers alone.
 fn elementwise_tiled(
@@ -353,6 +378,8 @@ fn check_case(
                 KernelClass::Elementwise => elementwise_tiled(reg, variant, id, &args, n),
                 KernelClass::Reduction => Some(reduce_tiled(reg, variant, id, &args, n)),
                 KernelClass::Selection => Some(select_tiled(reg, variant, id, &args, n)),
+                KernelClass::Scan => Some(scan_tiled(reg, variant, id, &args, n)),
+                // `call` above already ran the whole kernel's ISA entry.
                 KernelClass::Whole => None,
             };
             if let Some(tiled) = tiled {
@@ -446,6 +473,11 @@ fn isa_variants_match_scalar() {
     }
 }
 
+/// Name prefixes of the whole kernels that loop over their arguments, so they have auto
+/// entries. The list is kept here and not derived from the impls tables, so that a kernel
+/// registered with `scalar_only()` by mistake fails the test.
+const WHOLE_AUTO_PREFIXES: [&str; 3] = ["gather_", "histogram", "reduce_into_"];
+
 #[test]
 fn every_array_kernel_has_auto_variants() {
     let reg = Registry::new();
@@ -455,8 +487,8 @@ fn every_array_kernel_has_auto_variants() {
                 .inputs
                 .iter()
                 .any(|s| matches!(s, InputSpec::Either(_) | InputSpec::Array(_))),
-            KernelClass::Reduction | KernelClass::Selection => true,
-            KernelClass::Whole => false,
+            KernelClass::Reduction | KernelClass::Selection | KernelClass::Scan => true,
+            KernelClass::Whole => WHOLE_AUTO_PREFIXES.iter().any(|p| def.name.starts_with(p)),
         };
         for isa in Isa::ALL.into_iter().filter(|isa| *isa != Isa::Scalar) {
             let variant = Variant {
