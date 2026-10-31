@@ -93,6 +93,19 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl
     let _ = impls;
 }
 
+/// Adds the intrinsics entries of `gather` on rows of storage type `T`, whose semantic type
+/// is `tag::<T, BOOL>()`. aarch64 has none.
+#[cfg_attr(
+    not(target_arch = "x86_64"),
+    expect(clippy::extra_unused_type_parameters, clippy::needless_pass_by_ref_mut)
+)]
+pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
+    #[cfg(target_arch = "x86_64")]
+    x86::add_gather::<T, BOOL>(impls);
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = impls;
+}
+
 /// Adds the intrinsics entries of `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true) on
 /// rows of type `T`. x86-64 has none.
 #[cfg_attr(

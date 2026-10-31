@@ -6,7 +6,7 @@ use crate::kernels::scalar::construct::add_whole;
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::scan::ScanOp;
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, WholeBody};
+use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Variant, WholeBody};
 use crate::ops::Op;
 use crate::value::{Array, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -40,11 +40,11 @@ impl<T: Elem, const BOOL: bool> Gather<T, BOOL> {
     fn rows(a: &Array) -> &[T] {
         rows_of(a)
     }
-}
 
-impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
+    /// The source rows and the indices of a `gather` call, every index in `0..rows.len()`.
+    /// Fails with the error of `run` on bad arguments or an index out of range.
     #[inline(always)]
-    fn run(args: &[Value]) -> Result<Value, String> {
+    pub(crate) fn checked(args: &[Value]) -> Result<(&[T], &[i64]), String> {
         let [xs, idx] = args else {
             return Err(arity_error(2, args.len()));
         };
@@ -62,8 +62,16 @@ impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
                 .expect("a bad index exists");
             return Err(format!("gather index {i} out of range for length {n}"));
         }
-        // The clamp is a no-op after the check above, and keeps the loop free of an exit.
-        // The source is only empty when `idx` is, so the loop body never runs on it.
+        Ok((xs, idx))
+    }
+}
+
+impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
+    #[inline(always)]
+    fn run(args: &[Value]) -> Result<Value, String> {
+        let (xs, idx) = Self::checked(args)?;
+        // The clamp is a no-op after the check in `checked`, and keeps the loop free of an
+        // exit. The source is only empty when `idx` is, so the loop body never runs on it.
         let last = xs.len().saturating_sub(1);
         Array::build_bytes(idx.len(), Self::ELEM, |out| {
             let out: &mut [T] = bytemuck::cast_slice_mut(out);
@@ -217,6 +225,14 @@ fn width(ty: ScalarType) -> u64 {
 // The kernel closures must coerce to bare function pointers, so their type arguments are
 // constant expressions, never locals.
 
+/// The entries of `gather` on rows of storage type `T`: the scalar and auto entries of its
+/// body, plus intrinsics entries where they exist.
+fn gather_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
+    let mut impls = KernelImpl::whole::<Gather<T, BOOL>>();
+    crate::kernels::arch::add_gather::<T, BOOL>(&mut impls);
+    impls
+}
+
 macro_rules! gather {
     ($reg:expr, $t:ty, $bool:literal, $ty:expr) => {
         $reg.add(KernelDef {
@@ -229,7 +245,7 @@ macro_rules! gather {
             cost: 8 + 2 * width($ty),
             commutative: false,
             pattern: None,
-            impls: KernelImpl::whole::<Gather<$t, $bool>>(),
+            impls: gather_impls::<$t, $bool>(),
         })
     };
 }

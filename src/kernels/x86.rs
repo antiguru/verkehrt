@@ -1,6 +1,6 @@
 //! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro to compile
-//! the portable bodies for AVX2 and AVX-512, and `compress` holds the hand-written intrinsics
-//! entries of the selections.
+//! the portable bodies for AVX2 and AVX-512, `compress` holds the hand-written intrinsics
+//! entries of the selections, and `gather` those of `gather` on 64-bit rows.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
@@ -12,6 +12,7 @@ use crate::kernels::{
 use crate::value::Elem;
 
 mod compress;
+mod gather;
 
 /// The auto entries of the x86-64 ISAs, see `crate::kernels::auto`.
 mod auto {
@@ -92,4 +93,12 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl
     let (avx2, avx512) = compress::filter_entries::<T, C>();
     impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
     impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+}
+
+/// Adds the intrinsics entries of `gather` on rows of storage type `T`, whose semantic type is
+/// `tag::<T, BOOL>()`. Only 64-bit rows have them.
+pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
+    let (avx2, avx512) = gather::gather_entries::<T, BOOL>();
+    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Whole);
+    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Whole);
 }

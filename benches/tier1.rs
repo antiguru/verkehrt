@@ -816,7 +816,9 @@ fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
 fn tier2(c: &mut Criterion) {
     let all_interps = interpreters();
+    // Only `gather` has intrinsics entries on x86-64, so only its group measures them.
     let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
+    let all: Vec<&Interp> = all_interps.iter().collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<i64>()).unwrap();
     let x = splitmix(N, 1, u64::cast_signed);
@@ -883,7 +885,7 @@ fn tier2(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(2 * bytes));
         let src = "input x: i64[]; input i: i64[]; export g = gather(x, i);";
         let ins = [("x", xv.clone()), ("i", iv.clone())];
-        interp_variants(&mut g, &auto, src, &ins, &want);
+        interp_variants(&mut g, &all, src, &ins, &want);
         for n in &nats {
             g.bench_function(n.native().label(), |b| {
                 b.iter(|| call_native!(*n, n_gather(black_box(&x), black_box(&idx))))
