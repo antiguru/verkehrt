@@ -386,7 +386,7 @@ fn costs_count_bytes_per_element() {
 #[test]
 fn array_kernels_exist_for_v1_types_only() {
     let reg = Registry::new();
-    for t in ScalarType::V1_ARRAY {
+    for t in ScalarType::ARRAY_TYPES {
         if t != ScalarType::Bool {
             assert!(reg.by_name(&format!("add_{}", t.name())).is_some());
         }

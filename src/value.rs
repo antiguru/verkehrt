@@ -19,8 +19,8 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-    /// Element types that array kernels exist for: the v1 types and `u64`.
-    pub const V1_ARRAY: [ScalarType; 7] = [
+    /// The element types that array kernels exist for.
+    pub const ARRAY_TYPES: [ScalarType; 7] = [
         ScalarType::F64,
         ScalarType::F32,
         ScalarType::I64,

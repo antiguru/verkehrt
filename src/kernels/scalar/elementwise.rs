@@ -268,7 +268,7 @@ fn add_entry_with<B: ElementwiseBody>(
     let v1 = inputs
         .iter()
         .chain([&out])
-        .all(|t| ScalarType::V1_ARRAY.contains(t));
+        .all(|t| ScalarType::ARRAY_TYPES.contains(t));
     let def = |kernel_name, input_specs, output, cost, impls| KernelDef {
         name: kernel_name,
         class: KernelClass::Elementwise,
