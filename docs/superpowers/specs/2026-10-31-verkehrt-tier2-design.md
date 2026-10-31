@@ -62,7 +62,9 @@ Kernels cover the first version's element types where the operation is defined (
 * `histogram` and the key arguments take `i64[]` only.
 
 `scan`, `scan_by`, and `reduce_into` take the same operators as `reduce`.
-`reduce_into` with `add` widens its result like `sum`, so `i32` values give `i64` buckets, and the empty-bucket identity of `min` and `max` is the type's largest and smallest value, with `+inf` and `-inf` for floats.
+`scan`, `scan_by`, and `reduce_into` with `add` or `mul` widen like `sum`, so `i32` values give `i64` results and `out[n - 1]` of a scan equals `sum(x)`. Over `u8`, `sum` widens to `u64`, but `u64[]` has no kernels to consume the result, so `add` and `mul` on `u8` are rejected for now and listed under "Deferred: surface gaps" (my call). `min`, `max`, `and`, `or`, and `xor` keep the element type.
+`div_const` wraps like the rest of integer arithmetic, so `div_const(i64::MIN, -1)` is `i64::MIN` instead of the panic that Rust `/` gives (my call).
+The empty-bucket identity of `min` and `max` is the type's largest and smallest value, with `+inf` and `-inf` for floats.
 `histogram(keys, n)` is the same result as `reduce_into(keys, fill(length(keys), 1), n, add)`, and the planner may cover either form with either kernel through the usual pattern mechanism (my call).
 
 `argsort` is in plan 4 only because ClickBench q07 sorts its handful of result groups for `ORDER BY`.
@@ -163,6 +165,7 @@ The base spec's catalog lists the open gaps, so the surface's holes are visible 
 
 * **Float `add` and `mul` in `reduce_into`.** A candidate canonical order extends the 16-accumulator reduction order: row `i` goes to stripe `i mod 16` below `b = n - (n mod 16)` and to stripe 0 from `b` on, each stripe accumulates its bucket's values in index order, and the 16 stripes combine pairwise as in the reduction. With every key equal, this gives exactly the bits of `sum`. The same 16 replicated sub-histograms are a standard way to avoid scatter conflicts, so the order may cost little beyond the memory for 16 copies of the buckets.
 * **Float `add` and `mul` in `scan` and `scan_by`.** A candidate canonical order defines `out[i]` as the reduction order applied to the prefix `x[0..=i]`, so `out[n - 1]` equals `sum(x)`. A kernel can compute it by keeping the 16 stripe accumulators and combining them for each output row, which costs a pairwise tree per row and needs measurement against a sequential scan.
+* **`add` and `mul` on `u8` in `scan`, `scan_by`, and `reduce_into`.** They widen to `u64[]`, which needs array kernels before the result is usable.
 * **Float element types in `argsort`.** These need a total order that says where NaN and the two zeros sort, which tier 3 decides along with `sort`.
 * **`reverse`, `rotate`, and packed bitmasks** from the tier 2 catalog.
 
