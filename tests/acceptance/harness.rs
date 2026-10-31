@@ -59,12 +59,29 @@ fn field(kind: char, v: &Value, row: usize) -> Result<String, String> {
             Scalar::F32(x) => Ok(format!("{:.4}", f64::from(x))),
             s => Err(format!("not a float: {s}")),
         },
+        'g' => match a.get(row) {
+            Scalar::F64(x) => Ok(format_general(x)),
+            s => Err(format!("not a float: {s}")),
+        },
         's' => match a.get(row) {
             Scalar::U8(b) => Ok(format!("{b:02x}")),
             s => Err(format!("not a byte: {s}")),
         },
         k => Err(format!("unknown output kind '{k}'")),
     }
+}
+
+/// Formats like Python's `f'{x:.11e}'`: eleven fractional digits, then a signed exponent of at
+/// least two digits. Rust's `{:e}` writes `e18` where Python writes `e+18`.
+fn format_general(x: f64) -> String {
+    let s = format!("{x:.11e}");
+    let (mantissa, exp) = s.split_once('e').expect("`{:e}` always writes an exponent");
+    let exp: i32 = exp.parse().expect("the exponent is an integer");
+    format!(
+        "{mantissa}e{}{:02}",
+        if exp < 0 { '-' } else { '+' },
+        exp.abs()
+    )
 }
 
 fn scalar_array(s: &Scalar) -> Array {

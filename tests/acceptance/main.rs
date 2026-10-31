@@ -46,6 +46,18 @@ fn harness_formats_like_prepare_py() {
 }
 
 #[test]
+fn harness_formats_g_like_prepare_py() {
+    let one = |x: f64| {
+        let exports = vec![("a".to_string(), Value::Array(Array::from_vec(vec![x])))];
+        format_rows(&['g'], &exports).unwrap()
+    };
+    assert_eq!(one(1.94819487789e18), "1.94819487789e+18\n");
+    assert_eq!(one(-0.00123), "-1.23000000000e-03\n");
+    assert_eq!(one(0.0), "0.00000000000e+00\n");
+    assert_eq!(one(1.5e100), "1.50000000000e+100\n");
+}
+
+#[test]
 fn harness_runs_a_synthetic_query() {
     let dir = scratch("synthetic");
     write_u64(&dir, "a.u64", &[5, 6, 7, 8]);
