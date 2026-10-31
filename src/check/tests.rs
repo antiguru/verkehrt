@@ -468,6 +468,17 @@ fn lambda_inside_a_function_body_is_checked_lifted() {
 }
 
 #[test]
+fn zip_map_checks_the_length_of_both_arrays() {
+    // The body ignores the i8 array, but lowering still reads its length.
+    let e = type_err(
+        "let x = [1, 2]; let y = [1i8, 2i8]; print(zip_map(x, y, |a, b| a + 1));",
+        "'zip_map' compares the lengths of its i64[] and i8[] arrays: \
+         no kernel for 'length' on i8[]",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 43 }));
+}
+
+#[test]
 fn map_over_i8_has_no_array_kernel() {
     // The scalar kernel exists, but lifting multiplies arrays, which has no i8 kernel.
     let e = type_err(
@@ -476,9 +487,16 @@ fn map_over_i8_has_no_array_kernel() {
     );
     assert_eq!(e.span, Some(Span { line: 1, col: 35 }));
     // A uniform body stays scalar and is filled to the array's length, which i8 lacks.
-    type_err(
+    let fill = type_err(
         "let x = [1i8]; let c = 2i8; let m = map(x, |v| c * c);",
-        "no kernel for 'length' on i8[]",
+        "the lambda body does not use its parameters, so 'map' fills its i8 value to the \
+         length of the i8[] array: no kernel for 'length' on i8[]",
+    );
+    assert_eq!(fill.span, Some(Span { line: 1, col: 37 }));
+    type_err(
+        "let x = [1]; let c = 2; let m = map(x, |v| cast_i8(c));",
+        "the lambda body does not use its parameters, so 'map' fills its i8 value to the \
+         length of the i64[] array: no kernel for 'fill' on i64, i8",
     );
     assert_eq!(
         last_type("let x = [1]; let c = 2; let m = map(x, |v| c * c);"),

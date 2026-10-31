@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::{Error, Span};
 use crate::kernels::Registry;
+use crate::lower::higher::Higher;
 use crate::ops::{Op, ReduceOp};
 use crate::syntax::ast::{self, BinOp, ExprKind};
 use crate::value::{ScalarType, ValueType};
@@ -346,9 +347,9 @@ struct Checker<'a> {
     calls: Vec<FnId>,
     /// Functions called from lambdas, whose bodies must satisfy the lambda rules.
     deferred: Vec<(FnId, Span)>,
-    /// Lambdas with the element types they map over and the span of the higher-order call,
-    /// checked on their lifted types once every function body is known.
-    lifts: Vec<(TLambda, Vec<ScalarType>, Span)>,
+    /// Lambdas with their higher-order call, the types of the arrays it maps over, and its
+    /// span, checked on their lifted types once every function body is known.
+    lifts: Vec<(Higher, TLambda, Vec<ValueType>, Span)>,
 }
 
 impl<'a> Checker<'a> {
@@ -408,8 +409,8 @@ impl<'a> Checker<'a> {
         // A lambda body may call functions declared later or in the body of a function
         // checked later, so this runs last.
         let mut lifting = Lifting::new(self.reg, self.g);
-        for (lam, elems, span) in &self.lifts {
-            lifting.lambda(lam, elems, *span)?;
+        for (kind, lam, xs, span) in &self.lifts {
+            lifting.lambda(*kind, lam, xs, *span)?;
         }
         Ok(stmts)
     }
@@ -937,7 +938,13 @@ impl<'a> Checker<'a> {
             xs.push(x);
         }
         let lambda = self.check_lambda_arg(&args[arrays], &elems)?;
-        self.lifts.push((lambda.clone(), elems, span));
+        let higher = match name {
+            "map" => Higher::Map,
+            "zip_map" => Higher::ZipMap,
+            _ => Higher::Filter,
+        };
+        let tys = xs.iter().map(|x| x.ty).collect();
+        self.lifts.push((higher, lambda.clone(), tys, span));
         let ValueType::Scalar(ret) = lambda.body.ty else {
             return Err(Error::ty(
                 format!("'{name}' function must return a scalar"),

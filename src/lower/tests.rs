@@ -528,37 +528,20 @@ fn div_const_through_functions_lifts_in_a_lambda() {
     );
 }
 
-/// Every lambda body over the elementwise ops that the checker accepts must also lower, so
-/// the checker and lowering cannot disagree. Bodies combine operands that read the parameter
-/// (`v`, `v + 1`, `w` from a block let) with operands that do not (a literal, a captured
-/// scalar, a uniform expression), directly and through a user function.
+/// Every lambda the checker accepts must also lower, so the checker and lowering cannot
+/// disagree. Bodies combine operands that read the parameter (`v`, `v + 1`, `pv` from a
+/// block let) with operands that do not (a literal, a captured scalar, a uniform expression,
+/// `cu` from a block let, a captured `bool` condition), directly and through user functions,
+/// under `map`, `filter`, and `zip_map` with a second array of each element type.
 #[test]
-fn checked_lambda_bodies_lower() {
-    struct Ty {
-        name: &'static str,
-        lit: &'static str,
-    }
+fn checked_lambdas_lower() {
     let types = [
-        Ty {
-            name: "i64",
-            lit: "3",
-        },
-        Ty {
-            name: "f64",
-            lit: "3.0",
-        },
-        Ty {
-            name: "i8",
-            lit: "3i8",
-        },
-        Ty {
-            name: "u64",
-            lit: "3u64",
-        },
-        Ty {
-            name: "i32",
-            lit: "3i32",
-        },
+        ("i64", "3"),
+        ("f64", "3.0"),
+        ("i8", "3i8"),
+        ("u64", "3u64"),
+        ("i32", "3i32"),
+        ("u8", "3u8"),
     ];
     let binary = [
         "{a} + {b}",
@@ -575,23 +558,37 @@ fn checked_lambda_bodies_lower() {
         "f({a}, {b})",
         "h({a}, {b})",
         "if {a} > {b} {{ {a} }} else {{ {b} }}",
+        "if flag {{ {a} }} else {{ {b} }}",
         "select({a} > {b}, {a}, {b})",
     ];
     let unary = ["neg({a})", "abs({a})", "sqrt({a})", "not({a})"];
+    // Higher-order calls: a name, the call with `{body}` for the lambda body, and the
+    // element type of a second array.
+    let mut calls = vec![
+        ("map", "map(x, |v| {body})".to_string(), None),
+        ("filter", "filter(x, |v| ({body}) > c)".to_string(), None),
+    ];
+    for (u, ulit) in types {
+        calls.push((
+            "zip_map",
+            format!("zip_map(x, [{ulit}, {ulit}], |v, q| {{body}})"),
+            Some(u),
+        ));
+    }
     let reg = Registry::new();
-    let mut accepted = 0;
+    // Accepted programs per element type and call.
+    let mut accepted: HashMap<(&str, &str, Option<&str>), usize> = HashMap::new();
     let mut rejected = 0;
-    for t in &types {
-        let (ty, lit) = (t.name, t.lit);
+    for (ty, lit) in types {
         let one = lit.replacen('3', "1", 1);
         let atoms = [
             "v".to_string(),
             format!("(v + {one})"),
-            "w".to_string(),
+            "pv".to_string(),
             lit.to_string(),
             "c".to_string(),
             format!("(c * {lit})"),
-            "u".to_string(),
+            "cu".to_string(),
         ];
         // The functions are defined only where used, since `div_const` lacks some types.
         let fns = format!(
@@ -611,33 +608,51 @@ fn checked_lambda_bodies_lower() {
                 bodies.push(shape.replace("{a}", a));
             }
         }
-        for body in bodies {
+        for body in &bodies {
             let prelude = if body.contains("f(") || body.contains("h(") {
                 fns.as_str()
             } else {
                 ""
             };
-            let src = format!(
-                "{prelude} let x = [{lit}, {one}]; let c = {lit}; \
-                 print(map(x, |v| {{ let w = v * {lit}; let u = c + {one}; {body} }}));"
-            );
-            let mut g = Globals::new();
-            let typed = match check(&parse(&src).unwrap(), &reg, &mut g) {
-                Ok(typed) => typed,
-                Err(_) => {
+            // Block lets are bound only where used, so a let without a kernel does not
+            // reject every body of its type.
+            let mut lets = String::new();
+            if body.contains("pv") {
+                lets.push_str(&format!("let pv = v * {lit}; "));
+            }
+            if body.contains("cu") {
+                lets.push_str(&format!("let cu = c + {one}; "));
+            }
+            let body = format!("{{ {lets}{body} }}");
+            for (name, call, second) in &calls {
+                let call = call.replace("{body}", &body);
+                let src = format!(
+                    "{prelude} let x = [{lit}, {one}]; let c = {lit}; let flag = true; \
+                     print({call});"
+                );
+                let mut g = Globals::new();
+                let Ok(typed) = check(&parse(&src).unwrap(), &reg, &mut g) else {
                     rejected += 1;
                     continue;
+                };
+                *accepted.entry((ty, *name, *second)).or_default() += 1;
+                if let Err(e) = lower(&typed, &mut g, &reg, Mode::Run) {
+                    panic!("checked but failed to lower: {src}: {e}");
                 }
-            };
-            accepted += 1;
-            if let Err(e) = lower(&typed, &mut g, &reg, Mode::Run) {
-                panic!("checked but failed to lower: {src}: {e}");
             }
         }
     }
-    // Both outcomes occur, so the property is not vacuous.
-    assert!(accepted > 500, "{accepted} accepted");
-    assert!(rejected > 500, "{rejected} rejected");
+    // Every element type has accepted programs under every call, except where an `i8` array
+    // is involved. `i8` has scalar kernels only, so a varying body has no kernel, and
+    // `zip_map` and the fill of a uniform body need `length` on the array.
+    for (ty, _) in types {
+        for (name, _, second) in &calls {
+            let expected = ty != "i8" && *second != Some("i8");
+            let n = accepted.get(&(ty, *name, *second)).copied().unwrap_or(0);
+            assert_eq!(n > 0, expected, "{ty} {name} {second:?}: {n} accepted");
+        }
+    }
+    assert!(rejected > 1000, "{rejected} rejected");
 }
 
 #[test]

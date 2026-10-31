@@ -2,16 +2,19 @@
 //! the argument arrays, so an expression that depends on a parameter becomes an array
 //! (varying) while every other expression stays a scalar (uniform). This module computes
 //! the type each expression of a lambda body has after lifting and resolves every op on
-//! those types with `Registry::lookup_lifted`, the rule lowering uses, so the checker
-//! accepts exactly the lambda bodies that lower.
+//! those types with `Registry::lookup_lifted`, the rule lowering uses, and builds the
+//! operations around the body with `lower::higher`, so every lambda the checker accepts
+//! lowers.
 
 use std::collections::HashMap;
 
 use crate::check::{FnId, Globals, TExpr, TExprKind, TLambda, VarId, join_types, op_name};
 use crate::error::{Error, Span};
 use crate::kernels::Registry;
+use crate::lower::higher::{self, Build, Higher};
+use crate::lower::no_kernel;
 use crate::ops::Op;
-use crate::value::{ScalarType, ValueType};
+use crate::value::ValueType;
 
 /// Checks lambda bodies on their lifted types. User functions are instantiated once per
 /// pattern of lifted argument types.
@@ -32,28 +35,25 @@ impl<'a> Lifting<'a> {
         }
     }
 
-    /// Checks that `lam` lifts over arrays of the element types `elems`, as `map`, `zip_map`,
-    /// or `filter` at `span` applies it. The body must already satisfy the lambda rules,
-    /// and every function it calls must exist, be non-recursive, and be liftable.
+    /// Checks that the higher-order call `kind` at `span` lowers when it applies `lam` to
+    /// arrays of the types `xs`. The body must already satisfy the lambda rules, and every
+    /// function it calls must exist, be non-recursive, and be liftable.
     pub(super) fn lambda(
         &mut self,
+        kind: Higher,
         lam: &TLambda,
-        elems: &[ScalarType],
+        xs: &[ValueType],
         span: Span,
     ) -> Result<(), Error> {
+        let params = higher::params(self, kind, xs.to_vec(), span)?;
         let mut env: HashMap<VarId, ValueType> = lam
             .params
             .iter()
-            .zip(elems)
-            .map(|(p, t)| (*p, ValueType::Array(*t)))
+            .copied()
+            .zip(params.iter().copied())
             .collect();
         let body = self.expr(&lam.body, &mut env)?;
-        // Lowering fills a body that stays scalar to the length of the first array.
-        if let ValueType::Scalar(_) = body {
-            let first = ValueType::Array(elems[0]);
-            let len = self.op(Op::Length, "length", &[first], span)?;
-            self.op(Op::Fill, "fill", &[len, body], span)?;
-        }
+        higher::result(self, kind, xs, &params, body, span)?;
         Ok(())
     }
 
@@ -144,5 +144,27 @@ impl<'a> Lifting<'a> {
                 .unwrap_or_default();
             Error::ty(format!("{} (in '{}'{at})", e.message, f.name), span)
         })
+    }
+}
+
+impl Build for Lifting<'_> {
+    type V = ValueType;
+
+    fn ty(v: &ValueType) -> ValueType {
+        *v
+    }
+
+    fn apply(&self, op: Op, args: Vec<ValueType>, span: Span) -> Result<ValueType, Error> {
+        match self.reg.lookup_lifted(op, &args) {
+            Ok(l) => Ok(self.reg.get(l.kernel).output),
+            Err(shown) => Err(no_kernel(op, &shown, span)),
+        }
+    }
+
+    fn apply_exact(&self, op: Op, args: Vec<ValueType>, span: Span) -> Result<ValueType, Error> {
+        match self.reg.lookup(op, &args) {
+            Some(id) => Ok(self.reg.get(id).output),
+            None => Err(no_kernel(op, &args, span)),
+        }
     }
 }
