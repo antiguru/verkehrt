@@ -1,0 +1,6 @@
+// sql: SELECT COUNT(*) FROM hits
+// output: u
+input AdvEngineID: i64[];
+
+// Any column has one element per row, so its length is the row count.
+export c = length(AdvEngineID);
