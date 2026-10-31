@@ -1,0 +1,453 @@
+# new tier1 a start 21:06:48 load 5.11 6.23 5.56
+Gnuplot not found, using plotters backend
+Benchmarking tier1/sum/scalar
+Benchmarking tier1/sum/scalar: Warming up for 500.00 ms
+Benchmarking tier1/sum/scalar: Collecting 10 samples in estimated 3.0290 s (1705 iterations)
+Benchmarking tier1/sum/scalar: Analyzing
+tier1/sum/scalar        time:   [1.7466 ms 1.7593 ms 1.7792 ms]
+                        thrpt:  [41.877 GiB/s 42.350 GiB/s 42.658 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/sum/x86-64-v3-auto
+Benchmarking tier1/sum/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/sum/x86-64-v3-auto: Collecting 10 samples in estimated 3.0188 s (1870 iterations)
+Benchmarking tier1/sum/x86-64-v3-auto: Analyzing
+tier1/sum/x86-64-v3-auto
+                        time:   [1.6020 ms 1.6092 ms 1.6174 ms]
+                        thrpt:  [46.064 GiB/s 46.300 GiB/s 46.507 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking tier1/sum/x86-64-v4-auto
+Benchmarking tier1/sum/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/sum/x86-64-v4-auto: Collecting 10 samples in estimated 3.0746 s (1980 iterations)
+Benchmarking tier1/sum/x86-64-v4-auto: Analyzing
+tier1/sum/x86-64-v4-auto
+                        time:   [1.5392 ms 1.5532 ms 1.5629 ms]
+                        thrpt:  [47.673 GiB/s 47.969 GiB/s 48.404 GiB/s]
+Benchmarking tier1/sum/native-base
+Benchmarking tier1/sum/native-base: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-base: Collecting 10 samples in estimated 3.0756 s (1760 iterations)
+Benchmarking tier1/sum/native-base: Analyzing
+tier1/sum/native-base   time:   [1.7373 ms 1.7491 ms 1.7599 ms]
+                        thrpt:  [42.336 GiB/s 42.596 GiB/s 42.885 GiB/s]
+Benchmarking tier1/sum/native-x86-64-v3
+Benchmarking tier1/sum/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-x86-64-v3: Collecting 10 samples in estimated 3.0187 s (1870 iterations)
+Benchmarking tier1/sum/native-x86-64-v3: Analyzing
+tier1/sum/native-x86-64-v3
+                        time:   [1.5864 ms 1.5982 ms 1.6130 ms]
+                        thrpt:  [46.192 GiB/s 46.619 GiB/s 46.966 GiB/s]
+Benchmarking tier1/sum/native-x86-64-v4
+Benchmarking tier1/sum/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-x86-64-v4: Collecting 10 samples in estimated 3.0290 s (1925 iterations)
+Benchmarking tier1/sum/native-x86-64-v4: Analyzing
+tier1/sum/native-x86-64-v4
+                        time:   [1.5714 ms 1.5829 ms 1.5915 ms]
+                        thrpt:  [46.815 GiB/s 47.068 GiB/s 47.414 GiB/s]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+
+Benchmarking tier1/dot/scalar
+Benchmarking tier1/dot/scalar: Warming up for 500.00 ms
+Benchmarking tier1/dot/scalar: Collecting 10 samples in estimated 3.0594 s (770 iterations)
+Benchmarking tier1/dot/scalar: Analyzing
+tier1/dot/scalar        time:   [3.9556 ms 3.9951 ms 4.0402 ms]
+                        thrpt:  [36.883 GiB/s 37.299 GiB/s 37.671 GiB/s]
+Benchmarking tier1/dot/x86-64-v3-auto
+Benchmarking tier1/dot/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/dot/x86-64-v3-auto: Collecting 10 samples in estimated 3.0305 s (770 iterations)
+Benchmarking tier1/dot/x86-64-v3-auto: Analyzing
+tier1/dot/x86-64-v3-auto
+                        time:   [3.9116 ms 3.9292 ms 3.9479 ms]
+                        thrpt:  [37.745 GiB/s 37.924 GiB/s 38.095 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking tier1/dot/x86-64-v4-auto
+Benchmarking tier1/dot/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/dot/x86-64-v4-auto: Collecting 10 samples in estimated 3.0162 s (770 iterations)
+Benchmarking tier1/dot/x86-64-v4-auto: Analyzing
+tier1/dot/x86-64-v4-auto
+                        time:   [3.8780 ms 3.9043 ms 3.9179 ms]
+                        thrpt:  [38.033 GiB/s 38.166 GiB/s 38.425 GiB/s]
+Benchmarking tier1/dot/native-base
+Benchmarking tier1/dot/native-base: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-base: Collecting 10 samples in estimated 3.0103 s (715 iterations)
+Benchmarking tier1/dot/native-base: Analyzing
+tier1/dot/native-base   time:   [4.0869 ms 4.1100 ms 4.1430 ms]
+                        thrpt:  [35.967 GiB/s 36.256 GiB/s 36.461 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/dot/native-x86-64-v3
+Benchmarking tier1/dot/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-x86-64-v3: Collecting 10 samples in estimated 3.0354 s (770 iterations)
+Benchmarking tier1/dot/native-x86-64-v3: Analyzing
+tier1/dot/native-x86-64-v3
+                        time:   [3.8683 ms 3.8868 ms 3.9128 ms]
+                        thrpt:  [38.083 GiB/s 38.337 GiB/s 38.521 GiB/s]
+Benchmarking tier1/dot/native-x86-64-v4
+Benchmarking tier1/dot/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-x86-64-v4: Collecting 10 samples in estimated 3.0033 s (770 iterations)
+Benchmarking tier1/dot/native-x86-64-v4: Analyzing
+tier1/dot/native-x86-64-v4
+                        time:   [3.8640 ms 3.8716 ms 3.8825 ms]
+                        thrpt:  [38.381 GiB/s 38.488 GiB/s 38.564 GiB/s]
+
+Benchmarking tier1/count/scalar
+Benchmarking tier1/count/scalar: Warming up for 500.00 ms
+Benchmarking tier1/count/scalar: Collecting 10 samples in estimated 3.0274 s (1430 iterations)
+Benchmarking tier1/count/scalar: Analyzing
+tier1/count/scalar      time:   [2.0916 ms 2.1170 ms 2.1385 ms]
+                        thrpt:  [34.840 GiB/s 35.194 GiB/s 35.622 GiB/s]
+Benchmarking tier1/count/x86-64-v3-auto
+Benchmarking tier1/count/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/count/x86-64-v3-auto: Collecting 10 samples in estimated 3.0897 s (1870 iterations)
+Benchmarking tier1/count/x86-64-v3-auto: Analyzing
+tier1/count/x86-64-v3-auto
+                        time:   [1.6345 ms 1.6513 ms 1.6755 ms]
+                        thrpt:  [44.467 GiB/s 45.119 GiB/s 45.584 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/count/x86-64-v4-auto
+Benchmarking tier1/count/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/count/x86-64-v4-auto: Collecting 10 samples in estimated 3.0790 s (1870 iterations)
+Benchmarking tier1/count/x86-64-v4-auto: Analyzing
+tier1/count/x86-64-v4-auto
+                        time:   [1.6595 ms 1.6861 ms 1.7206 ms]
+                        thrpt:  [43.302 GiB/s 44.189 GiB/s 44.897 GiB/s]
+Benchmarking tier1/count/native-base
+Benchmarking tier1/count/native-base: Warming up for 500.00 ms
+Benchmarking tier1/count/native-base: Collecting 10 samples in estimated 3.0063 s (1430 iterations)
+Benchmarking tier1/count/native-base: Analyzing
+tier1/count/native-base time:   [2.1046 ms 2.1205 ms 2.1339 ms]
+                        thrpt:  [34.915 GiB/s 35.136 GiB/s 35.402 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/count/native-x86-64-v3
+Benchmarking tier1/count/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/count/native-x86-64-v3: Collecting 10 samples in estimated 3.0453 s (1815 iterations)
+Benchmarking tier1/count/native-x86-64-v3: Analyzing
+tier1/count/native-x86-64-v3
+                        time:   [1.6591 ms 1.6728 ms 1.6915 ms]
+                        thrpt:  [44.047 GiB/s 44.540 GiB/s 44.909 GiB/s]
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high severe
+Benchmarking tier1/count/native-x86-64-v4
+Benchmarking tier1/count/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/count/native-x86-64-v4: Collecting 10 samples in estimated 3.0723 s (1870 iterations)
+Benchmarking tier1/count/native-x86-64-v4: Analyzing
+tier1/count/native-x86-64-v4
+                        time:   [1.6250 ms 1.6397 ms 1.6537 ms]
+                        thrpt:  [45.053 GiB/s 45.439 GiB/s 45.850 GiB/s]
+
+Benchmarking tier1/min/scalar
+Benchmarking tier1/min/scalar: Warming up for 500.00 ms
+Benchmarking tier1/min/scalar: Collecting 10 samples in estimated 3.2891 s (385 iterations)
+Benchmarking tier1/min/scalar: Analyzing
+tier1/min/scalar        time:   [8.5964 ms 8.6431 ms 8.6754 ms]
+                        thrpt:  [8.5882 GiB/s 8.6203 GiB/s 8.6671 GiB/s]
+Benchmarking tier1/min/x86-64-v3-auto
+Benchmarking tier1/min/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/min/x86-64-v3-auto: Collecting 10 samples in estimated 3.1393 s (330 iterations)
+Benchmarking tier1/min/x86-64-v3-auto: Analyzing
+tier1/min/x86-64-v3-auto
+                        time:   [9.5336 ms 9.5443 ms 9.5574 ms]
+                        thrpt:  [7.7956 GiB/s 7.8063 GiB/s 7.8151 GiB/s]
+Benchmarking tier1/min/x86-64-v4-auto
+Benchmarking tier1/min/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/min/x86-64-v4-auto: Collecting 10 samples in estimated 3.1715 s (330 iterations)
+Benchmarking tier1/min/x86-64-v4-auto: Analyzing
+tier1/min/x86-64-v4-auto
+                        time:   [9.6046 ms 9.6590 ms 9.7138 ms]
+                        thrpt:  [7.6701 GiB/s 7.7136 GiB/s 7.7573 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/min/native-base
+Benchmarking tier1/min/native-base: Warming up for 500.00 ms
+Benchmarking tier1/min/native-base: Collecting 10 samples in estimated 3.0734 s (1760 iterations)
+Benchmarking tier1/min/native-base: Analyzing
+tier1/min/native-base   time:   [1.7675 ms 1.7798 ms 1.7917 ms]
+                        thrpt:  [41.584 GiB/s 41.861 GiB/s 42.153 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/min/native-x86-64-v3
+Benchmarking tier1/min/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/min/native-x86-64-v3: Collecting 10 samples in estimated 3.0395 s (1870 iterations)
+Benchmarking tier1/min/native-x86-64-v3: Analyzing
+tier1/min/native-x86-64-v3
+                        time:   [1.6205 ms 1.6329 ms 1.6518 ms]
+                        thrpt:  [45.107 GiB/s 45.629 GiB/s 45.976 GiB/s]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking tier1/min/native-x86-64-v4
+Benchmarking tier1/min/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/min/native-x86-64-v4: Collecting 10 samples in estimated 3.0114 s (1925 iterations)
+Benchmarking tier1/min/native-x86-64-v4: Analyzing
+tier1/min/native-x86-64-v4
+                        time:   [1.5566 ms 1.5716 ms 1.5854 ms]
+                        thrpt:  [46.996 GiB/s 47.408 GiB/s 47.866 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+Benchmarking tier1/argmin/scalar
+Benchmarking tier1/argmin/scalar: Warming up for 500.00 ms
+Benchmarking tier1/argmin/scalar: Collecting 10 samples in estimated 3.1368 s (495 iterations)
+Benchmarking tier1/argmin/scalar: Analyzing
+tier1/argmin/scalar     time:   [6.3948 ms 6.4313 ms 6.4704 ms]
+                        thrpt:  [11.515 GiB/s 11.585 GiB/s 11.651 GiB/s]
+Benchmarking tier1/argmin/x86-64-v3-auto
+Benchmarking tier1/argmin/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/argmin/x86-64-v3-auto: Collecting 10 samples in estimated 3.3694 s (495 iterations)
+Benchmarking tier1/argmin/x86-64-v3-auto: Analyzing
+tier1/argmin/x86-64-v3-auto
+                        time:   [6.8280 ms 6.8583 ms 6.8988 ms]
+                        thrpt:  [10.800 GiB/s 10.864 GiB/s 10.912 GiB/s]
+Benchmarking tier1/argmin/x86-64-v4-auto
+Benchmarking tier1/argmin/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/argmin/x86-64-v4-auto: Collecting 10 samples in estimated 3.2084 s (495 iterations)
+Benchmarking tier1/argmin/x86-64-v4-auto: Analyzing
+tier1/argmin/x86-64-v4-auto
+                        time:   [6.4515 ms 6.5180 ms 6.5938 ms]
+                        thrpt:  [11.299 GiB/s 11.431 GiB/s 11.549 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/argmin/native-base
+Benchmarking tier1/argmin/native-base: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-base: Collecting 10 samples in estimated 3.1332 s (715 iterations)
+Benchmarking tier1/argmin/native-base: Analyzing
+tier1/argmin/native-base
+                        time:   [4.3838 ms 4.3908 ms 4.4020 ms]
+                        thrpt:  [16.925 GiB/s 16.969 GiB/s 16.996 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/argmin/native-x86-64-v3
+Benchmarking tier1/argmin/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-x86-64-v3: Collecting 10 samples in estimated 3.0523 s (1650 iterations)
+Benchmarking tier1/argmin/native-x86-64-v3: Analyzing
+tier1/argmin/native-x86-64-v3
+                        time:   [1.8060 ms 1.8221 ms 1.8337 ms]
+                        thrpt:  [40.631 GiB/s 40.891 GiB/s 41.254 GiB/s]
+Benchmarking tier1/argmin/native-x86-64-v4
+Benchmarking tier1/argmin/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-x86-64-v4: Collecting 10 samples in estimated 3.0021 s (1760 iterations)
+Benchmarking tier1/argmin/native-x86-64-v4: Analyzing
+tier1/argmin/native-x86-64-v4
+                        time:   [1.6784 ms 1.6953 ms 1.7079 ms]
+                        thrpt:  [43.625 GiB/s 43.948 GiB/s 44.390 GiB/s]
+
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+Benchmarking tier1/filter-1pct/scalar
+Benchmarking tier1/filter-1pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/scalar: Collecting 10 samples in estimated 3.4943 s (385 iterations)
+Benchmarking tier1/filter-1pct/scalar: Analyzing
+tier1/filter-1pct/scalar
+                        time:   [9.1224 ms 9.1752 ms 9.2109 ms]
+                        thrpt:  [8.0889 GiB/s 8.1203 GiB/s 8.1674 GiB/s]
+Benchmarking tier1/filter-1pct/x86-64-v3-auto
+Benchmarking tier1/filter-1pct/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/x86-64-v3-auto: Collecting 10 samples in estimated 3.0390 s (440 iterations)
+Benchmarking tier1/filter-1pct/x86-64-v3-auto: Analyzing
+tier1/filter-1pct/x86-64-v3-auto
+                        time:   [6.8398 ms 6.8940 ms 6.9313 ms]
+                        thrpt:  [10.749 GiB/s 10.807 GiB/s 10.893 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking tier1/filter-1pct/x86-64-v3-intrinsics
+Benchmarking tier1/filter-1pct/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1078 s (605 iterations)
+Benchmarking tier1/filter-1pct/x86-64-v3-intrinsics: Analyzing
+tier1/filter-1pct/x86-64-v3-intrinsics
+                        time:   [5.1226 ms 5.1686 ms 5.2386 ms]
+                        thrpt:  [14.222 GiB/s 14.415 GiB/s 14.545 GiB/s]
+Benchmarking tier1/filter-1pct/x86-64-v4-auto
+Benchmarking tier1/filter-1pct/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/x86-64-v4-auto: Collecting 10 samples in estimated 3.0371 s (440 iterations)
+Benchmarking tier1/filter-1pct/x86-64-v4-auto: Analyzing
+tier1/filter-1pct/x86-64-v4-auto
+                        time:   [6.8166 ms 6.8346 ms 6.8645 ms]
+                        thrpt:  [10.854 GiB/s 10.901 GiB/s 10.930 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/filter-1pct/x86-64-v4-intrinsics
+Benchmarking tier1/filter-1pct/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1840 s (770 iterations)
+Benchmarking tier1/filter-1pct/x86-64-v4-intrinsics: Analyzing
+tier1/filter-1pct/x86-64-v4-intrinsics
+                        time:   [4.1250 ms 4.1471 ms 4.1691 ms]
+                        thrpt:  [17.871 GiB/s 17.966 GiB/s 18.062 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/filter-1pct/native-base
+Benchmarking tier1/filter-1pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-base: Collecting 10 samples in estimated 3.2584 s (605 iterations)
+Benchmarking tier1/filter-1pct/native-base: Analyzing
+tier1/filter-1pct/native-base
+                        time:   [5.3781 ms 5.4033 ms 5.4323 ms]
+                        thrpt:  [13.715 GiB/s 13.789 GiB/s 13.854 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-1pct/native-x86-64-v3
+Benchmarking tier1/filter-1pct/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-x86-64-v3: Collecting 10 samples in estimated 3.1160 s (605 iterations)
+Benchmarking tier1/filter-1pct/native-x86-64-v3: Analyzing
+tier1/filter-1pct/native-x86-64-v3
+                        time:   [5.1762 ms 5.1958 ms 5.2193 ms]
+                        thrpt:  [14.275 GiB/s 14.340 GiB/s 14.394 GiB/s]
+Benchmarking tier1/filter-1pct/native-x86-64-v4
+Benchmarking tier1/filter-1pct/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-x86-64-v4: Collecting 10 samples in estimated 3.1622 s (605 iterations)
+Benchmarking tier1/filter-1pct/native-x86-64-v4: Analyzing
+tier1/filter-1pct/native-x86-64-v4
+                        time:   [5.2119 ms 5.2331 ms 5.2545 ms]
+                        thrpt:  [14.179 GiB/s 14.238 GiB/s 14.295 GiB/s]
+
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+Benchmarking tier1/filter-50pct/scalar
+Benchmarking tier1/filter-50pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/scalar: Collecting 10 samples in estimated 3.0370 s (275 iterations)
+Benchmarking tier1/filter-50pct/scalar: Analyzing
+tier1/filter-50pct/scalar
+                        time:   [11.043 ms 11.088 ms 11.140 ms]
+                        thrpt:  [6.6882 GiB/s 6.7196 GiB/s 6.7469 GiB/s]
+Benchmarking tier1/filter-50pct/x86-64-v3-auto
+Benchmarking tier1/filter-50pct/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/x86-64-v3-auto: Collecting 10 samples in estimated 3.4252 s (385 iterations)
+Benchmarking tier1/filter-50pct/x86-64-v3-auto: Analyzing
+tier1/filter-50pct/x86-64-v3-auto
+                        time:   [8.9981 ms 9.0344 ms 9.0909 ms]
+                        thrpt:  [8.1957 GiB/s 8.2469 GiB/s 8.2801 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/filter-50pct/x86-64-v3-intrinsics
+Benchmarking tier1/filter-50pct/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2790 s (440 iterations)
+Benchmarking tier1/filter-50pct/x86-64-v3-intrinsics: Analyzing
+tier1/filter-50pct/x86-64-v3-intrinsics
+                        time:   [7.3806 ms 7.3938 ms 7.4152 ms]
+                        thrpt:  [10.048 GiB/s 10.077 GiB/s 10.095 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking tier1/filter-50pct/x86-64-v4-auto
+Benchmarking tier1/filter-50pct/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/x86-64-v4-auto: Collecting 10 samples in estimated 3.4598 s (385 iterations)
+Benchmarking tier1/filter-50pct/x86-64-v4-auto: Analyzing
+tier1/filter-50pct/x86-64-v4-auto
+                        time:   [8.9675 ms 9.0144 ms 9.0622 ms]
+                        thrpt:  [8.2216 GiB/s 8.2652 GiB/s 8.3084 GiB/s]
+Benchmarking tier1/filter-50pct/x86-64-v4-intrinsics
+Benchmarking tier1/filter-50pct/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.3125 s (495 iterations)
+Benchmarking tier1/filter-50pct/x86-64-v4-intrinsics: Analyzing
+tier1/filter-50pct/x86-64-v4-intrinsics
+                        time:   [6.7414 ms 6.7868 ms 6.8285 ms]
+                        thrpt:  [10.911 GiB/s 10.978 GiB/s 11.052 GiB/s]
+Benchmarking tier1/filter-50pct/native-base
+Benchmarking tier1/filter-50pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-base: Collecting 10 samples in estimated 3.0581 s (495 iterations)
+Benchmarking tier1/filter-50pct/native-base: Analyzing
+tier1/filter-50pct/native-base
+                        time:   [6.1034 ms 6.1351 ms 6.1629 ms]
+                        thrpt:  [12.089 GiB/s 12.144 GiB/s 12.207 GiB/s]
+Benchmarking tier1/filter-50pct/native-x86-64-v3
+Benchmarking tier1/filter-50pct/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-x86-64-v3: Collecting 10 samples in estimated 3.0081 s (495 iterations)
+Benchmarking tier1/filter-50pct/native-x86-64-v3: Analyzing
+tier1/filter-50pct/native-x86-64-v3
+                        time:   [6.0688 ms 6.0857 ms 6.0939 ms]
+                        thrpt:  [12.226 GiB/s 12.243 GiB/s 12.277 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/filter-50pct/native-x86-64-v4
+Benchmarking tier1/filter-50pct/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-x86-64-v4: Collecting 10 samples in estimated 3.0350 s (495 iterations)
+Benchmarking tier1/filter-50pct/native-x86-64-v4: Analyzing
+tier1/filter-50pct/native-x86-64-v4
+                        time:   [6.0692 ms 6.0971 ms 6.1286 ms]
+                        thrpt:  [12.157 GiB/s 12.220 GiB/s 12.276 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier1/filter-99pct/scalar
+Benchmarking tier1/filter-99pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/scalar: Collecting 10 samples in estimated 3.6122 s (275 iterations)
+Benchmarking tier1/filter-99pct/scalar: Analyzing
+tier1/filter-99pct/scalar
+                        time:   [12.994 ms 13.055 ms 13.145 ms]
+                        thrpt:  [5.6679 GiB/s 5.7073 GiB/s 5.7338 GiB/s]
+Benchmarking tier1/filter-99pct/x86-64-v3-auto
+Benchmarking tier1/filter-99pct/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/x86-64-v3-auto: Collecting 10 samples in estimated 3.0782 s (275 iterations)
+Benchmarking tier1/filter-99pct/x86-64-v3-auto: Analyzing
+tier1/filter-99pct/x86-64-v3-auto
+                        time:   [10.969 ms 11.057 ms 11.127 ms]
+                        thrpt:  [6.6960 GiB/s 6.7381 GiB/s 6.7922 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/filter-99pct/x86-64-v3-intrinsics
+Benchmarking tier1/filter-99pct/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2368 s (330 iterations)
+Benchmarking tier1/filter-99pct/x86-64-v3-intrinsics: Analyzing
+tier1/filter-99pct/x86-64-v3-intrinsics
+                        time:   [9.7568 ms 9.8069 ms 9.8496 ms]
+                        thrpt:  [7.5644 GiB/s 7.5973 GiB/s 7.6363 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/filter-99pct/x86-64-v4-auto
+Benchmarking tier1/filter-99pct/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/x86-64-v4-auto: Collecting 10 samples in estimated 3.0314 s (275 iterations)
+Benchmarking tier1/filter-99pct/x86-64-v4-auto: Analyzing
+tier1/filter-99pct/x86-64-v4-auto
+                        time:   [10.999 ms 11.079 ms 11.124 ms]
+                        thrpt:  [6.6979 GiB/s 6.7247 GiB/s 6.7739 GiB/s]
+Benchmarking tier1/filter-99pct/x86-64-v4-intrinsics
+Benchmarking tier1/filter-99pct/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.3300 s (385 iterations)
+Benchmarking tier1/filter-99pct/x86-64-v4-intrinsics: Analyzing
+tier1/filter-99pct/x86-64-v4-intrinsics
+                        time:   [8.4261 ms 8.5396 ms 8.6573 ms]
+                        thrpt:  [8.6061 GiB/s 8.7247 GiB/s 8.8422 GiB/s]
+Benchmarking tier1/filter-99pct/native-base
+Benchmarking tier1/filter-99pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-base: Collecting 10 samples in estimated 3.3633 s (440 iterations)
+Benchmarking tier1/filter-99pct/native-base: Analyzing
+tier1/filter-99pct/native-base
+                        time:   [7.6551 ms 7.7033 ms 7.7417 ms]
+                        thrpt:  [9.6239 GiB/s 9.6719 GiB/s 9.7328 GiB/s]
+Benchmarking tier1/filter-99pct/native-x86-64-v3
+Benchmarking tier1/filter-99pct/native-x86-64-v3: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-x86-64-v3: Collecting 10 samples in estimated 3.3630 s (440 iterations)
+Benchmarking tier1/filter-99pct/native-x86-64-v3: Analyzing
+tier1/filter-99pct/native-x86-64-v3
+                        time:   [7.6136 ms 7.6346 ms 7.6609 ms]
+                        thrpt:  [9.7254 GiB/s 9.7590 GiB/s 9.7859 GiB/s]
+Benchmarking tier1/filter-99pct/native-x86-64-v4
+Benchmarking tier1/filter-99pct/native-x86-64-v4: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-x86-64-v4: Collecting 10 samples in estimated 3.3760 s (440 iterations)
+Benchmarking tier1/filter-99pct/native-x86-64-v4: Analyzing
+tier1/filter-99pct/native-x86-64-v4
+                        time:   [7.6363 ms 7.6597 ms 7.6809 ms]
+                        thrpt:  [9.7001 GiB/s 9.7270 GiB/s 9.7568 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking tier1/copy/copy-read-write
+Benchmarking tier1/copy/copy-read-write: Warming up for 500.00 ms
+Benchmarking tier1/copy/copy-read-write: Collecting 10 samples in estimated 3.0306 s (935 iterations)
+Benchmarking tier1/copy/copy-read-write: Analyzing
+tier1/copy/copy-read-write
+                        time:   [3.2290 ms 3.2418 ms 3.2516 ms]
+                        thrpt:  [45.828 GiB/s 45.966 GiB/s 46.148 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+# end 21:10:44 load 4.94 5.36 5.36

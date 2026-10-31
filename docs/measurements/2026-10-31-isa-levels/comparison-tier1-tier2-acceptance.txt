@@ -1,0 +1,151 @@
+id                                                                    base ms               new ms new/base
+acceptance/clickbench/q01/avx2-auto                         0.1023    0.0956    0.0960    0.0964    0.0969    0.0958    0.1026    0.0963    1.002
+acceptance/clickbench/q01/avx2-intrinsics                   0.1017    0.0961    0.0961    0.0958    0.0960    0.0963    0.1012    0.0964    1.003
+acceptance/clickbench/q01/avx512-auto                       0.0997    0.0896    0.0905    0.0903    0.0912    0.0911    0.0984    0.0916    1.016
+acceptance/clickbench/q01/avx512-intrinsics                 0.0987    0.0903    0.0906    0.0903    0.0913    0.0910    0.0981    0.0907    1.005
+acceptance/clickbench/q01/scalar                            0.2237    0.2232    0.2232    0.2234    0.2545    0.2545    0.2548    0.2543    1.139
+acceptance/clickbench/q02/avx2-auto                         0.1930    0.1828    0.1836    0.1823    0.1877    0.1890    0.1844    0.1837    1.008
+acceptance/clickbench/q02/avx2-intrinsics                   0.1928    0.1842    0.1822    0.1830    0.1876    0.1893    0.1838    0.1794    0.985
+acceptance/clickbench/q02/avx512-auto                       0.1754    0.1812    0.1844    0.1779    0.1878    0.1886    0.1771    0.1754    1.000
+acceptance/clickbench/q02/avx512-intrinsics                 0.1790    0.1844    0.1821    0.1835    0.1899    0.1757    0.1750    0.1744    0.974
+acceptance/clickbench/q02/scalar                            0.3414    0.3411    0.3407    0.3421    0.3425    0.3419    0.3410    0.3409    1.001
+acceptance/clickbench/q06/avx2-auto                          0.2029    0.1919     0.2065    0.1919    1.000
+acceptance/clickbench/q06/avx2-intrinsics                    0.2051    0.1917     0.2068    0.1911    0.997
+acceptance/clickbench/q06/avx512-auto                        0.2015    0.1847     0.2016    0.1832    0.992
+acceptance/clickbench/q06/avx512-intrinsics                  0.2017    0.1852     0.2019    0.1837    0.992
+acceptance/clickbench/q06/scalar                             0.5257    0.5232     0.5273    0.5224    0.998
+acceptance/clickbench/q07/avx2-auto                          0.7001    0.6849     0.6977    0.6836    0.998
+acceptance/clickbench/q07/avx2-intrinsics                    0.6100    0.6106     0.4701    0.4790    0.771
+acceptance/clickbench/q07/avx512-auto                        0.6895    0.6765     0.6905    0.6753    0.998
+acceptance/clickbench/q07/avx512-intrinsics                  0.4718    0.4539     0.3268    0.3266    0.720
+acceptance/clickbench/q07/scalar                             0.9531    0.9491     0.9584    0.9516    1.003
+acceptance/clickbench/q42/avx2-auto                         2.8619    2.7966    2.8798    2.8836    2.9860    3.1000    3.0475    3.0676    1.068
+acceptance/clickbench/q42/avx2-intrinsics                   2.6513    2.6622    2.7341    2.7055    2.7550    2.5869    2.6885    2.5891    0.976
+acceptance/clickbench/q42/avx512-auto                       2.4671    2.4763    2.5569    2.5635    2.5286    2.5544    2.5057    2.6490    1.016
+acceptance/clickbench/q42/avx512-intrinsics                 2.2233    2.3796    2.3369    2.4288    2.2726    2.3083    2.3268    2.3684    1.022
+acceptance/clickbench/q42/scalar                            4.4848    4.4396    4.5080    4.5329    4.5573    4.5484    4.5552    4.5456    1.024
+acceptance/tpch/q01/avx2-auto                              21.4090   22.4490   22.0110   21.8190   22.6070   21.7680   22.1020   22.2580    1.017
+acceptance/tpch/q01/avx2-intrinsics                        21.0310   20.9070   21.3040   21.9980   20.5630   20.2400   20.3370   20.5740    0.968
+acceptance/tpch/q01/avx512-auto                            17.9780   19.0810   20.3940   20.7940   20.7190   19.5220   20.5330   20.8170    1.086
+acceptance/tpch/q01/avx512-intrinsics                      16.1830   17.6030   18.0540   18.3280   18.1890   18.8440   18.0160   18.1870    1.113
+acceptance/tpch/q01/scalar                                 25.1070   25.1110   26.1340   25.1330   26.0100   24.9880   25.3420   25.4650    0.995
+acceptance/tpch/q06/avx2-auto                               3.0506    3.1370    3.0793    3.1116    3.5086    3.5234    3.4979    3.4897    1.144
+acceptance/tpch/q06/avx2-intrinsics                         2.7340    2.7817    2.7465    2.7474    2.6153    2.6535    2.6237    2.6020    0.952
+acceptance/tpch/q06/avx512-auto                             2.6429    2.6958    2.6322    2.7054    2.6799    2.7318    2.6901    2.6484    1.006
+acceptance/tpch/q06/avx512-intrinsics                       2.0496    2.2618    2.0613    2.1171    1.9432    2.1341    1.9834    1.9473    0.948
+acceptance/tpch/q06/scalar                                  5.7659    5.7902    5.7933    5.8217    5.7677    5.8381    5.7706    5.7915    1.000
+tier1/argmin/avx2-auto                                      6.3131    6.3088    6.3830    6.3014    6.7670    6.7702    6.8583    6.7927    1.074
+tier1/argmin/avx512-auto                                    6.3348    6.3176    6.4283    6.3075    6.5667    6.6708    6.5180    6.4941    1.030
+tier1/argmin/native-avx2                                    1.7165    1.7350    1.8859    1.7256    1.7133    1.7659    1.8221    1.7010    0.991
+tier1/argmin/native-avx512                                  1.6022    1.6178    1.7080    1.6095    1.6027    1.6190    1.6953    1.6013    0.999
+tier1/argmin/native-base                                    4.3777    4.3776    4.4124    4.3762    4.3734    4.3623    4.3908    4.3851    0.997
+tier1/argmin/scalar                                         6.3322    6.3465    6.4278    6.2861    6.3245    6.3942    6.4313    6.3120    1.004
+tier1/copy/copy-read-write                                   3.2495    3.1474     3.2418    3.1693    1.007
+tier1/count/avx2-auto                                        1.8229    1.6176     1.6513    1.5730    0.972
+tier1/count/avx512-auto                                      1.7456    1.5649     1.6861    1.5668    1.001
+tier1/count/native-avx2                                      1.7598    1.6042     1.6728    1.5702    0.979
+tier1/count/native-avx512                                    1.7201    1.6300     1.6397    1.5696    0.963
+tier1/count/native-base                                      2.2602    2.0639     2.1205    2.0080    0.973
+tier1/count/scalar                                           2.3771    2.0663     2.1170    2.0189    0.977
+tier1/dot/avx2-auto                                          4.4561    3.8560     3.9292    3.8068    0.987
+tier1/dot/avx512-auto                                        4.0302    3.8064     3.9043    3.7928    0.996
+tier1/dot/native-avx2                                        4.0843    3.8338     3.8868    3.8062    0.993
+tier1/dot/native-avx512                                      4.0735    3.8340     3.8716    3.7812    0.986
+tier1/dot/native-base                                        4.4971    4.0227     4.1100    4.0011    0.995
+tier1/dot/scalar                                             5.3379    3.9077     3.9951    3.8542    0.986
+tier1/filter-1pct/avx2-auto                                  7.0220    6.7848     6.8940    6.7346    0.993
+tier1/filter-1pct/avx2-intrinsics                            5.8858    5.6747     5.1686    5.0668    0.893
+tier1/filter-1pct/avx512-auto                                6.9325    6.8056     6.8346    6.7112    0.986
+tier1/filter-1pct/avx512-intrinsics                          5.2637    5.1499     4.1471    4.0102    0.779
+tier1/filter-1pct/native-avx2                                5.1614    5.0987     5.1958    5.1166    1.004
+tier1/filter-1pct/native-avx512                              5.2277    5.1218     5.2331    5.1835    1.012
+tier1/filter-1pct/native-base                                7.0895    6.9938     5.4033    5.2888    0.756
+tier1/filter-1pct/scalar                                     9.1923    9.0019     9.1752    8.9599    0.995
+tier1/filter-50pct/avx2-auto                                 9.1918    9.0955     9.0344    8.8771    0.976
+tier1/filter-50pct/avx2-intrinsics                           7.9993    7.9514     7.3938    7.3603    0.926
+tier1/filter-50pct/avx512-auto                               9.0520    8.9808     9.0144    8.9070    0.992
+tier1/filter-50pct/avx512-intrinsics                         7.1929    7.2587     6.7868    6.5937    0.917
+tier1/filter-50pct/native-avx2                               6.0838    6.0533     6.0857    6.0429    0.998
+tier1/filter-50pct/native-avx512                             6.0972    6.0787     6.0971    6.0810    1.000
+tier1/filter-50pct/native-base                               7.8441    7.7860     6.1351    6.1162    0.786
+tier1/filter-50pct/scalar                                   11.0530   10.8020    11.0880   10.7950    0.999
+tier1/filter-99pct/avx2-auto                                11.2290   11.1280    11.0570   10.9410    0.983
+tier1/filter-99pct/avx2-intrinsics                          10.2020   10.4040     9.8069    9.6089    0.942
+tier1/filter-99pct/avx512-auto                              11.1530   10.9920    11.0790   10.8580    0.988
+tier1/filter-99pct/avx512-intrinsics                         9.5220    9.4708     8.5396    8.4136    0.888
+tier1/filter-99pct/native-avx2                               7.6356    7.6480     7.6346    7.5640    0.991
+tier1/filter-99pct/native-avx512                             7.6977    7.6034     7.6597    7.5090    0.988
+tier1/filter-99pct/native-base                               9.0238    8.9395     7.7033    7.6657    0.858
+tier1/filter-99pct/scalar                                   13.0460   12.8970    13.0550   12.8890    0.999
+tier1/min/avx2-auto                                          9.7092    9.6295     9.5443    9.5281    0.989
+tier1/min/avx512-auto                                        9.6671    9.6356     9.6590    9.6806    1.002
+tier1/min/native-avx2                                        1.6732    1.5623     1.6329    1.5615    0.999
+tier1/min/native-avx512                                      1.6014    1.4940     1.5716    1.4922    0.999
+tier1/min/native-base                                        1.9204    1.6855     1.7798    1.6795    0.996
+tier1/min/scalar                                             8.9887    8.8547     8.6431    8.4816    0.958
+tier1/sum/avx2-auto                                          1.6092    1.5424     1.6092    1.5543    1.008
+tier1/sum/avx512-auto                                        1.5549    1.5112     1.5532    1.5177    1.004
+tier1/sum/native-avx2                                        1.5998    1.5482     1.5982    1.5561    1.005
+tier1/sum/native-avx512                                      1.5083    1.4718     1.5829    1.5121    1.027
+tier1/sum/native-base                                        1.7489    1.6725     1.7491    1.6579    0.991
+tier1/sum/scalar                                             1.7572    1.6713     1.7593    1.6650    0.996
+tier2/add-i64/avx2-auto                                      9.3194    9.1085     9.2754    8.7827    0.964
+tier2/add-i64/avx512-auto                                    9.1795    8.9351     8.9861    8.7482    0.979
+tier2/add-i64/native-avx2                                    7.0835    7.1277     7.1311    6.9805    0.985
+tier2/add-i64/native-avx512                                  7.0458    7.1100     7.0821    6.9595    0.988
+tier2/add-i64/native-base                                    7.1354    7.1349     7.1273    6.9766    0.978
+tier2/add-i64/scalar                                        10.1200    9.7991     9.5736    9.5454    0.974
+tier2/and-i64/avx2-auto                                      9.7941    9.4863     9.3125    9.2650    0.977
+tier2/and-i64/avx512-auto                                    9.6346    9.3444     9.4272    9.2578    0.991
+tier2/and-i64/scalar                                        10.0870    9.8434     9.8248    9.7517    0.991
+tier2/argsort-i64/avx2-auto                                792.8600  750.8100   749.8800  747.2800    0.995
+tier2/argsort-i64/avx512-auto                              758.5400  748.7400   750.0800  744.4000    0.994
+tier2/argsort-i64/scalar                                   790.6000  751.2300   751.3600  744.0600    0.990
+tier2/div-const-i64/avx2-auto                               8.9666    8.9187    9.0374    8.9846    8.7915    8.8703    8.8785    8.8788    0.986
+tier2/div-const-i64/avx512-auto                             8.9959    9.0409    9.0713    8.8920    8.4748    8.5288    8.5530    8.6589    0.953
+tier2/div-const-i64/native-avx2                            10.1260   10.1640   10.0860   10.0120   10.0170    9.9944    9.9813    9.9648    0.995
+tier2/div-const-i64/native-avx512                          10.1360   10.1130   10.0760    9.9991    5.5961    5.5432    5.5588    5.5842    0.554
+tier2/div-const-i64/native-base                            10.1100   10.1520   10.0740   10.0590   10.1340   10.0310    9.9786    9.9994    0.992
+tier2/div-const-i64/scalar                                 13.9820   13.5090   13.7440   13.5780   13.7270   13.7640   13.3290   13.3470    0.987
+tier2/div-const-u64/avx2-auto                               9.0229    8.9988    8.8902    8.9716    8.9055    8.7907    8.8957    8.8507    0.989
+tier2/div-const-u64/avx512-auto                             9.0288    8.9465    8.8613    9.0043    8.8836    8.7146    8.6943    8.7850    0.981
+tier2/div-const-u64/scalar                                  8.4636    8.5287    8.5798    8.5486    8.3641    8.0384    8.2575    8.2854    0.950
+tier2/gather-i64/avx2-auto                                 47.3290   47.5220   48.4460   47.3930   49.8040   50.4400   50.4100   50.2920    1.052
+tier2/gather-i64/avx2-intrinsics                           38.0880   38.0920   39.0550   37.8080   37.7430   38.2650   37.9200   38.0660    0.998
+tier2/gather-i64/avx512-auto                               47.1470   48.2700   48.2210   47.2100   46.8430   47.9900   47.2010   46.7280    0.991
+tier2/gather-i64/avx512-intrinsics                         39.5580   40.3640   40.3570   39.1810   39.2470   40.2170   39.4850   39.3110    1.002
+tier2/gather-i64/native-avx2                               37.7190   37.9690   38.5910   37.7110   37.9050   38.5290   38.1240   37.8050    1.002
+tier2/gather-i64/native-avx512                             39.4260   39.4110   40.2210   39.0410   39.2490   39.7760   39.3260   39.5930    1.005
+tier2/gather-i64/native-base                               38.6170   39.2240   39.8200   38.6690   38.7460   39.3380   39.1740   39.2570    1.003
+tier2/gather-i64/scalar                                    48.7410   48.3670   48.7670   47.7940   47.8720   48.2210   48.2450   47.9510    1.002
+tier2/histogram/avx2-auto                                   6.8717    6.8100    7.0636    6.8569    6.7969    6.9411    6.7830    6.8136    0.996
+tier2/histogram/avx512-auto                                 6.7589    6.7079    6.8828    6.7321    6.6129    6.6644    6.6106    6.6307    0.985
+tier2/histogram/native-avx2                                 3.8399    3.8337    3.8785    3.8572    3.8365    3.8503    3.7881    3.8840    0.988
+tier2/histogram/native-avx512                               3.9321    3.9292    4.0731    4.0019    3.8467    3.8322    3.7797    3.8600    0.962
+tier2/histogram/native-base                                 3.8244    3.8302    3.8310    3.8772    3.8857    3.8497    3.8248    3.8640    1.000
+tier2/histogram/scalar                                      7.8142    7.8758    7.9136    7.8048    7.7842    7.8384    7.8203    7.7853    0.997
+tier2/not-i64/avx2-auto                                      7.3290    7.0645     6.9581    6.9639    0.985
+tier2/not-i64/avx512-auto                                    7.3139    7.1320     6.9618    6.9322    0.972
+tier2/not-i64/scalar                                         7.3885    7.2750     7.3027    7.2397    0.995
+tier2/prev-i64/avx2-auto                                     6.5576    6.3846     6.1111    6.1103    0.957
+tier2/prev-i64/avx512-auto                                   6.5915    6.4073     6.1098    6.1350    0.954
+tier2/prev-i64/scalar                                        6.6040    6.4163     6.1287    6.1387    0.955
+tier2/reduce-into-add-i64/avx2-auto                          9.4249    9.1178     9.1369    9.1058    0.999
+tier2/reduce-into-add-i64/avx512-auto                        8.7689    8.5785     8.6005    8.5970    1.002
+tier2/reduce-into-add-i64/native-avx2                        4.6126    4.4619     4.5334    4.5637    1.016
+tier2/reduce-into-add-i64/native-avx512                      4.6193    4.4830     4.5610    4.5426    1.013
+tier2/reduce-into-add-i64/native-base                        4.6520    4.5044     4.6365    4.5633    1.013
+tier2/reduce-into-add-i64/scalar                            10.7310   10.7140    10.1010   11.1540    0.943
+tier2/scan-add-i64/avx2-auto                                 7.5397    7.4683     7.4201    7.2962    0.977
+tier2/scan-add-i64/avx512-auto                               7.5601    7.4924     7.4177    7.2060    0.962
+tier2/scan-add-i64/native-avx2                               6.7181    6.7184     6.9114    6.6931    0.996
+tier2/scan-add-i64/native-avx512                             6.7818    6.6984     6.7360    6.9167    1.006
+tier2/scan-add-i64/native-base                               6.8159    6.8231     6.6942    6.7691    0.982
+tier2/scan-add-i64/scalar                                    7.6249    7.5581     7.3863    7.3478    0.972
+tier2/scan-by-add-i64/avx2-auto                             9.9277    9.8949   10.4840   10.4070    9.8853    9.7045   10.4310   10.1260    0.981
+tier2/scan-by-add-i64/avx512-auto                           9.9157    9.8737   10.4790   10.4390    9.6170    9.6679   10.4810   10.2550    0.974
+tier2/scan-by-add-i64/avx512-intrinsics                     7.9118    7.9091    8.2949    8.2472    7.8772    7.9377    8.4916    8.6400    0.996
+tier2/scan-by-add-i64/scalar                               10.7360   10.6910   10.3770   10.3860   10.4020   10.4680   10.4170   10.5380    1.002
+tier2/xor-i64/avx2-auto                                      9.8245    9.4776     9.7019    9.3992    0.992
+tier2/xor-i64/avx512-auto                                    9.7171    9.3691     9.4158    9.2337    0.986
+tier2/xor-i64/scalar                                        10.0040   10.0280     9.7548    9.6947    0.969

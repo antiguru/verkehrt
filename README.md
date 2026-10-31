@@ -60,18 +60,18 @@ plan 5: (count_gt_f64 x 0.5)
 plan 7: (length_f64 (filter_gt_f64 x 0.99))
 trace rand_f64 isa=scalar n=0 read=0 write=8000000 time=2761.9 gbps=2.90
 trace rand_f64 isa=scalar n=0 read=0 write=8000000 time=2645.6 gbps=3.02
-trace dot_f64 isa=avx512 backend=auto n=1000000 read=16000000 write=0 time=284.4 gbps=56.27
+trace dot_f64 isa=x86-64-v4 backend=auto n=1000000 read=16000000 write=0 time=284.4 gbps=56.27
 249724.39002046228
-trace count_gt_f64 isa=avx512 backend=auto n=1000000 read=8000000 write=0 time=155.3 gbps=51.51
+trace count_gt_f64 isa=x86-64-v4 backend=auto n=1000000 read=8000000 write=0 time=155.3 gbps=51.51
 499521
-trace filter_gt_f64 isa=avx512 backend=intrinsics n=1000000 read=8000000 write=78808 time=416.3 gbps=19.41
+trace filter_gt_f64 isa=x86-64-v4 backend=intrinsics n=1000000 read=8000000 write=78808 time=416.3 gbps=19.41
 trace length_f64 isa=scalar n=9851 read=78808 write=0 time=0.7 gbps=107.96
 9851
 ```
 
 The plan shows three fused kernels the program never names: `dot_f64` for `sum(x * y)`, `count_gt_f64` for `count(x > 0.5)`, and `filter_gt_f64` for the lifted filter.
 Each trace line gives the kernel, the variant that ran, the element count, bytes read and written, the time in microseconds, and the throughput in GB/s.
-The output above comes from a single run on an AVX-512 machine, so the times are illustrative only.
+The output above comes from a single run on an x86-64-v4 machine, so the times are illustrative only.
 `--stats` prints per-kernel totals at exit, and `verkehrt repl` starts an interactive session with the same flags.
 
 ## Backends
@@ -79,17 +79,17 @@ The output above comes from a single run on an AVX-512 machine, so the times are
 Every kernel has a scalar reference entry, and each instruction set adds up to two backends on top of it.
 The `auto` backend compiles the kernel's portable body under the instruction set's target features and covers every kernel on x86-64.
 NEON has no `auto` entries, because the baseline aarch64 build already targets NEON, so the scalar entries are what the compiler produces for NEON, vectorized or not.
-The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, float min, max, argmin, and argmax on NEON, `gather` on 64-bit rows on AVX2 and AVX-512, and `scan_by` with `add` on AVX-512.
+The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, float min, max, argmin, and argmax on NEON, `gather` on 64-bit rows on `x86-64-v3` and `x86-64-v4`, and `scan_by` with `add` on `x86-64-v4`.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
-`--isa scalar|avx2|avx512|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
+`--isa scalar|x86-64-v3|x86-64-v4|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
 `--disable FEATURE` treats a CPU feature such as `avx512vbmi2` as absent and can be repeated.
 Kernel entries that need a disabled feature are not selected, and `--isa` rejects a level that needs one.
 A feature this CPU does not report prints a note, because disabling it has no effect.
 
 | Architecture | Instruction set | Status |
 |---|---|---|
-| x86-64 | AVX2 | `auto` and `intrinsics` |
-| x86-64 | AVX-512 (F, BW, VL, VBMI2) | `auto` and `intrinsics` |
+| x86-64 | `x86-64-v3` (AVX2, BMI1, BMI2, FMA, F16C, LZCNT, MOVBE) | `auto` and `intrinsics` |
+| x86-64 | `x86-64-v4` (v3 plus AVX-512 F, BW, CD, DQ, VL), byte `compress` also needs VBMI2 | `auto` and `intrinsics` |
 | aarch64 | NEON | `intrinsics` for compress, `where`, the fused filter, and float min, max, argmin, and argmax, other kernels run their scalar entries, which the baseline build compiles for NEON and the compiler may vectorize |
 
 Every variant must return the scalar kernel's result bit for bit, and a NaN result only has to be NaN.
@@ -118,8 +118,8 @@ Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10
 
 On the tier 2 workloads, all seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
 ClickBench q42 first measured 21.59 ms because of a program bug, an unshifted bucket key, and subtracting the key's minimum took it to 2.60 ms.
-Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop on AVX2, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
-On x86, the bucket loops of `histogram` and `reduce_into`, the multiply-high of 64-bit `div_const` (the rest of its loop is vectorized), `scan` on integers and on float `min` and `max`, `scan_by` on AVX2 (and every fold but `add` on both ISAs), `argsort`, `gather` on 32-bit, `u8`, and bool rows, and the `i64` to `f64`, `f64` to `i64`, and `f64` to `u64` casts stay scalar loops, and the measurement document records the evidence for each.
+Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop at `x86-64-v3`, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
+On x86, the bucket loops of `histogram` and `reduce_into`, the multiply-high of 64-bit `div_const` (the rest of its loop is vectorized), `scan` on integers and on float `min` and `max`, `scan_by` at `x86-64-v3` (and every fold but `add` at both levels), `argsort`, `gather` on 32-bit, `u8`, and bool rows, and the `i64` to `f64` cast at `x86-64-v3` and the `f64` to `i64` and `f64` to `u64` casts at both levels stay scalar loops, and the measurement document records the evidence for each.
 Benching the tier 2 kernels found that the `auto` entries of whole kernels called the scalar build of their bodies, which was fixed, and no test guards against it recurring.
 These are single runs on the same host with other work running and load averages between 1.6 and 18, and the aarch64 numbers are pending.
 Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.md) for the tables, the data, the strain cases, and the known limit that empty inputs give 0 or an error where SQL gives NULL.
