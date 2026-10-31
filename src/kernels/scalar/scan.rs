@@ -238,23 +238,35 @@ impl_bit_scan!(ScanOr, BitOr, |a, x| a | x, T::zeroed());
 impl_bit_scan!(ScanXor, BitXor, |a, x| a ^ x, T::zeroed());
 
 /// The checked rows of one tile: the input, the output, and the segment starts if any.
-type Tile<'a, T, U> = (&'a [T], &'a mut [U], Option<&'a [u8]>);
+pub(crate) type Tile<'a, T, U> = (&'a [T], &'a mut [U], Option<&'a [u8]>);
 
 /// Reads the arguments of one tile. `BY` selects `scan_by`, which takes a `bool` operand of
 /// segment starts after the values.
+#[inline(always)]
 fn tile<'a, T: Elem, O: ScanOp<T>, const BY: bool>(
     args: &'a [Arg],
     out: &'a mut [u8],
 ) -> Result<Tile<'a, T, O::Out>, String> {
+    tile_rows::<T, O::Out, BY>(args, out, O::IN_TYPE)
+}
+
+/// `tile` for input rows of semantic type `in_ty` with storage type `T` and output rows of
+/// storage type `U`. It fails exactly when `tile` fails for a fold with these types.
+#[inline(always)]
+pub(crate) fn tile_rows<'a, T: Elem, U: Elem, const BY: bool>(
+    args: &'a [Arg],
+    out: &'a mut [u8],
+    in_ty: ScalarType,
+) -> Result<Tile<'a, T, U>, String> {
     let (xs, starts) = match args {
-        [x] if !BY => (rows_arg::<T>(x, O::IN_TYPE)?, None),
+        [x] if !BY => (rows_arg::<T>(x, in_ty)?, None),
         [x, s] if BY => (
-            rows_arg::<T>(x, O::IN_TYPE)?,
+            rows_arg::<T>(x, in_ty)?,
             Some(rows_arg::<u8>(s, ScalarType::Bool)?),
         ),
         _ => return Err(arity_error(1 + usize::from(BY), args.len())),
     };
-    let out = out_rows::<O::Out>(out)?;
+    let out = out_rows::<U>(out)?;
     if out.len() != xs.len() || starts.is_some_and(|s| s.len() != xs.len()) {
         return Err(format!(
             "length mismatch: {} rows for a destination of {} rows",
@@ -330,6 +342,11 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         pattern: None,
         impls: KernelImpl::scan::<Scan<T, O, false>>(),
     });
+    let mut by_impls = KernelImpl::scan::<Scan<T, O, true>>();
+    // Only wrapping sums that keep the element type have a segmented intrinsics entry.
+    if r == ReduceOp::Add && O::OUT_TYPE == O::IN_TYPE {
+        crate::kernels::arch::add_scan_by_add::<T>(&mut by_impls);
+    }
     reg.add(KernelDef {
         name: format!("scan_by_{op}_{n}"),
         class: KernelClass::Scan,
@@ -342,7 +359,7 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         cost: cost + 1,
         commutative: false,
         pattern: None,
-        impls: KernelImpl::scan::<Scan<T, O, true>>(),
+        impls: by_impls,
     });
     reg.add(KernelDef {
         name: format!("reduce_into_{op}_{n}"),

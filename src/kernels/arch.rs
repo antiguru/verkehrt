@@ -106,6 +106,19 @@ pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelIm
     let _ = impls;
 }
 
+/// Adds the intrinsics entries of `scan_by_add` on rows of storage type `T`, whose sum keeps
+/// the element type. aarch64 has none.
+#[cfg_attr(
+    not(target_arch = "x86_64"),
+    expect(clippy::extra_unused_type_parameters, clippy::needless_pass_by_ref_mut)
+)]
+pub(crate) fn add_scan_by_add<T: Elem>(impls: &mut [Option<KernelImpl>]) {
+    #[cfg(target_arch = "x86_64")]
+    x86::add_scan_by_add::<T>(impls);
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = impls;
+}
+
 /// Adds the intrinsics entries of `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true) on
 /// rows of type `T`. x86-64 has none.
 #[cfg_attr(

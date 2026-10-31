@@ -266,10 +266,11 @@ macro_rules! call_native {
 struct Interp {
     label: String,
     interp: Interpreter,
-    /// Whether it uses the intrinsics backend. On x86-64 only the selections have intrinsics
-    /// entries, so only the `filter` groups measure these variants. On aarch64 the selections
-    /// and the float extremes (`min`, `argmin`) have them. Elsewhere the intrinsics backend
-    /// resolves to the scalar entries, so those groups skip it.
+    /// Whether it uses the intrinsics backend. On x86-64 the selections, the 64-bit
+    /// `gather`s, and the AVX-512 `scan_by_add` on 64-bit integers have intrinsics entries,
+    /// so only the `filter`, `gather`, and `scan_by` groups measure these variants. On
+    /// aarch64 the selections and the float extremes (`min`, `argmin`) have them. Elsewhere
+    /// the intrinsics backend resolves to the scalar entries, so those groups skip it.
     intrinsics: bool,
 }
 
@@ -816,9 +817,15 @@ fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
 fn tier2(c: &mut Criterion) {
     let all_interps = interpreters();
-    // Only `gather` has intrinsics entries on x86-64, so only its group measures them.
+    // Among the tier 2 kernels only `gather` and, on AVX-512, `scan_by_add` have intrinsics
+    // entries on x86-64, so only their groups measure them. AVX2 `scan_by_add` has none, so
+    // its intrinsics variant would rerun the auto entry and is left out.
     let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
     let all: Vec<&Interp> = all_interps.iter().collect();
+    let scan_by: Vec<&Interp> = all_interps
+        .iter()
+        .filter(|it| !it.intrinsics || it.label == "avx512-intrinsics")
+        .collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<i64>()).unwrap();
     let x = splitmix(N, 1, u64::cast_signed);
@@ -1030,7 +1037,7 @@ fn tier2(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(bytes + u64::try_from(N).unwrap()));
         let src = "input x: i64[]; input s: bool[]; export r = scan_by(x, s, add);";
         let ins = [("x", xv.clone()), ("s", sv.clone())];
-        interp_variants(&mut g, &auto, src, &ins, &want);
+        interp_variants(&mut g, &scan_by, src, &ins, &want);
         g.finish();
     }
     {

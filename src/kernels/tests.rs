@@ -1141,8 +1141,9 @@ fn variant_entry_counts_are_stable() {
     // The 4 `div_const_<t>` and 4 `argsort_<t>` kernels added 12 scalar entries (the array and
     // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
     // `gather_i64`, `gather_u64`, and `gather_f64` added 3 intrinsics entries per x86 ISA.
+    // `scan_by_add_i64` and `scan_by_add_u64` added 2 AVX-512 intrinsics entries.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [749, 439, 39, 439, 41, 0, 0]);
+    assert_eq!(counts, [749, 439, 39, 439, 43, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
