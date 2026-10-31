@@ -26,8 +26,8 @@ This replaces judging tier 2 only by its own catalog, and it keeps later tiers h
 
 * Grouping on keys with many distinct values, which needs a sort or a hash table. It is plan 5, and it unlocks ClickBench q15, q30 to q32, q35, q40, and q41.
 * A byte-string type. The string predicates that the acceptance queries need are expressed over offset columns (see below), and tier 4 adds real strings.
-* Float `add` and `mul` in scans and bucketed reductions (see the semantics section).
-* `reverse`, `rotate`, and packed bitmasks from the tier 2 catalog. No acceptance query needs them, so they stay in the catalog for later (my call).
+* Float `add` and `mul` in scans and bucketed reductions, and the other gaps listed under "Deferred: surface gaps", which a later phase closes.
+* `reverse`, `rotate`, and packed bitmasks from the tier 2 catalog, also deferred (my call).
 * Tile-at-a-time execution, though every new kernel must keep it possible.
 * Running the acceptance queries in CI, because the data does not belong in the repository.
 
@@ -77,10 +77,13 @@ It is `scan_by` over run starts found with `prev`, followed by `compress` on the
 Integer scans and integer bucketed sums wrap, so every association order gives the same bits, and a kernel may use any order.
 Float `min` and `max` follow IEEE `minimum` and `maximum`, which are associative and commutative, so they also allow any order, with NaN payloads free as in the base spec.
 
-Float `add` and `mul` do not associate, so a vectorized scan or a bucketed sum would need a canonical order that every ISA computes.
-For `scan`, a blocked order could work, with a fixed lane width and a fixed in-register tree, but it differs from the sequential sum a user expects and costs every ISA that does not have the chosen width.
-For `reduce_into`, the order inside a bucket depends on which rows share a key, which no SIMD scheme computes cheaply.
-Plan 4 therefore rejects float `add` and `mul` in `scan`, `scan_by`, and `reduce_into` with the usual "no kernel" type error, and the catalog records both as strain cases (my call, since no acceptance query needs them and the order question deserves its own measurement).
+Float `add` and `mul` do not associate, so a vectorized scan or a bucketed sum needs a canonical order that every ISA computes.
+Plan 4 rejects float `add` and `mul` in `scan`, `scan_by`, and `reduce_into` with the usual "no kernel" type error, and a later phase closes the gap (see "Deferred: surface gaps").
+The rejection is temporary scope, not a statement that these combinations are out of the language, because a primitive that works for some operator and type pairs and not others is a wrinkle in the surface.
+
+Results stay bit-identical rather than equal within a tolerance.
+A tolerance would let results differ between ISAs, which the base spec's anti-goals rule out, and it would break the intended host: Differential Dataflow cancels a retraction against the original update only when both compute the same bits.
+Bit-identity is also what makes fusion legal without per-kernel error analysis, since a fused kernel then matches the reference exactly.
 
 Out-of-range indices and keys, a zero divisor, and invalid `slice` bounds are runtime errors, which the base spec's ordering rules allow to surface in any order.
 `gather` on an empty `idx` returns an empty array, and `histogram` and `reduce_into` with `n = 0` and empty keys return empty arrays.
@@ -150,6 +153,17 @@ Corgi's numbers come from its own harness, so the document states how corgi time
 * Fused kernels are not required. If a pattern such as `reduce_into(compress(keys, m), compress(vals, m), n, add)` dominates an acceptance query, the measurement document names it as a candidate, and adding it is the builder's call.
 * The base spec's tier 2 catalog gains the new primitives' rows and the strain cases: gather on NEON, bucketed reductions, float scans and bucketed float sums, and the scalar `argsort`.
 * `tier1.rs` gains native-baseline benches for `scan`, `gather`, `histogram`, and `reduce_into` at 10M rows, so each new kernel is measured against a plain Rust loop, as the tier 1 kernels were.
+
+## Deferred: surface gaps
+
+The user's rule is that Verkehrt's surface should not have many wrinkles: a primitive should accept every operator and element type for which it has a defined, ISA-independent result.
+Plan 4 leaves gaps for scope, and each gets closed in a later phase or gets an explicit reason why it stays closed.
+The base spec's catalog lists the open gaps, so the surface's holes are visible in one place.
+
+* **Float `add` and `mul` in `reduce_into`.** A candidate canonical order extends the 16-accumulator reduction order: row `i` goes to stripe `i mod 16` below `b = n - (n mod 16)` and to stripe 0 from `b` on, each stripe accumulates its bucket's values in index order, and the 16 stripes combine pairwise as in the reduction. With every key equal, this gives exactly the bits of `sum`. The same 16 replicated sub-histograms are a standard way to avoid scatter conflicts, so the order may cost little beyond the memory for 16 copies of the buckets.
+* **Float `add` and `mul` in `scan` and `scan_by`.** A candidate canonical order defines `out[i]` as the reduction order applied to the prefix `x[0..=i]`, so `out[n - 1]` equals `sum(x)`. A kernel can compute it by keeping the 16 stripe accumulators and combining them for each output row, which costs a pairwise tree per row and needs measurement against a sequential scan.
+* **Float element types in `argsort`.** These need a total order that says where NaN and the two zeros sort, which tier 3 decides along with `sort`.
+* **`reverse`, `rotate`, and packed bitmasks** from the tier 2 catalog.
 
 ## Success for plan 4
 
