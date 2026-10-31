@@ -351,6 +351,8 @@ fn kernel_names_are_unique_valid_identifiers() {
             Some(
                 Op::Iota
                 | Op::Fill
+                | Op::Gather
+                | Op::Slice
                 | Op::RandI64
                 | Op::RandF64
                 | Op::Load(_)
@@ -1129,13 +1131,14 @@ fn variant_entry_counts_are_stable() {
     // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`
     // added 46 scalar and 29 auto entries per x86 ISA, and no intrinsics entries. The 70
     // `scan_<op>_<t>` and `scan_by_<op>_<t>` kernels added 70 scalar and 70 auto entries per
-    // x86 ISA.
+    // x86 ISA. The 7 `gather_<t>` kernels added 7 scalar and 7 auto entries per x86 ISA, and
+    // the 7 `slice_<t>` kernels added 7 scalar entries.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [687, 388, 36, 388, 38, 0, 0]);
+    assert_eq!(counts, [701, 395, 36, 395, 38, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [687, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [701, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {
@@ -1342,4 +1345,65 @@ fn scan_last_equals_sum() {
         Scalar::I64(*scan32.as_slice::<i64>().last().unwrap()),
         sum32
     );
+}
+
+#[test]
+fn gather_picks_rows() {
+    let picked = run_arr("gather_i64", &[i64v(&[10, 20, 30]), i64v(&[2, 0, 2])]);
+    assert_eq!(picked.as_slice::<i64>(), &[30, 10, 30]);
+    let empty = run_arr("gather_i64", &[i64v(&[10, 20, 30]), i64v(&[])]);
+    assert_eq!(empty.len(), 0);
+    let flags = run_arr(
+        "gather_bool",
+        &[bools(&[true, false, false]), i64v(&[1, 0, 1, 0])],
+    );
+    assert_eq!(flags.elem(), ScalarType::Bool);
+    assert_eq!(flags.as_bool_bytes(), &[0, 1, 0, 1]);
+    let floats = run_arr("gather_f64", &[f64s(&[1.5, 2.5]), i64v(&[1, 1, 0])]);
+    assert_eq!(floats.as_slice::<f64>(), &[2.5, 2.5, 1.5]);
+}
+
+#[test]
+fn gather_rejects_out_of_range() {
+    let reg = Registry::new();
+    let xs = i64v(&[10, 20, 30]);
+    let high = call(&reg, "gather_i64", &[xs.clone(), i64v(&[0, 3])]).unwrap_err();
+    assert!(high.contains("index 3"), "{high}");
+    let low = call(&reg, "gather_i64", &[xs.clone(), i64v(&[-1, 0])]).unwrap_err();
+    assert!(low.contains("index -1"), "{low}");
+    let last = run_arr("gather_i64", &[xs, i64v(&[2])]);
+    assert_eq!(last.as_slice::<i64>(), &[30]);
+    // Every index is out of range for an empty source.
+    let none = call(&reg, "gather_i64", &[i64v(&[]), i64v(&[0])]).unwrap_err();
+    assert!(none.contains("index 0"), "{none}");
+}
+
+#[test]
+fn slice_is_a_view() {
+    let reg = Registry::new();
+    let x = arr(call(&reg, "iota", &[i64_s(10)]).unwrap());
+    let xv = Value::Array(x.clone());
+    let mid = run_arr("slice_i64", &[xv.clone(), i64_s(2), i64_s(8)]);
+    assert_eq!(mid.as_slice::<i64>(), &[2, 3, 4, 5, 6, 7]);
+    // A view shares the operand's rows.
+    assert_eq!(
+        mid.as_slice::<i64>().as_ptr(),
+        x.as_slice::<i64>()[2..].as_ptr()
+    );
+    let inner = run_arr("slice_i64", &[Value::Array(mid), i64_s(1), i64_s(3)]);
+    assert_eq!(inner.as_slice::<i64>(), &[3, 4]);
+    for at in [0, 10] {
+        let none = run_arr("slice_i64", &[xv.clone(), i64_s(at), i64_s(at)]);
+        assert_eq!(none.len(), 0);
+    }
+}
+
+#[test]
+fn slice_rejects_bad_bounds() {
+    let reg = Registry::new();
+    let xv = i64v(&[1, 2, 3]);
+    for (start, end) in [(2, 1), (0, 4), (-1, 2), (4, 4)] {
+        let e = call(&reg, "slice_i64", &[xv.clone(), i64_s(start), i64_s(end)]).unwrap_err();
+        assert!(e.contains(&format!("{start}..{end}")), "{e}");
+    }
 }

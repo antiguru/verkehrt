@@ -52,7 +52,6 @@ pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
 }
 
 /// Adds the ISA variants of a whole body to its table.
-#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
     #[cfg(target_arch = "x86_64")]
     x86::add_whole::<W>(impls);

@@ -120,7 +120,7 @@ fn run_same_len(args: &[Value], ty: ScalarType) -> Result<Value, String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn add_whole(
+pub(crate) fn add_whole(
     reg: &mut Registry,
     op: Op,
     name: String,

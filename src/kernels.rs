@@ -215,8 +215,6 @@ impl KernelImpl {
     /// The table of a whole body, see `elementwise`. A whole kernel whose body is a loop over
     /// its arguments gets auto variants this way, and one that only forwards to other kernels
     /// stays `scalar_only`.
-    // The tests build one, no registered kernel does yet.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn whole<W: WholeBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         let mut impls = KernelImpl::Whole(scalar_whole::<W>).scalar_only();
         arch::add_whole::<W>(&mut impls);
@@ -378,6 +376,7 @@ impl Registry {
         scalar::reduce::register(&mut reg);
         scalar::select::register(&mut reg);
         scalar::scan::register(&mut reg);
+        scalar::index::register(&mut reg);
         scalar::construct::register(&mut reg);
         scalar::fused::register(&mut reg);
         reg

@@ -53,6 +53,11 @@ pub enum Op {
     Prev,
     Iota,
     Fill,
+    /// The rows of the first operand at the positions of the `i64` second operand.
+    Gather,
+    /// The rows `start..end` of the first operand as a view, with `start` and `end` the
+    /// `i64` scalar operands.
+    Slice,
     RandI64,
     RandF64,
     /// Load a file as an array of the given element type.

@@ -168,6 +168,24 @@ fn case_strategy(def: &KernelDef) -> BoxedStrategy<Case> {
         .boxed()
 }
 
+/// The index operand of a `gather` over `n` rows: the raw rows `start..start + n` mapped into
+/// `0..n`, which is only possible once `n` is known. One case in eight forces one index out
+/// of range, to `n` or to -1, so the error path is compared as well as the value path.
+fn gather_indices(input: &Input, start: usize, n: usize) -> Value {
+    let raw = input.rows.as_slice::<i64>();
+    let raw = &raw[start..start + n];
+    let bound = i64::try_from(n).expect("row count fits in i64");
+    let mut idx: Vec<i64> = raw
+        .iter()
+        .map(|&r| if n == 0 { 0 } else { r.rem_euclid(bound) })
+        .collect();
+    if n > 0 && raw[0].rem_euclid(8) == 0 {
+        let at = usize::try_from(raw[n - 1].unsigned_abs() % u64::try_from(n).unwrap()).unwrap();
+        idx[at] = if raw[n - 1] % 2 == 0 { bound } else { -1 };
+    }
+    Value::Array(Array::from_vec(idx))
+}
+
 /// The arguments for `n` rows, starting at row 0 of each buffer when `aligned`, else at each
 /// input's own offset.
 fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value> {
@@ -191,6 +209,9 @@ fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value>
     (0..def.inputs.len())
         .map(|k| {
             let input = &case.inputs[k];
+            if def.name.starts_with("gather_") && k == 1 {
+                return gather_indices(input, start(input), n);
+            }
             if is_array(k) {
                 return Value::Array(input.rows.slice(start(input), n));
             }

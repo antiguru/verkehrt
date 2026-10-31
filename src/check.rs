@@ -146,6 +146,8 @@ fn builtin(name: &str) -> Option<Builtin> {
         "prev" => (Op::Prev, 2),
         "iota" => (Op::Iota, 1),
         "fill" => (Op::Fill, 2),
+        "gather" => (Op::Gather, 2),
+        "slice" => (Op::Slice, 3),
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),
