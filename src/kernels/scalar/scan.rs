@@ -401,7 +401,10 @@ fn register_int<
     register_scan::<T, ScanXor<false>>(reg, ReduceOp::Xor);
 }
 
-/// Floats have no scan for `add` and `mul`, whose results would depend on the tiling.
+/// Floats have no scan for `add` and `mul`.
+// A sequential scan gives one result whatever the tiling. The gap is that a vectorized float
+// scan needs a canonical association order to give the same bits on every ISA, and the tier 2
+// design defers that order as a surface gap.
 fn register_float<T: Extremes>(reg: &mut Registry) {
     register_scan::<T, ScanExtreme<false>>(reg, ReduceOp::Min);
     register_scan::<T, ScanExtreme<true>>(reg, ReduceOp::Max);

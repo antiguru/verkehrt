@@ -51,8 +51,8 @@ impl<T: Elem> Scanner for SegmentedSum<T> {
 }
 
 /// One tile of `scan_by_add`.
-// SAFETY: the caller guarantees avx512f, avx512bw, and avx512vl. The pointer assumptions are
-// stated at the unsafe block.
+// SAFETY: the caller guarantees avx512f, avx512bw, avx512vl, and avx512vbmi2, the features the
+// `target_feature` attribute enables. The pointer assumptions are stated at the unsafe block.
 #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
 unsafe fn update_avx512<T: Elem>(
     s: &mut SegmentedSum<T>,
