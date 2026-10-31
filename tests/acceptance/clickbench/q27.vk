@@ -21,11 +21,18 @@ let sums = reduce_into(shifted, l, nb, add);
 let groups = where(counts > 1000);
 let n = gather(counts, groups);
 let avg = cast_f64(gather(sums, groups)) / cast_f64(n);
-// `argsort` has no kernel for f64, so the sort key is the average scaled by 2^44 and truncated to
-// i64. The scaling is exact, so the key keeps the order of any two averages that differ by 2^-44
-// or more, and averages below 2^19 do not overflow. A stable sort on the negated key puts the
-// largest first and breaks ties by CounterID.
-let order = argsort(0 - cast_i64(avg * 17592186044416.0));
+// `argsort` has no kernel for f64, so the sort key is built from two integers with two stable sorts.
+// Every average is at least 1 because `len > 0`, so `hi = cast_i64(avg)` is its floor and cannot
+// overflow. The remainder `avg - hi` is exact in f64, and it is a multiple of ulp(avg), which is at
+// least 2^-52 for avg >= 1 and below 2^53. Scaling by 2^52 is exact, so `lo` is an integer in
+// [0, 2^52) that holds the whole fractional part and distinct averages get distinct (hi, lo) pairs
+// in the same order. Sorting by `lo` first and `hi` second, both descending and both stable, orders
+// the groups by average descending and keeps the CounterID order among equal averages.
+let hi = cast_i64(avg);
+let lo = cast_i64((avg - cast_f64(hi)) * 4503599627370496.0);
+let o1 = argsort(0 - lo);
+let o2 = argsort(0 - gather(hi, o1));
+let order = gather(o1, o2);
 let top = slice(order, 0, min(length(order), 25));
 export CounterID = gather(groups, top) + base;
 export l = gather(avg, top);

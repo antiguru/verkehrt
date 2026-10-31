@@ -4,7 +4,7 @@
 
 **Goal:** Add ClickBench q00, q03, q19, q27, q29, q30, q31, q40, and q41 to the acceptance suite, matching DuckDB byte for byte, and time them against corgi and DuckDB.
 
-**Architecture:** Each query is one `.vk` program in `tests/acceptance/clickbench/`, which the acceptance test (`tests/acceptance/main.rs`, `run_suite`) and bench (`benches/acceptance.rs`) discover by directory listing. No library code changes, except possibly one harness output kind.
+**Architecture:** Each query is one `.vk` program in `tests/acceptance/clickbench/`, which the acceptance test (`tests/acceptance/main.rs`, `run_suite`) and bench (`benches/acceptance.rs`) discover by directory listing. The only library change is the column loader's sign flip-back and `_ends` inputs (`src/columns.rs`), plus possibly one harness output kind.
 
 **Tech Stack:** Verkehrt `.vk` programs, the acceptance harness, criterion, corgi's ClickBench bench, DuckDB timings from `prepare.py`.
 

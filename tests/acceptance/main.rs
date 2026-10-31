@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 use verkehrt::value::{Array, Value};
 
-use harness::{format_rows, run_query};
+use verkehrt::columns::CLICKBENCH_SIGNED;
+
+use harness::{format_general, format_rows, run_query};
 
 /// A fresh directory under the cargo target directory, named after the test.
 fn scratch(name: &str) -> PathBuf {
@@ -58,6 +60,14 @@ fn harness_formats_g_like_prepare_py() {
 }
 
 #[test]
+fn harness_rejects_non_finite_g() {
+    for x in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        let err = format_general(x).unwrap_err();
+        assert!(err.contains("general float"), "{err}");
+    }
+}
+
+#[test]
 fn harness_runs_a_synthetic_query() {
     let dir = scratch("synthetic");
     write_u64(&dir, "a.u64", &[5, 6, 7, 8]);
@@ -81,7 +91,7 @@ fn harness_runs_a_synthetic_query() {
             expected.push_str(&format!("{a}\t{g:02x}\n"));
         }
     }
-    assert_eq!(run_query(&dir, &program).unwrap(), expected);
+    assert_eq!(run_query(&dir, &program, &[]).unwrap(), expected);
 }
 
 /// A q07-shaped program: a group-by whose bucket count comes from the data.
@@ -106,13 +116,15 @@ fn harness_empty_filter_gives_empty_output() {
     write_u64(&dir, "a.u64", &[1, 2, 3, 4]);
     let program = dir.join("q.vk");
     fs::write(&program, q07_program(true)).unwrap();
-    assert_eq!(run_query(&dir, &program).unwrap(), "");
+    assert_eq!(run_query(&dir, &program, &[]).unwrap(), "");
     fs::write(&program, q07_program(false)).unwrap();
-    let err = run_query(&dir, &program).unwrap_err();
+    let err = run_query(&dir, &program, &[]).unwrap_err();
     assert!(err.contains("empty array"), "{err}");
 }
 
-fn run_suite(var: &str, queries: &str) {
+/// Runs every program of `queries` against `var`'s directory. `signed` lists the columns that
+/// directory stores with the sign bit flipped.
+fn run_suite(var: &str, queries: &str, signed: &[&str]) {
     let Ok(dir) = std::env::var(var) else {
         eprintln!("skipping {queries}: {var} is not set");
         return;
@@ -134,7 +146,7 @@ fn run_suite(var: &str, queries: &str) {
         let expected = fs::read_to_string(dir.join("expected").join(format!("{name}.txt")))
             .unwrap_or_else(|e| panic!("expected answer of {name}: {e}"));
         ran += 1;
-        match run_query(&dir, &path) {
+        match run_query(&dir, &path, signed) {
             Ok(got) if got == expected => {}
             Ok(got) => failures.push(format!(
                 "{name}: answer differs from DuckDB's, {}",
@@ -166,12 +178,12 @@ fn first_diff(expected: &str, got: &str) -> String {
 
 #[test]
 fn clickbench_matches_duckdb() {
-    run_suite("VERKEHRT_CLICKBENCH", "clickbench");
+    run_suite("VERKEHRT_CLICKBENCH", "clickbench", CLICKBENCH_SIGNED);
 }
 
 #[test]
 fn tpch_matches_duckdb() {
-    run_suite("VERKEHRT_TPCH", "tpch");
+    run_suite("VERKEHRT_TPCH", "tpch", &[]);
 }
 
 /// Prints the plan of every query program, for the measurement report. Run with
@@ -220,7 +232,7 @@ fn harness_flips_signed_columns_back() {
     )
     .unwrap();
     assert_eq!(
-        run_query(&dir, &program).unwrap(),
+        run_query(&dir, &program, CLICKBENCH_SIGNED).unwrap(),
         format!("-1\t1\n5\t2\n{}\t3\n", i64::MIN)
     );
 }
@@ -238,5 +250,65 @@ fn harness_reads_ends_inputs() {
          export l = URL_ends - prev(URL_ends, 0);\n",
     )
     .unwrap();
-    assert_eq!(run_query(&dir, &program).unwrap(), "3\n0\n4\n");
+    assert_eq!(run_query(&dir, &program, &[]).unwrap(), "3\n0\n4\n");
+}
+
+/// Stores a signed column the way `prepare.py` does, with bit 63 flipped.
+fn write_signed(dir: &Path, file: &str, v: &[i64]) {
+    let words: Vec<u64> = v.iter().map(|x| x.cast_unsigned() ^ (1 << 63)).collect();
+    write_u64(dir, file, &words);
+}
+
+/// The real q19 on a column with matches and near misses, since the data has no match.
+#[test]
+fn q19_finds_the_constant_user_id() {
+    const ID: i64 = 435090932899640449;
+    let dir = scratch("q19");
+    write_signed(
+        &dir,
+        "UserID.u64",
+        &[ID, ID - 1, -5, ID, ID + 1, i64::MIN, ID],
+    );
+    let program = PathBuf::from("tests/acceptance/clickbench/q19.vk");
+    assert_eq!(
+        run_query(&dir, &program, CLICKBENCH_SIGNED).unwrap(),
+        format!("{ID}\n{ID}\n{ID}\n")
+    );
+}
+
+/// The real q41 on 10012 one-row groups that pass the filter, plus rows each filter term
+/// excludes. The excluded rows reuse width 10000, so a leak shows as a count of 2.
+#[test]
+fn q41_pages_past_ten_thousand_groups() {
+    const HASH: i64 = 2868770270353813622;
+    let dir = scratch("q41");
+    // One row per column value: (CounterID, EventDate, IsRefresh, DontCountHits, URLHash, width).
+    let mut rows: Vec<(i64, i64, i64, i64, i64, i64)> = (0..10012)
+        .map(|i| (62, 15887 + i % 31, 0, 0, HASH, i))
+        .collect();
+    rows.extend([
+        (63, 15900, 0, 0, HASH, 10000),
+        (62, 15886, 0, 0, HASH, 10000),
+        (62, 15918, 0, 0, HASH, 10000),
+        (62, 15900, 1, 0, HASH, 10000),
+        (62, 15900, 0, 1, HASH, 10000),
+        (62, 15900, 0, 0, HASH + 1, 10000),
+    ]);
+    let col = |f: fn(&(i64, i64, i64, i64, i64, i64)) -> i64| -> Vec<u64> {
+        rows.iter().map(|r| f(r).cast_unsigned()).collect()
+    };
+    write_u64(&dir, "CounterID.u64", &col(|r| r.0));
+    write_u64(&dir, "EventDate.u64", &col(|r| r.1));
+    write_u64(&dir, "IsRefresh.u64", &col(|r| r.2));
+    write_u64(&dir, "DontCountHits.u64", &col(|r| r.3));
+    let hashes: Vec<i64> = rows.iter().map(|r| r.4).collect();
+    write_signed(&dir, "URLHash.u64", &hashes);
+    write_u64(&dir, "WindowClientWidth.u64", &col(|r| r.5));
+    write_u64(&dir, "WindowClientHeight.u64", &vec![7; rows.len()]);
+    let program = PathBuf::from("tests/acceptance/clickbench/q41.vk");
+    let expected: String = (10000..10010).map(|w| format!("{w}\t7\t1\n")).collect();
+    assert_eq!(
+        run_query(&dir, &program, CLICKBENCH_SIGNED).unwrap(),
+        expected
+    );
 }

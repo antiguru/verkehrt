@@ -60,7 +60,8 @@ fn programs(suite: &str) -> Vec<PathBuf> {
     v
 }
 
-fn suite(c: &mut Criterion, var: &str, suite: &str) {
+/// `signed` lists the suite's columns stored with the sign bit flipped.
+fn suite(c: &mut Criterion, var: &str, suite: &str, signed: &[&str]) {
     let Some(dir) = std::env::var_os(var).map(PathBuf::from) else {
         eprintln!("acceptance/{suite}: skipped, {var} is not set");
         return;
@@ -75,7 +76,7 @@ fn suite(c: &mut Criterion, var: &str, suite: &str) {
         g.measurement_time(Duration::from_secs(3));
         for (label, interp) in &interps {
             let prepared = interp.prepare(&program).unwrap();
-            let inputs = load_inputs(&dir, &prepared, CLICKBENCH_SIGNED).unwrap();
+            let inputs = load_inputs(&dir, &prepared, signed).unwrap();
             let named: Vec<(&str, Value)> = inputs
                 .iter()
                 .map(|(n, v)| (n.as_str(), v.clone()))
@@ -91,8 +92,8 @@ fn suite(c: &mut Criterion, var: &str, suite: &str) {
 }
 
 fn acceptance(c: &mut Criterion) {
-    suite(c, "VERKEHRT_CLICKBENCH", "clickbench");
-    suite(c, "VERKEHRT_TPCH", "tpch");
+    suite(c, "VERKEHRT_CLICKBENCH", "clickbench", CLICKBENCH_SIGNED);
+    suite(c, "VERKEHRT_TPCH", "tpch", &[]);
 }
 
 criterion_group!(benches, acceptance);

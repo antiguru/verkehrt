@@ -4,8 +4,13 @@ input UserID: i64[];
 
 // The ids spread over all of i64 and sum to about 2^80, so a sum of them wraps. Each id splits at
 // 2^32 into x = hi * 2^32 + lo exactly. `div_const` truncates toward zero, so lo is the remainder
-// with x's sign. Neither part's sum leaves i64 for fewer than 2^31 rows, and the parts combine in f64.
+// with x's sign. Neither part's sum leaves i64 for fewer than 2^31 rows. The sum of lo may exceed
+// what f64 holds exactly, so its multiples of 2^32 move into the sum of hi as a carry first. The
+// two sums are then combined in f64 with one rounding before the divide.
 let hi = div_const(UserID, 4294967296);
 let lo = UserID - (hi * 4294967296);
+let sum_lo = sum(lo);
+let carry = div_const(sum_lo, 4294967296);
+let rem = sum_lo - (carry * 4294967296);
 let n = cast_f64(length(UserID));
-export a = ((cast_f64(sum(hi)) * 4294967296.0) + cast_f64(sum(lo))) / n;
+export a = ((cast_f64(sum(hi) + carry) * 4294967296.0) + cast_f64(rem)) / n;

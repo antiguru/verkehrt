@@ -115,8 +115,8 @@ This document did not measure how much of the `argsort` time is the second pass 
 No ClickBench query of the nine was left unwritten, so no query needs a missing primitive to match DuckDB.
 These caveats stand on the committed programs:
 
-* q27 sorts on `cast_i64(avg * 2^44)` because `argsort` has no `f64` kernel. Averages closer than 2^-44 could tie where DuckDB's doubles would not, and averages of 2^19 or more would overflow. Neither occurs on this data, and an `f64` `argsort` would remove the caveat.
-* q19 and q41 return an empty answer on this data, so their programs match DuckDB trivially on output. Their timings cover the full computation (the filter in q19, the filter and three sorts in q41), and the task that wrote q41 checked a temporary non-empty variant against a Python recount.
+* q27 has no `f64` `argsort`, so it sorts on an exact integer key: the integer part of the average and its fractional part scaled by 2^52, with two stable sorts. The key is exact for every average of at least 1, so the missing `f64` kernel costs q27 a second sort and no correctness. The q27 timings and profile above were measured with the earlier single-sort key and have not been re-measured.
+* q19 and q41 return an empty answer on this data, so their programs match DuckDB trivially on output. Their timings cover the full computation (the filter in q19, the filter and three sorts in q41), and synthetic-data tests in `tests/acceptance/main.rs` run the committed programs on non-empty inputs.
 * The aggregates of the empty-input case are unguarded, as in the tier 2 round (see its "Known limit: no NULL").
 * The column loader gained two things that the data format needs and no language feature: it flips back the sign bit of the columns `prepare.py` stores flipped, and it reads `X_ends` inputs for string columns' row ends. q27, q30 and q31 depend on `_ends`.
 
