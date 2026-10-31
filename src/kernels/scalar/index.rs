@@ -6,7 +6,9 @@ use crate::kernels::scalar::construct::{add_whole, i64_arg, width};
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::scan::ScanOp;
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Variant, WholeBody};
+use crate::kernels::{
+    InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, Registry, WholeBody,
+};
 use crate::ops::Op;
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
@@ -214,7 +216,7 @@ impl<T: Elem, O: ScanOp<T>> WholeBody for ReduceInto<T, O> {
 
 /// The entries of `gather` on rows of storage type `T`: the scalar and auto entries of its
 /// body, plus intrinsics entries where they exist.
-fn gather_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
+fn gather_impls<T: Elem, const BOOL: bool>() -> KernelTable {
     let mut impls = KernelImpl::whole::<Gather<T, BOOL>>();
     crate::kernels::arch::add_gather::<T, BOOL>(&mut impls);
     impls

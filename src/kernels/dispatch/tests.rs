@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernels::scalar::construct::splitmix64;
-use crate::kernels::{Backend, Isa, KernelClass, Reducer};
+use crate::kernels::{Backend, FeatureSet, Isa, KernelClass, Reducer};
 use crate::value::ScalarType;
 
 /// Finite, distinct values so that equal bytes mean equal results.
@@ -42,7 +42,7 @@ fn tile_args(args: &[Value], start: usize, end: usize) -> Vec<Arg> {
 fn assert_tiled_matches_whole(name: &str, args: &[Value], n: usize) {
     let reg = Registry::new();
     let id = reg.by_name(name).unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let ValueType::Array(out_ty) = reg.get(id).output else {
         panic!("{name} is not an array kernel");
     };
@@ -82,7 +82,7 @@ fn elementwise_tile_checks_its_arguments() {
     let reg = Registry::new();
     let other = Registry::new();
     let id = reg.by_name("add_f64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let x = Arg::Rows(f64s(4, 1.0));
     let splat = Arg::Splat(Scalar::F64(1.0));
     // A u64 buffer gives the destination the alignment of an f64.
@@ -140,7 +140,7 @@ fn elementwise_tile_checks_its_arguments() {
 fn call_checks_lengths() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let err = dispatch
         .call(
             &reg,
@@ -155,7 +155,7 @@ fn call_checks_lengths() {
 fn call_checks_arity_and_kinds() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let one = [Value::Array(f64s(2, 1.0))];
     let err = dispatch.call(&reg, id, &one).unwrap_err();
     assert!(err.contains("expected 2 arguments"), "{err}");
@@ -169,7 +169,7 @@ fn resolve_falls_back_to_scalar() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64_s").unwrap();
     // A `_s` kernel has no ISA variants, so every request lands on scalar.
-    let dispatch = reg.resolve(Isa::X86_64V3, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::X86_64V3, Backend::Intrinsics, FeatureSet::EMPTY);
     assert_eq!(dispatch.variant_used(id), Variant::SCALAR);
 }
 
@@ -296,7 +296,7 @@ fn same_array(a: &Array, b: &Array) -> bool {
 fn tiled_reductions_match_whole() {
     let reg = Registry::new();
     let mut checked = 0;
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     for (id, def) in reg
         .iter()
         .filter(|(_, d)| d.class == KernelClass::Reduction)
@@ -328,7 +328,7 @@ fn tiled_reductions_match_whole() {
 fn scanner_tiles_match_whole_call() {
     let reg = Registry::new();
     let id = reg.by_name("prev_i64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let args = random_args(&reg.get(id).inputs, 37, None);
     let whole = dispatch.call(&reg, id, &args).unwrap();
     let Value::Array(whole) = whole else {
@@ -358,7 +358,7 @@ fn scanner_tiles_match_whole_call() {
 #[test]
 fn scanner_rejects_a_kernel_of_another_class() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let id = reg.by_name("add_f64").unwrap();
     let err = dispatch.scanner(&reg, id).err().expect("not a scan");
     assert!(err.contains("not a scan"), "{err}");
@@ -368,7 +368,7 @@ fn scanner_rejects_a_kernel_of_another_class() {
 fn tiled_selections_match_whole() {
     let reg = Registry::new();
     let mut checked = 0;
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     for (id, def) in reg
         .iter()
         .filter(|(_, d)| d.class == KernelClass::Selection)
@@ -402,7 +402,7 @@ fn call_rejects_another_registry() {
     let reg = Registry::new();
     let other = Registry::new();
     let id = reg.by_name("reduce_add_f64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let args = [Value::Array(f64s(4, 1.0))];
     assert!(dispatch.call(&reg, id, &args).is_ok());
     let err = dispatch.call(&other, id, &args).unwrap_err();
@@ -414,7 +414,7 @@ fn call_rejects_another_registry() {
 fn reduce_whole_and_tiled(name: &str, args: &[Value]) -> Scalar {
     let reg = Registry::new();
     let id = reg.by_name(name).unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let run = |tiles: &[(usize, usize)]| {
         let mut reducer: Box<dyn Reducer> = dispatch.reducer(&reg, id).unwrap();
         for &(start, end) in tiles {
@@ -487,7 +487,7 @@ fn tiled_narrow_integer_sums_widen_across_tiles() {
 fn select_tile_rejects_a_builder_of_another_type() {
     let reg = Registry::new();
     let id = reg.by_name("compress_f64").unwrap();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let args = [Arg::Rows(f64s(4, 1.0)), Arg::Rows(bools(4))];
     let mut wrong = ArrayBuilder::new(ScalarType::I64);
     let err = dispatch

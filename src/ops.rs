@@ -1,3 +1,5 @@
+use crate::kernels::FeatureSet;
+use crate::kernels::features;
 use crate::value::ScalarType;
 
 /// Associative folds that `Op::Reduce`, `Op::Scan`, `Op::ScanBy`, and `Op::ReduceInto` can apply.
@@ -92,31 +94,13 @@ impl Isa {
 
     /// The best instruction set this CPU supports.
     pub fn detect() -> Isa {
-        [Isa::X86_64V4, Isa::X86_64V3, Isa::Neon]
-            .into_iter()
-            .find(|isa| isa.is_available())
-            .unwrap_or(Isa::Scalar)
+        features::best_level(FeatureSet::detect())
     }
 
-    /// Whether this CPU can run code compiled for the instruction set.
+    /// Whether this CPU supports every feature of the instruction set's level, see
+    /// `features::runnable`.
     pub fn is_available(self) -> bool {
-        match self {
-            Isa::Scalar => true,
-            #[cfg(target_arch = "x86_64")]
-            Isa::X86_64V3 => std::arch::is_x86_feature_detected!("avx2"),
-            #[cfg(target_arch = "x86_64")]
-            Isa::X86_64V4 => {
-                std::arch::is_x86_feature_detected!("avx512f")
-                    && std::arch::is_x86_feature_detected!("avx512bw")
-                    && std::arch::is_x86_feature_detected!("avx512vl")
-                    && std::arch::is_x86_feature_detected!("avx512vbmi2")
-            }
-            #[cfg(target_arch = "aarch64")]
-            Isa::Neon => true,
-            // The remaining variants belong to other architectures.
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
+        features::runnable(self, FeatureSet::EMPTY, FeatureSet::detect())
     }
 
     pub fn from_name(name: &str) -> Option<Isa> {

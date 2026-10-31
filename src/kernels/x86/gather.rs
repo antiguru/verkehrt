@@ -1,5 +1,5 @@
-//! The intrinsics backend of `gather` on 64-bit rows, hand-written for AVX2 and AVX-512 beside
-//! the auto entries.
+//! The intrinsics backend of `gather` on 64-bit rows, hand-written for the x86-64-v3 level
+//! (AVX2) and the x86-64-v4 level (AVX-512) beside the auto entries.
 //!
 //! Each entry checks its arguments and every index with the scalar body's `Gather::checked`,
 //! so it fails exactly when the scalar entry fails. After that check every index addresses a
@@ -14,8 +14,8 @@ use crate::kernels::WholeFn;
 use crate::kernels::scalar::index::Gather;
 use crate::value::{Array, Elem, Value};
 
-/// The AVX2 and the AVX-512 entry of `gather` on rows of storage type `T`, whose semantic type
-/// is `tag::<T, BOOL>()`, `None` where it has none.
+/// The x86-64-v3 and the x86-64-v4 entry of `gather` on rows of storage type `T`, whose
+/// semantic type is `tag::<T, BOOL>()`, `None` where it has none.
 pub(crate) fn gather_entries<T: Elem, const BOOL: bool>() -> (Option<WholeFn>, Option<WholeFn>) {
     if size_of::<T>() == 8 && !BOOL {
         (Some(avx2::<T>), Some(avx512::<T>))
@@ -42,9 +42,12 @@ fn rest(xs: &[u64], idx: &[i64], out: &mut [u64]) {
 }
 
 /// The AVX2 entry of `gather` on 64-bit rows of type `T`.
-// SAFETY: the caller guarantees avx2 (`Dispatch` installs the entry only after
-// `Isa::is_available` detected it). The pointer assumptions are stated at the unsafe block.
-#[target_feature(enable = "avx2")]
+// SAFETY: the caller guarantees the features of the x86-64-v3 level (`Dispatch` calls the
+// entry only after `resolve` found `features::runnable` true for it through `select`). The
+// pointer assumptions are stated at the unsafe block.
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 unsafe fn avx2<T: Elem>(args: &[Value]) -> Result<Value, String> {
     let (xs, idx) = checked::<T>(args)?;
     Array::build_bytes(idx.len(), T::TYPE, |out| {
@@ -69,10 +72,12 @@ unsafe fn avx2<T: Elem>(args: &[Value]) -> Result<Value, String> {
 }
 
 /// The AVX-512 entry of `gather` on 64-bit rows of type `T`.
-// SAFETY: the caller guarantees avx512f, avx512bw, avx512vl, and avx512vbmi2 (`Dispatch`
-// installs the entry only after `Isa::is_available` detected them). The pointer assumptions
-// are stated at the unsafe block.
-#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+// SAFETY: the caller guarantees the features of the x86-64-v4 level (`Dispatch` calls the
+// entry only after `resolve` found `features::runnable` true for it through `select`). The
+// pointer assumptions are stated at the unsafe block.
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+)]
 unsafe fn avx512<T: Elem>(args: &[Value]) -> Result<Value, String> {
     let (xs, idx) = checked::<T>(args)?;
     Array::build_bytes(idx.len(), T::TYPE, |out| {

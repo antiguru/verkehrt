@@ -11,7 +11,7 @@ use crate::kernels::arch;
 use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
-    InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
+    InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, Reducer, ReductionBody, Registry,
 };
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, Value, ValueType};
@@ -636,7 +636,7 @@ fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
     reg: &mut Registry,
     op: Op,
     name: String,
-    extend: impl FnOnce(&mut [Option<KernelImpl>]),
+    extend: impl FnOnce(&mut KernelTable),
 ) {
     let mut impls = KernelImpl::reduction::<Fold<T, A>>();
     extend(&mut impls);

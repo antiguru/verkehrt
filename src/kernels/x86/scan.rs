@@ -1,4 +1,4 @@
-//! The AVX-512 intrinsics entry of `scan_by_add` on 64-bit integer rows, a segmented
+//! The x86-64-v4 intrinsics entry of `scan_by_add` on 64-bit integer rows, a segmented
 //! log-step prefix sum.
 //!
 //! Each vector of eight rows takes three steps. Step `d` (1, 2, 4) adds the lane `d` below to
@@ -16,7 +16,7 @@ use crate::kernels::scalar::scan::tile_rows;
 use crate::kernels::{ScanFn, Scanner};
 use crate::value::{Arg, Elem, ScalarType};
 
-/// The AVX-512 entry of `scan_by_add` on rows of storage type `T`, `None` where it has none.
+/// The x86-64-v4 entry of `scan_by_add` on rows of storage type `T`, `None` where it has none.
 pub(crate) fn scan_by_add_entry<T: Elem>() -> Option<ScanFn> {
     matches!(T::TYPE, ScalarType::I64 | ScalarType::U64).then_some(scan_by_add::<T> as ScanFn)
 }
@@ -31,9 +31,9 @@ struct SegmentedSum<T> {
 }
 
 /// The scanner constructor.
-// SAFETY: the caller guarantees avx512f, avx512bw, avx512vl, and avx512vbmi2 (`Dispatch`
-// installs the entry only after `Isa::is_available` detected them), and every `update` of the
-// returned scanner relies on that.
+// SAFETY: the caller guarantees the features of the x86-64-v4 level (`Dispatch` calls the
+// entry only after `resolve` found `features::runnable` true for it through `select`), and
+// every `update` of the returned scanner relies on that.
 unsafe fn scan_by_add<T: Elem>() -> Box<dyn Scanner> {
     Box::new(SegmentedSum::<T> {
         acc: None,
@@ -44,16 +44,18 @@ unsafe fn scan_by_add<T: Elem>() -> Box<dyn Scanner> {
 impl<T: Elem> Scanner for SegmentedSum<T> {
     fn update(&mut self, args: &[Arg], out: &mut [u8]) -> Result<(), String> {
         // SAFETY: a `SegmentedSum` comes only from the unsafe `scan_by_add`, whose caller
-        // guarantees the AVX-512 features. `update_avx512` checks the arguments and makes
-        // no pointer assumptions beyond those its own unsafe block states.
+        // guarantees the features of the x86-64-v4 level. `update_avx512` checks the arguments
+        // and makes no pointer assumptions beyond those its own unsafe block states.
         unsafe { update_avx512::<T>(self, args, out) }
     }
 }
 
 /// One tile of `scan_by_add`.
-// SAFETY: the caller guarantees avx512f, avx512bw, avx512vl, and avx512vbmi2, the features the
+// SAFETY: the caller guarantees the features of the x86-64-v4 level, the features the
 // `target_feature` attribute enables. The pointer assumptions are stated at the unsafe block.
-#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+)]
 unsafe fn update_avx512<T: Elem>(
     s: &mut SegmentedSum<T>,
     args: &[Arg],

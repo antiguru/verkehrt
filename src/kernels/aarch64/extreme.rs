@@ -287,8 +287,9 @@ impl<T: FloatLanes, const MAX: bool> Reducer for NeonExtreme<T, MAX> {
     fn update(&mut self, args: &[Arg]) -> Result<(), String> {
         let xs = rows::<T>(args)?;
         // SAFETY: a `NeonExtreme` is only obtained through the unsafe `extreme`, whose caller
-        // guarantees NEON (`Dispatch` calls it only after `resolve` checked `is_available`).
-        // `feed` reads only the rows of the checked slice `xs`.
+        // guarantees NEON (`Dispatch` calls it only after `resolve` checked
+        // `features::runnable` through `select`). `feed` reads only the rows of the checked
+        // slice `xs`.
         unsafe { self.feed(xs) }
     }
 
@@ -449,7 +450,8 @@ impl<T: FloatLanes, const MAX: bool> Reducer for NeonArgExtreme<T, MAX> {
         let xs = rows::<T>(args)?;
         // SAFETY: a `NeonArgExtreme` is only obtained through the unsafe `arg_extreme`, whose
         // caller guarantees NEON (`Dispatch` calls it only after `resolve` checked
-        // `is_available`). `feed` reads only the rows of the checked slice `xs`.
+        // `features::runnable` through `select`). `feed` reads only the rows of the checked
+        // slice `xs`.
         unsafe { self.feed(xs) };
         Ok(())
     }

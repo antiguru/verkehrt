@@ -8,7 +8,8 @@ use proptest::sample::Index;
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
 
 use verkehrt::kernels::{
-    Backend, Dispatch, InputSpec, Isa, KernelClass, KernelDef, KernelId, Registry, Variant,
+    Backend, Dispatch, FeatureSet, InputSpec, Isa, KernelClass, KernelDef, KernelId, Registry,
+    Variant,
 };
 use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -454,11 +455,11 @@ fn check_case(
 /// Runs the property for every kernel with an entry in exactly this variant's slot, so a
 /// kernel that falls back to another entry is not tested twice. Returns the kernel count.
 fn check_variant(reg: &Registry, variant: Variant) -> usize {
-    let dispatch = reg.resolve(variant.isa, variant.backend);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(variant.isa, variant.backend, FeatureSet::EMPTY);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let mut checked = 0;
     for (id, def) in reg.iter() {
-        if def.impls[variant.index()].is_none() {
+        if def.impls.get(variant).is_none() {
             continue;
         }
         assert_eq!(dispatch.variant_used(id), variant, "{}", def.name);
@@ -550,7 +551,7 @@ fn every_array_kernel_has_auto_variants() {
                 isa,
                 backend: Backend::Auto,
             };
-            let has = def.impls[variant.index()].is_some();
+            let has = def.impls.get(variant).is_some();
             // Variants are compiled for x86-64 only.
             let expected = wanted && has_auto_entries(isa) && cfg!(target_arch = "x86_64");
             assert_eq!(has, expected, "{} {variant}", def.name);
@@ -573,8 +574,8 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             isa,
             backend: Backend::Intrinsics,
         };
-        let by_auto = reg.resolve(isa, Backend::Auto);
-        let by_intrinsics = reg.resolve(isa, Backend::Intrinsics);
+        let by_auto = reg.resolve(isa, Backend::Auto, FeatureSet::EMPTY);
+        let by_intrinsics = reg.resolve(isa, Backend::Intrinsics, FeatureSet::EMPTY);
         for name in ["add_f64", "reduce_add_f64", "dot_f64"] {
             let id = reg.by_name(name).unwrap();
             assert_eq!(by_auto.variant_used(id), auto, "{name}");
@@ -590,7 +591,11 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             }
         }
         // AVX2 has no byte compress, so `u8` and bool fall back to auto there.
-        let bytes = if isa == Isa::X86_64V3 { auto } else { intrinsics };
+        let bytes = if isa == Isa::X86_64V3 {
+            auto
+        } else {
+            intrinsics
+        };
         let expected = selections
             .iter()
             .map(|n| (n.as_str(), intrinsics))
@@ -608,7 +613,7 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
 #[test]
 fn neon_auto_resolves_to_scalar() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Auto, FeatureSet::EMPTY);
     for name in ["add_f64", "reduce_add_f64", "dot_f64", "compress_f64"] {
         let id = reg.by_name(name).unwrap();
         assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
@@ -622,7 +627,7 @@ fn neon_auto_resolves_to_scalar() {
 #[test]
 fn neon_intrinsics_resolve_for_selections() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
     let intrinsics = Variant {
         isa: Isa::Neon,
         backend: Backend::Intrinsics,
@@ -651,7 +656,7 @@ fn neon_intrinsics_resolve_for_selections() {
 #[test]
 fn neon_intrinsics_resolve_for_float_extremes() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
     for t in ["f64", "f32"] {
         for op in ["reduce_min", "reduce_max", "argmin", "argmax"] {
             let name = format!("{op}_{t}");
@@ -689,8 +694,8 @@ fn float_array(values: &[f64], f32s: bool) -> Value {
 #[cfg(target_arch = "aarch64")]
 fn neon_extreme(op: &str, values: &[f64]) -> [Result<Value, String>; 2] {
     let reg = Registry::new();
-    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     [false, true].map(|f32s| {
         let name = format!("{op}_{}", if f32s { "f32" } else { "f64" });
         let id = reg.by_name(&name).unwrap();
@@ -913,8 +918,8 @@ fn neon_extremes_of_empty_rows_fail_like_scalar() {
 #[test]
 fn neon_extreme_reducers_reject_bad_arguments() {
     let reg = Registry::new();
-    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let ints = Array::from_vec(vec![1i32, 2, 3]);
     let floats = Array::from_vec(vec![1.0f64, 2.0]);
     let bad: [Vec<Arg>; 4] = [

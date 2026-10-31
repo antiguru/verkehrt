@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::check::{Globals, TStmt, VarId, check};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
-use crate::kernels::{Backend, Dispatch, Isa, Registry};
+use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
 use crate::lower::{LStmt, Mode, lower};
 use crate::plan::{Planner, render};
 use crate::syntax::parse;
@@ -73,7 +73,7 @@ impl Interpreter {
         };
         let reg = Registry::new();
         let planner = Planner::new(&reg);
-        let dispatch = reg.resolve(isa, opts.backend);
+        let dispatch = reg.resolve(isa, opts.backend, FeatureSet::EMPTY);
         Ok(Interpreter {
             opts,
             dispatch,

@@ -1,7 +1,8 @@
 //! AVX-512 selection entries. The keep mask of a vector comes from a compare into a mask
 //! register (`filter`) or from a byte test of the bool mask (`compress`, `where`), and
 //! `vpcompress` packs the kept lanes to the front of the vector, which is then stored whole.
-//! `u8` and bool use the VBMI2 byte compress.
+//! Everything here is compiled for the x86-64-v4 level alone. `u8` and bool need the VBMI2
+//! byte compress, so they live in `avx512_vbmi2`, and no row type here has a byte `Lanes`.
 
 use std::arch::x86_64::*;
 
@@ -12,7 +13,7 @@ use crate::value::Elem;
 /// A row type that AVX-512 selects `LANES` rows at a time.
 ///
 /// The methods are `unsafe` because they read and write through raw pointers and need the
-/// CPU features of `Isa::X86_64V4`. Each states the memory its pointers must cover.
+/// CPU features of the `Isa::X86_64V4` level. Each states the memory its pointers must cover.
 pub(super) trait Lanes: Elem {
     const LANES: usize;
     /// A vector of `LANES` rows.
@@ -40,7 +41,7 @@ pub(super) trait Compare: Lanes + PartialOrd {
 }
 
 // SAFETY (all `Lanes` and `Compare` methods below): each method is compiled for, and needs,
-// the AVX-512 features of `Isa::X86_64V4`, which its callers in this file have because they
+// the features of the `Isa::X86_64V4` level, which its callers in this file have because they
 // are compiled for the same features. Pointer requirements are the trait's, and the unsafe
 // blocks rely on exactly those.
 macro_rules! lanes_64 {
@@ -52,7 +53,7 @@ macro_rules! lanes_64 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn keep(mask: *const u8) -> u64 {
                 // SAFETY: the caller guarantees 8 readable bytes at `mask`, and `loadl` reads
                 // 8 bytes with no alignment requirement.
@@ -63,7 +64,7 @@ macro_rules! lanes_64 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn load(src: *const $t) -> __m512i {
                 // SAFETY: the caller guarantees 8 readable rows (64 bytes) at `src`, and
                 // `loadu` has no alignment requirement.
@@ -73,7 +74,7 @@ macro_rules! lanes_64 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn compress(v: __m512i, keep: u64, dst: *mut $t) -> usize {
                 let k = keep.to_le_bytes()[0];
                 // The compress moves bits, so float rows keep their exact bits, NaN payloads
@@ -97,7 +98,7 @@ macro_rules! lanes_32 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn keep(mask: *const u8) -> u64 {
                 // SAFETY: the caller guarantees 16 readable bytes at `mask`, and `loadu` has
                 // no alignment requirement.
@@ -108,7 +109,7 @@ macro_rules! lanes_32 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn load(src: *const $t) -> __m512i {
                 // SAFETY: the caller guarantees 16 readable rows (64 bytes) at `src`, and
                 // `loadu` has no alignment requirement.
@@ -118,7 +119,7 @@ macro_rules! lanes_32 {
             // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
             unsafe fn compress(v: __m512i, keep: u64, dst: *mut $t) -> usize {
                 let b = keep.to_le_bytes();
                 let k = u16::from_le_bytes([b[0], b[1]]);
@@ -139,51 +140,13 @@ lanes_64!(u64);
 lanes_32!(f32);
 lanes_32!(i32);
 
-impl Lanes for u8 {
-    const LANES: usize = 64;
-    type Vector = __m512i;
-
-    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
-    // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
-    #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
-    unsafe fn keep(mask: *const u8) -> u64 {
-        // SAFETY: the caller guarantees 64 readable bytes at `mask`, and `loadu` has no
-        // alignment requirement.
-        let v = unsafe { _mm512_loadu_si512(mask.cast()) };
-        _mm512_test_epi8_mask(v, v)
-    }
-
-    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
-    // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
-    #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
-    unsafe fn load(src: *const u8) -> __m512i {
-        // SAFETY: the caller guarantees 64 readable bytes at `src`, and `loadu` has no
-        // alignment requirement.
-        unsafe { _mm512_loadu_si512(src.cast()) }
-    }
-
-    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
-    // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
-    #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
-    unsafe fn compress(v: __m512i, keep: u64, dst: *mut u8) -> usize {
-        // The VBMI2 byte compress. Bool rows are 0 or 1 in the input, and the compress only
-        // moves them.
-        let packed = _mm512_maskz_compress_epi8(keep, v);
-        // SAFETY: the caller guarantees 64 writable bytes at `dst`, and `storeu` has no
-        // alignment requirement.
-        unsafe { _mm512_storeu_si512(dst.cast(), packed) };
-        ones(keep)
-    }
-}
-
 impl Compare for f64 {
     // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
     unsafe fn compare<const C: usize>(v: __m512i, c: f64) -> u64 {
         let (v, c) = (_mm512_castsi512_pd(v), _mm512_set1_pd(c));
         // Ordered predicates are false on NaN like `<`, and `!=` is the unordered NEQ, which
@@ -204,7 +167,9 @@ impl Compare for f32 {
     // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
     unsafe fn compare<const C: usize>(v: __m512i, c: f32) -> u64 {
         let (v, c) = (_mm512_castsi512_ps(v), _mm512_set1_ps(c));
         // The predicates of the f64 case.
@@ -224,7 +189,9 @@ impl Compare for i64 {
     // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
     unsafe fn compare<const C: usize>(v: __m512i, c: i64) -> u64 {
         let c = _mm512_set1_epi64(c);
         // Signed compares. `NLE` is `>` and `NLT` is `>=`.
@@ -244,7 +211,9 @@ impl Compare for u64 {
     // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
     unsafe fn compare<const C: usize>(v: __m512i, c: u64) -> u64 {
         let c = _mm512_set1_epi64(c.cast_signed());
         // Unsigned compares (`vpcmpuq`), with the predicates of `i64`.
@@ -264,7 +233,9 @@ impl Compare for i32 {
     // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
     unsafe fn compare<const C: usize>(v: __m512i, c: i32) -> u64 {
         let c = _mm512_set1_epi32(c);
         // The signed predicates of the i64 case.
@@ -282,7 +253,9 @@ impl Compare for i32 {
 
 /// The `i64` rows `first + j` of lanes `j`, see `selection_loops`.
 #[inline]
-#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+)]
 fn first_indices(first: i64) -> __m512i {
     _mm512_add_epi64(
         _mm512_set1_epi64(first),
@@ -292,9 +265,14 @@ fn first_indices(first: i64) -> __m512i {
 
 /// `idx` advanced by the 8 `i64` lanes of a vector, see `selection_loops`.
 #[inline]
-#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+)]
 fn next_indices(idx: __m512i) -> __m512i {
     _mm512_add_epi64(idx, _mm512_set1_epi64(8))
 }
 
-selection_loops!("AVX-512", "avx512f,avx512bw,avx512vl,avx512vbmi2");
+selection_loops!(
+    "AVX-512",
+    "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+);
