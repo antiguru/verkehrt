@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from, splat_arg};
 use crate::kernels::scalar::reduce::{Accum, LANES, Reducible};
 use crate::kernels::scalar::select::{append_chunks, predicated};
@@ -258,7 +259,7 @@ fn add_fused(
     vars: &[&str],
     impls: [Option<KernelImpl>; Variant::COUNT],
 ) {
-    let w = u64::try_from(ty.width()).expect("width fits in u64");
+    let w = width(ty);
     reg.add(KernelDef {
         name,
         class,
@@ -372,6 +373,7 @@ pub(crate) fn register(reg: &mut Registry) {
     register_type::<f64>(reg);
     register_type::<f32>(reg);
     register_type::<i64>(reg);
+    register_type::<u64>(reg);
     register_type::<i32>(reg);
 }
 

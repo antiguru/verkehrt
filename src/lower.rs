@@ -17,8 +17,11 @@ use crate::kernels::Registry;
 use crate::ops::Op;
 use crate::value::{Array, Scalar, ScalarType, Value, ValueType};
 
+pub(crate) mod higher;
 #[cfg(test)]
 mod tests;
+
+use higher::{Build, Higher};
 
 /// How top-level lets are treated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +96,10 @@ pub struct Lowered {
 pub fn op_name(op: Op) -> String {
     match op {
         Op::Reduce(r) => format!("reduce_{}", format!("{r:?}").to_lowercase()),
+        Op::Scan(r) => format!("scan_{}", format!("{r:?}").to_lowercase()),
+        Op::ScanBy(r) => format!("scan_by_{}", format!("{r:?}").to_lowercase()),
+        Op::ReduceInto(r) => format!("reduce_into_{}", format!("{r:?}").to_lowercase()),
+        Op::DivConst => "div_const".into(),
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         other => format!("{other:?}").to_lowercase(),
@@ -151,6 +158,15 @@ fn same_const(a: &Value, b: &Value) -> bool {
         (Value::Str(x), Value::Str(y)) => x == y,
         _ => false,
     }
+}
+
+/// The type error for `op` having no kernel on operands of types `tys`.
+pub(crate) fn no_kernel(op: Op, tys: &[ValueType], span: Span) -> Error {
+    let shown: Vec<String> = tys.iter().map(ToString::to_string).collect();
+    Error::ty(
+        format!("no kernel for '{}' on {}", op_name(op), shown.join(", ")),
+        span,
+    )
 }
 
 fn is_array(ty: ValueType) -> bool {
@@ -249,14 +265,24 @@ impl Lowerer<'_> {
         }
     }
 
-    /// Builds an operation over lowered operands. Scalars next to an array operand are
-    /// broadcast, then the kernel lookup on the lifted types decides the result type.
+    /// Builds an operation over lowered operands. The kernel lookup on the operands as given
+    /// decides which scalars next to an array operand are broadcast: those at `Either`
+    /// positions, while a `Scalar` input keeps its scalar. When no kernel accepts the operands
+    /// as given, every scalar next to an array is broadcast and the lookup runs on the lifted
+    /// types, unless the op has a kernel with a `Scalar` input. Then the error reports the
+    /// operands as given, because the lifted types would not be the ones the user wrote.
+    /// The rule is `Registry::lookup_lifted`, which the checker applies to lambda bodies too.
     fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let lift = args.iter().any(|a| is_array(a.ty));
-        let args: Vec<Term> = args
+        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+        let lifted = self
+            .reg
+            .lookup_lifted(op, &tys)
+            .map_err(|tys| no_kernel(op, &tys, span))?;
+        let args = args
             .into_iter()
-            .map(|a| match (lift, a.ty) {
-                (true, ValueType::Scalar(t)) => {
+            .zip(lifted.bcast)
+            .map(|(a, bcast)| match a.ty {
+                ValueType::Scalar(t) if bcast => {
                     let operand_span = a.span;
                     Term {
                         kind: TermKind::Bcast(Box::new(a)),
@@ -267,18 +293,18 @@ impl Lowerer<'_> {
                 _ => a,
             })
             .collect();
-        self.op_exact(op, args, span)
+        Ok(Term {
+            kind: TermKind::Op(op, args),
+            ty: self.reg.get(lifted.kernel).output,
+            span,
+        })
     }
 
     /// Builds an operation over operands exactly as given, without broadcasting.
     fn op_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
         let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
         let Some(id) = self.reg.lookup(op, &tys) else {
-            let shown: Vec<String> = tys.iter().map(ToString::to_string).collect();
-            return Err(Error::ty(
-                format!("no kernel for '{}' on {}", op_name(op), shown.join(", ")),
-                span,
-            ));
+            return Err(no_kernel(op, &tys, span));
         };
         Ok(Term {
             kind: TermKind::Op(op, args),
@@ -314,25 +340,15 @@ impl Lowerer<'_> {
             }
             TExprKind::Map(x, lam) => {
                 let x = self.expr(x)?;
-                self.lift(lam, vec![x], span)
+                self.lift(Higher::Map, lam, vec![x], span)
             }
             TExprKind::ZipMap(x, y, lam) => {
                 let (x, y) = (self.expr(x)?, self.expr(y)?);
-                // Each parameter reads its array through a check against the other's
-                // length, so a mismatch fails even when the body ignores a parameter. The
-                // checks are arrays to the planner, so fused kernels still match through them.
-                let (lx, ly) = (
-                    self.op(Op::Length, vec![x.clone()], span)?,
-                    self.op(Op::Length, vec![y.clone()], span)?,
-                );
-                let x = self.op_exact(Op::SameLen, vec![x, ly], span)?;
-                let y = self.op_exact(Op::SameLen, vec![y, lx], span)?;
-                self.lift(lam, vec![x, y], span)
+                self.lift(Higher::ZipMap, lam, vec![x, y], span)
             }
             TExprKind::Filter(x, lam) => {
                 let x = self.expr(x)?;
-                let mask = self.lift(lam, vec![x.clone()], span)?;
-                self.op(Op::Compress, vec![x, mask], span)
+                self.lift(Higher::Filter, lam, vec![x], span)
             }
             TExprKind::If(c, t, f) => {
                 let (c, t, f) = (self.expr(c)?, self.expr(t)?, self.expr(f)?);
@@ -425,19 +441,36 @@ impl Lowerer<'_> {
         }
     }
 
-    /// Applies a lambda once to whole arrays. A body that does not depend on its parameters
-    /// stays scalar, so it is filled to the length of the first array.
-    fn lift(&mut self, lam: &TLambda, xs: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let first = xs[0].clone();
+    /// Applies a lambda once to whole arrays, as the higher-order call `kind` on the arrays
+    /// `xs` does.
+    fn lift(
+        &mut self,
+        kind: Higher,
+        lam: &TLambda,
+        xs: Vec<Term>,
+        span: Span,
+    ) -> Result<Term, Error> {
+        let params = higher::params(self, kind, xs.clone(), span)?;
         self.lambda_depth += 1;
-        let body = self.with_bindings(&lam.params, xs, |lw| lw.expr(&lam.body));
+        let body = self.with_bindings(&lam.params, params.clone(), |lw| lw.expr(&lam.body));
         self.lambda_depth -= 1;
-        let body = body?;
-        if is_array(body.ty) {
-            return Ok(body);
-        }
-        let len = self.op(Op::Length, vec![first], span)?;
-        self.op(Op::Fill, vec![len, body], span)
+        higher::result(self, kind, &xs, &params, body?, span)
+    }
+}
+
+impl Build for Lowerer<'_> {
+    type V = Term;
+
+    fn ty(v: &Term) -> ValueType {
+        v.ty
+    }
+
+    fn apply(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
+        self.op(op, args, span)
+    }
+
+    fn apply_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
+        self.op_exact(op, args, span)
     }
 }
 

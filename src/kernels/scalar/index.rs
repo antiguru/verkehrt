@@ -1,0 +1,311 @@
+//! Scalar reference `gather`, `slice`, `histogram`, `argsort`, and `reduce_into` kernels.
+
+use std::marker::PhantomData;
+
+use crate::kernels::scalar::construct::{add_whole, i64_arg, width};
+use crate::kernels::scalar::elementwise::arity_error;
+use crate::kernels::scalar::reduce::array_arg;
+use crate::kernels::scalar::scan::ScanOp;
+use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Variant, WholeBody};
+use crate::ops::Op;
+use crate::value::{Array, Elem, ScalarType, Value, ValueType};
+
+/// The rows of `a` as storage type `T`, which is `u8` for a bool array. The caller has checked
+/// the element type of `a` against `T`.
+#[inline(always)]
+fn rows_of<T: Elem>(a: &Array) -> &[T] {
+    if a.elem() == ScalarType::Bool {
+        bytemuck::cast_slice(a.as_bool_bytes())
+    } else {
+        a.as_slice::<T>()
+    }
+}
+
+/// The body of `gather` on rows of storage type `T`. `BOOL` selects element type `Bool`,
+/// whose storage type is `u8`, over `T::TYPE`.
+pub(crate) struct Gather<T, const BOOL: bool>(PhantomData<fn() -> T>);
+
+impl<T: Elem, const BOOL: bool> Gather<T, BOOL> {
+    const ELEM: ScalarType = if BOOL { ScalarType::Bool } else { T::TYPE };
+
+    #[inline(always)]
+    fn rows(a: &Array) -> &[T] {
+        rows_of(a)
+    }
+
+    /// The source rows and the indices of a `gather` call, every index in `0..rows.len()`.
+    /// Fails with the error of `run` on bad arguments or an index out of range.
+    #[inline(always)]
+    pub(crate) fn checked(args: &[Value]) -> Result<(&[T], &[i64]), String> {
+        let [xs, idx] = args else {
+            return Err(arity_error(2, args.len()));
+        };
+        let xs = Self::rows(array_arg(xs, Self::ELEM)?);
+        let idx = array_arg(idx, ScalarType::I64)?.as_slice::<i64>();
+        let n = u64::try_from(xs.len()).expect("length fits in u64");
+        if let Some(i) = first_out_of_range(idx, n) {
+            return Err(format!("gather index {i} out of range for length {n}"));
+        }
+        Ok((xs, idx))
+    }
+}
+
+impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
+    #[inline(always)]
+    fn run(args: &[Value]) -> Result<Value, String> {
+        let (xs, idx) = Self::checked(args)?;
+        // The clamp is a no-op after the check in `checked`, and keeps the loop free of an
+        // exit. The source is only empty when `idx` is, so the loop body never runs on it.
+        let last = xs.len().saturating_sub(1);
+        Array::build_bytes(idx.len(), Self::ELEM, |out| {
+            let out: &mut [T] = bytemuck::cast_slice_mut(out);
+            for (o, &i) in out.iter_mut().zip(idx) {
+                let i = usize::try_from(i.cast_unsigned()).unwrap_or(last).min(last);
+                *o = xs[i];
+            }
+            Ok(())
+        })
+        .map(Value::Array)
+    }
+}
+
+/// `slice` on arrays of type `ty`, a view of rows `start..end`.
+fn run_slice(args: &[Value], ty: ScalarType) -> Result<Value, String> {
+    let [xs, start, end] = args else {
+        return Err(arity_error(3, args.len()));
+    };
+    let xs = array_arg(xs, ty)?;
+    let (start, end) = (i64_arg(start)?, i64_arg(end)?);
+    let len = xs.len();
+    let bounds = usize::try_from(start)
+        .ok()
+        .zip(usize::try_from(end).ok())
+        .filter(|&(s, e)| s <= e && e <= len);
+    let Some((s, e)) = bounds else {
+        return Err(format!(
+            "slice {start}..{end} out of range for length {len}"
+        ));
+    };
+    Ok(Value::Array(xs.slice(s, e - s)))
+}
+
+/// The first value of `vals` outside `0..bound`, if any.
+///
+/// The callers check every value before they write any row, so their error does not depend
+/// on the order of the rows. Negative values wrap to values above `bound` as unsigned, so one
+/// comparison covers both ends. The fold has no early exit, so it vectorizes, and the search
+/// for the offender runs only on the error path.
+#[inline(always)]
+fn first_out_of_range(vals: &[i64], bound: u64) -> Option<i64> {
+    let bad = vals
+        .iter()
+        .fold(false, |b, &v| b | (v.cast_unsigned() >= bound));
+    if bad {
+        vals.iter().copied().find(|&v| v.cast_unsigned() >= bound)
+    } else {
+        None
+    }
+}
+
+/// The bucket count `n` and the keys, checked to lie in `0..n`. A negative `n` and a key outside
+/// `0..n` are errors.
+#[inline(always)]
+fn checked_keys<'a>(keys: &'a Value, n: &Value) -> Result<(&'a [i64], usize), String> {
+    let keys = array_arg(keys, ScalarType::I64)?.as_slice::<i64>();
+    let buckets = i64_arg(n)?;
+    let Ok(count) = usize::try_from(buckets) else {
+        return Err(format!("negative bucket count {buckets}"));
+    };
+    if let Some(k) = first_out_of_range(keys, buckets.cast_unsigned()) {
+        return Err(format!("bucket key {k} out of range for {buckets} buckets"));
+    }
+    Ok((keys, count))
+}
+
+/// The bucket of a key that `checked_keys` accepted. The clamp is a no-op after the check and
+/// keeps the loop free of an exit, a bucket exists whenever a key does.
+#[inline(always)]
+fn bucket(k: i64, count: usize) -> usize {
+    usize::try_from(k.cast_unsigned())
+        .unwrap_or(0)
+        .min(count.saturating_sub(1))
+}
+
+/// The body of `histogram`, the number of occurrences of each key in `0..n`.
+pub(crate) struct Histogram;
+
+impl WholeBody for Histogram {
+    #[inline(always)]
+    fn run(args: &[Value]) -> Result<Value, String> {
+        let [keys, n] = args else {
+            return Err(arity_error(2, args.len()));
+        };
+        let (keys, count) = checked_keys(keys, n)?;
+        Array::try_build::<i64>(count, |out| {
+            for &k in keys {
+                let b = &mut out[bucket(k, count)];
+                *b = b.wrapping_add(1);
+            }
+        })
+        .map(Value::Array)
+    }
+}
+
+/// The body of `argsort` on rows of type `T`, the positions of the rows in stable ascending
+/// order.
+pub(crate) struct ArgSort<T>(PhantomData<fn() -> T>);
+
+impl<T: Elem + Ord> WholeBody for ArgSort<T> {
+    #[inline(always)]
+    fn run(args: &[Value]) -> Result<Value, String> {
+        let [xs] = args else {
+            return Err(arity_error(1, args.len()));
+        };
+        let xs = array_arg(xs, T::TYPE)?.as_slice::<T>();
+        Array::try_build::<i64>(xs.len(), |out| {
+            for (o, i) in out.iter_mut().zip(0..) {
+                *o = i;
+            }
+            // Ties break on the position, so the unstable sort is stable, and it needs no
+            // buffer beyond the output.
+            out.sort_unstable_by_key(|&i| {
+                let row = usize::try_from(i.cast_unsigned()).unwrap_or(0);
+                (xs[row], i)
+            });
+        })
+        .map(Value::Array)
+    }
+}
+
+/// The body of `reduce_into`, the fold `O` of the values per key in `0..n`. Rows of storage type
+/// `T` fold into buckets of `O::Out`, and a bucket without rows holds `O::identity`.
+pub(crate) struct ReduceInto<T, O>(PhantomData<fn() -> (T, O)>);
+
+impl<T: Elem, O: ScanOp<T>> WholeBody for ReduceInto<T, O> {
+    #[inline(always)]
+    fn run(args: &[Value]) -> Result<Value, String> {
+        let [keys, vals, n] = args else {
+            return Err(arity_error(3, args.len()));
+        };
+        let vals = rows_of::<T>(array_arg(vals, O::IN_TYPE)?);
+        let (keys, count) = checked_keys(keys, n)?;
+        if keys.len() != vals.len() {
+            return Err(format!(
+                "length mismatch: {} keys for {} values",
+                keys.len(),
+                vals.len()
+            ));
+        }
+        Array::build_bytes(count, O::OUT_TYPE, |out| {
+            let out: &mut [O::Out] = bytemuck::cast_slice_mut(out);
+            out.fill(O::identity());
+            for (&k, &x) in keys.iter().zip(vals) {
+                let b = &mut out[bucket(k, count)];
+                *b = O::step(*b, x);
+            }
+            Ok(())
+        })
+        .map(Value::Array)
+    }
+}
+
+// The kernel closures must coerce to bare function pointers, so their type arguments are
+// constant expressions, never locals.
+
+/// The entries of `gather` on rows of storage type `T`: the scalar and auto entries of its
+/// body, plus intrinsics entries where they exist.
+fn gather_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
+    let mut impls = KernelImpl::whole::<Gather<T, BOOL>>();
+    crate::kernels::arch::add_gather::<T, BOOL>(&mut impls);
+    impls
+}
+
+macro_rules! gather {
+    ($reg:expr, $t:ty, $bool:literal, $ty:expr) => {
+        $reg.add(KernelDef {
+            name: format!("gather_{}", $ty.name()),
+            class: KernelClass::Whole,
+            op: Some(Op::Gather),
+            inputs: vec![InputSpec::Array($ty), InputSpec::Array(ScalarType::I64)],
+            output: ValueType::Array($ty),
+            // One index and one source row read, one row written.
+            cost: 8 + 2 * width($ty),
+            commutative: false,
+            pattern: None,
+            impls: gather_impls::<$t, $bool>(),
+        })
+    };
+}
+
+macro_rules! slice {
+    ($reg:expr, $ty:expr) => {
+        add_whole(
+            $reg,
+            Op::Slice,
+            format!("slice_{}", $ty.name()),
+            vec![
+                InputSpec::Array($ty),
+                InputSpec::Scalar(ScalarType::I64),
+                InputSpec::Scalar(ScalarType::I64),
+            ],
+            ValueType::Array($ty),
+            // A view copies nothing.
+            0,
+            |args| run_slice(args, $ty),
+        )
+    };
+}
+
+macro_rules! argsort {
+    ($reg:expr, $t:ty, $ty:expr) => {
+        $reg.add(KernelDef {
+            name: format!("argsort_{}", $ty.name()),
+            class: KernelClass::Whole,
+            op: Some(Op::ArgSort),
+            inputs: vec![InputSpec::Array($ty)],
+            output: ValueType::Array(ScalarType::I64),
+            // One row read and one position written, ignoring the comparisons.
+            cost: width($ty) + 8,
+            commutative: false,
+            pattern: None,
+            impls: KernelImpl::whole::<ArgSort<$t>>(),
+        })
+    };
+}
+
+pub(crate) fn register(reg: &mut Registry) {
+    argsort!(reg, i64, ScalarType::I64);
+    argsort!(reg, u64, ScalarType::U64);
+    argsort!(reg, i32, ScalarType::I32);
+    argsort!(reg, u8, ScalarType::U8);
+    reg.add(KernelDef {
+        name: "histogram".into(),
+        class: KernelClass::Whole,
+        op: Some(Op::Histogram),
+        inputs: vec![
+            InputSpec::Array(ScalarType::I64),
+            InputSpec::Scalar(ScalarType::I64),
+        ],
+        output: ValueType::Array(ScalarType::I64),
+        // One key read, and one bucket read and written.
+        cost: 8 + 2 * 8,
+        commutative: false,
+        pattern: None,
+        impls: KernelImpl::whole::<Histogram>(),
+    });
+    gather!(reg, f64, false, ScalarType::F64);
+    gather!(reg, f32, false, ScalarType::F32);
+    gather!(reg, i64, false, ScalarType::I64);
+    gather!(reg, u64, false, ScalarType::U64);
+    gather!(reg, i32, false, ScalarType::I32);
+    gather!(reg, u8, false, ScalarType::U8);
+    // Bool arrays are stored as `u8`.
+    gather!(reg, u8, true, ScalarType::Bool);
+    slice!(reg, ScalarType::F64);
+    slice!(reg, ScalarType::F32);
+    slice!(reg, ScalarType::I64);
+    slice!(reg, ScalarType::U64);
+    slice!(reg, ScalarType::I32);
+    slice!(reg, ScalarType::U8);
+    slice!(reg, ScalarType::Bool);
+}

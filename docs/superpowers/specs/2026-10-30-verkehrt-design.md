@@ -162,7 +162,7 @@ Reductions widen their result: `sum` and `reduce(x, add)` over `i8`, `i16`, `i32
 * Float `min` and `max` follow IEEE 754-2019 `minimum` and `maximum`: a NaN operand produces NaN, and `-0.0` is less than `+0.0`. `argmin` and `argmax` return the index of the first NaN if any element is NaN, otherwise the first index of the extreme value (my call). x86 `vminpd` does not have these semantics, so kernels need extra compare and blend instructions, and the catalog records that cost.
 * Bit-identity applies to every non-NaN result. A NaN result must be NaN in every variant, but sign and payload may differ, because x86 and ARM produce different default NaNs (my call).
 * Out-of-bounds gather indices are a runtime error. The bounds check is a vector compare and reduce, which is cheap relative to the gather.
-* Casts follow Rust `as` semantics: float to integer truncates toward zero and saturates, NaN becomes 0, and integer to narrower integer wraps. x86 conversion instructions return the "integer indefinite" value instead, so x86 cast kernels need compare and blend fixups, and the catalog records that cost. AVX2 has no `i64` to `f64` conversion in either direction (`vcvtqq2pd` and `vcvttpd2qq` are AVX-512DQ), which makes those casts a documented strain case (my call).
+* Casts follow Rust `as` semantics: float to integer truncates toward zero and saturates, NaN becomes 0, and integer to narrower integer wraps. x86 conversion instructions return the "integer indefinite" value instead, so x86 cast kernels need compare and blend fixups, and the catalog records that cost. AVX2 has no `i64` to `f64` conversion in either direction (`vcvtqq2pd` and `vcvttpd2qq` are AVX-512DQ), which makes those casts a documented strain case (my call). The crate's AVX-512 feature set has no `avx512dq` either, so the `auto` entries cannot emit those instructions, and the assembly of the bench binary shows a scalar conversion per row for `i64` to `f64`, `f64` to `i64`, and `f64` to `u64` on both x86 ISAs (strain cases, `docs/measurements/2026-10-31-tier2/kernel-and-acceptance-results.txt`).
 * Float `reduce(x, mul)` uses the same canonical order as summation, with accumulators starting at `1.0`.
 * `reduce` on an empty array returns the identity for `add`, `mul`, `and`, `or`, and `xor`. `min`, `max`, `argmin`, and `argmax` on an empty array are runtime errors (my call).
 * Indices and counts are `i64`: `where`, `argmin`, `argmax`, `count`, and `length` return `i64`, and `gather` takes `i64[]`.
@@ -172,7 +172,7 @@ Reductions widen their result: `sum` and `reduce(x, add)` over `i8`, `i16`, `i32
 
 ## Scope of the first version
 
-The first version implements kernels for `f64`, `f32`, `i64`, `i32`, `u8`, and `bool`. The other scalar types type-check, but every primitive on them is rejected for lack of a kernel until kernels exist.
+The first version implements kernels for `f64`, `f32`, `i64`, `u64`, `i32`, `u8`, and `bool`, where `u64` came with tier 2. The other scalar types type-check, but every primitive on them is rejected for lack of a kernel until kernels exist.
 The scalar, AVX2, and AVX-512 variants gate the first version. NEON kernels are part of the first version but come as the last batch and do not gate it.
 
 ## Extension: byte strings
@@ -213,7 +213,7 @@ Later tiers extend the primitive set, and each entry records where the model str
 | Sum | `reduce(add)` | `vaddpd`/`vpaddq`, multiple accumulators | `fadd`/`add` on `v` registers | Canonical float order above. Memory-bound at large sizes. |
 | Dot product | fused kernel for `sum(?x * ?y)` | `vmulpd`, `vaddpd` | `fmul`, `fadd` | No FMA (see semantics decisions). Unfused, this is two passes and a temporary array, 2x the memory traffic by the cost model and about 2.5x counting read-for-ownership of the temporary. The first test of pattern-based fusion. |
 | Sum of squares | fused kernel for `sum(?x * ?x)` | `vmulpd`, `vaddpd` | `fmul`, `fadd` | Matches `dot` with `x = y` too, but reads `x` once instead of twice. Tests that the cost model prefers the narrower kernel. |
-| i64 multiply | `*` on `i64[]` | `vpmullq` (AVX-512DQ), AVX2 needs three `vpmuludq` plus shifts and adds | NEON has no `.2D` multiply, same emulation | Strain case: a tier 1 primitive with no native instruction on two of three ISAs. |
+| i64 multiply | `*` on `i64[]` | `vpmullq` needs AVX-512DQ, which the crate's AVX-512 feature set does not enable, so the `auto` entries of both ISAs run three `vpmuludq` plus shifts and adds (`ymm` and `zmm` in the assembly) | NEON has no `.2D` multiply, same emulation | Strain case: a tier 1 primitive with no native instruction on two of three ISAs. |
 | Count matching | fused kernel for `count(?x > ?c)` and other comparisons | compare into mask, then `kmov` plus scalar `popcnt` (AVX-512) or mask add (AVX2) | `fcmgt`, `sub` of mask | Avoids materializing the `bool[]`. |
 | Filter by comparison | fused kernel for `compress(?x, ?x > ?c)` | compare plus `vpcompressq` | compare plus `tbl` | The common case of `filter(x, \|v\| v > c)` after lambda inlining. |
 | Min, max | `reduce(min/max)` | `vminpd` plus NaN and signed-zero fixup, `vpminsq` (AVX-512) | `fmin`, `smin` | `vpminsq` for i64 does not exist in AVX2, so it needs compare plus blend. NaN semantics are under semantics decisions. |
@@ -226,17 +226,37 @@ Later tiers extend the primitive set, and each entry records where the model str
 
 ### Tier 2: scans, gathers, and grouping
 
-| Problem | Primitives needed | Notes |
-|---|---|---|
-| Prefix sum | `scan(x, add)` | In-register log-step shifts plus a carry. Float scan order must be canonical like reductions. |
-| Running max | `scan(x, max)` | Same structure as prefix sum. |
-| Segmented scan | `scan_by(x, flags, op)` | Basis for group-by without hashing. |
-| Gather | `gather(xs, idx)` | `vpgatherqq` is slow on many x86 cores, which is a measured strain case. NEON has no gather. |
-| Scatter, histogram | `scatter`, `histogram(idx, n)` | Index conflicts need `vpconflictd` (AVX-512) or replicated sub-histograms. |
-| Reverse, rotate | `reverse`, `rotate` | Permutes plus memory order. |
-| Group-by aggregate on sorted keys | `scan_by`, `compress` | Run-boundary detection by comparing neighbours. |
-| Division by constant | `div_const(x, c)` | Multiply-high plus shift, the integer division alternative. |
-| Packed bitmasks | `bool[]` as bits | Compare against byte masks on each ISA. |
+Plan 4 implemented the rows below, and `docs/measurements/2026-10-31-tier2.md` has the numbers behind every verdict.
+"Strain case" marks a kernel that is a scalar loop on that ISA after measurement, which the anti-goals allow only with a catalog entry.
+The aarch64 column names the NEON situation where it is known, such as `gather` having no instruction, and otherwise says the kernel runs its scalar entry, which the baseline build compiles for NEON. The NEON measurements follow from the M5 session.
+
+| Problem | Primitives | x86-64 | aarch64 | Notes |
+|---|---|---|---|---|
+| Prefix sum, running max | `scan(x, op)` | Scalar loop on AVX2 and AVX-512, for integers and for floats with `min` and `max` (strain case). | Scalar entry | Integer types with every integer `reduce` operator, and floats with `min` and `max`. The in-register log-step prototype gained 3% at 10M rows, and the scan is memory-bound, so it has no intrinsics. |
+| Segmented scan | `scan_by(x, starts, op)` | AVX-512: segmented log-step, with the start flags in a mask register (`vptestmb`, `valignq`, masked `vpaddq`), `add` on `i64` and `u64` only. AVX2: scalar loop (strain case). | Scalar entry | 0.81 of scalar on AVX-512. AVX2 needs `vpermq` plus a blend and `vperm2i128` for the lane shifts and ran at the scalar loop's speed. The other folds and the 32-bit and 8-bit types are scalar loops on both ISAs, because they were not prototyped. |
+| Previous element | `prev(x, fill)` | A `memcpy` plus the fill row, vectorized by libc | Same | Not an intrinsics candidate. |
+| Gather | `gather(xs, idx)` | `vpgatherqq` on `ymm` (AVX2) and `zmm` (AVX-512) for 64-bit rows, after a vectorized bounds pass. 32-bit, `u8`, and bool rows keep the `auto` entry, whose row loop is scalar behind the vectorized bounds pass (strain case, although `vpgatherdd` and `vpgatherdq` exist, and they were not prototyped). | No gather instruction (strain case, scalar entry). | 0.80 and 0.83 of scalar, within 1.04x of the native gather loop. Slower than the scalar loop on mid-sized sources: 1.05x and 1.18x for a 512 KB source in a standalone prototype. |
+| Histogram | `histogram(keys, n)` | Vectorized bounds pass, scalar bucket loop (strain case). | Scalar entry | `vpconflictq` and 8 replicated sub-histograms with gather and scatter were prototyped and lost by 1.5x to 1.9x on uniform keys. 1.72x of native, with a single-pass bounds check as the known improvement. |
+| Bucketed reduction | `reduce_into(keys, vals, n, op)` | Vectorized bounds pass, scalar bucket loop (strain case). | Scalar entry | 1.94x of native, with the same single-pass improvement. `histogram` is `reduce_into` with a fill of 1, and the planner does not yet cover that form with `histogram`. |
+| Division by constant | `div_const(x, c)` | `ymm` or `zmm` shifts and sign fix, with a scalar `mul` per lane for the 64-bit multiply-high (strain case on `i64` and `u64`). | Scalar entry | Neither AVX2 nor AVX-512 has a 64-bit multiply-high. `i64` runs at 0.65 of scalar and 0.85 of the native loop, and `u64` runs at the scalar entry's speed. |
+| Sort | `argsort(x)` | Scalar sort, stable through an index tiebreak, with only the index initialization compiled for the ISA (strain case). | Scalar entry | 0.10 GB/s at 10M rows. Tier 3 replaces it with sorting networks or a radix sort built from `histogram` and `scatter`. |
+| Bitwise | `and`, `or`, `xor`, `not` on `i64`, `u64`, `i32`, `u8` | `ymm` and `zmm` loops | Scalar entry | Measured at 10M rows on `i64`: `and` and `xor` ran at the bandwidth of `add` (17.29 and 17.54 GB/s against 17.44), `not` ran at 0.67 of `add`'s bandwidth with one input array against two, and `or` was not benched. `or` is inferred to match `and` and `xor`, because its body has the same shape. `xor` also covers `bool`, and the integer `reduce`, `scan`, `scan_by`, and `reduce_into` take `and`, `or`, and `xor`. |
+| Slice | `slice(x, start, end)` | A view, no kernel | Same | Invalid bounds are a runtime error. |
+| Group-by on sorted keys | `scan_by`, `prev`, `compress` | Run starts from `prev` and a compare, `scan_by`, then `compress` on the run ends | Same | No primitive of its own, and `tests/programs/group_sorted.vk` shows it. |
+| `u64` compare and cast | `<`, `<=`, `>`, `>=`, `cast_u64_*`, `cast_*_u64` | AVX2 has no unsigned 64-bit compare, so it flips the sign bit of both operands and uses the signed compare. AVX-512 has `vpcmpuq` (AVX-512F). Neither ISA's `auto` entries use a native `u64` and `f64` conversion: `vcvtuqq2pd` and `vcvttpd2uqq` need AVX-512DQ, which the crate's AVX-512 feature set does not enable. The assembly shows `u64` to `f64` vectorized on both ISAs by a magic-constant split (`ymm` and `zmm`), and `f64` to `u64` as a scalar conversion per row on both (strain case, `vcvttsd2usi` in its scalar form on AVX-512). | Scalar entry | The compare and cast timings were not measured, and the assembly verdicts are in `docs/measurements/2026-10-31-tier2/kernel-and-acceptance-results.txt`. |
+
+Not implemented: `scatter`, which tier 3 needs for radix sort.
+
+#### Surface gaps
+
+A primitive should accept every operator and element type that has an ISA-independent result, so these holes are listed in one place and the tier 2 design's "Deferred: surface gaps" section has the candidate designs.
+
+* Float `add` and `mul` in `scan`, `scan_by`, and `reduce_into`. They need a canonical order that every ISA computes, and today they are rejected with the "no kernel" type error.
+* Float element types in `argsort`, which need a total order for NaN and the two zeros.
+* The `bool` element type in `argsort`. It has a defined total order, so a kernel would be well defined, and plan 4 left it out for scope.
+* `reverse`, `rotate`, and packed bitmasks (`bool[]` as bits).
+* The `histogram` pattern for `reduce_into` with a fill of 1, which the planner does not cover with `histogram` yet. Covering it needs a constant relation in the egglog prelude.
+* `neg` and `abs` on unsigned types. They have no kernels by design, like `u8`, because they are registered only for signed types (a wrapping `neg` for unsigned types is one added kernel if wanted).
 
 ### Tier 3: sorting and joins
 
@@ -266,6 +286,7 @@ Later tiers extend the primitive set, and each entry records where the model str
 * Small arrays, where dispatch dominates. Measure the crossover length per primitive.
 * Long chains of elementwise operations, where unfused passes multiply memory traffic.
 * Nested arrays and ragged data.
+* Tier 2 kernels that are scalar loops on a supported ISA after measurement: `histogram` and `reduce_into` bucket loops, `div_const` on 64-bit types, `scan` on integers and on floats with `min` and `max`, `scan_by` on AVX2 (and every fold but `add` on both x86 ISAs), `argsort`, `gather` on 32-bit, `u8`, and bool rows on x86 and every `gather` on NEON, and the `i64` to `f64`, `f64` to `i64`, and `f64` to `u64` casts on x86. The tier 2 catalog gives the measurement behind each.
 
 ## Observability
 

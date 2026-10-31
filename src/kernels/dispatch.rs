@@ -8,7 +8,9 @@
 use std::sync::Arc;
 
 use crate::kernels::scalar::elementwise::arity_error;
-use crate::kernels::{InputSpec, KernelDef, KernelId, KernelImpl, Reducer, Registry, Variant};
+use crate::kernels::{
+    InputSpec, KernelDef, KernelId, KernelImpl, Reducer, Registry, Scanner, Variant,
+};
 use crate::value::{Arg, Array, ArrayBuilder, Scalar, Value, ValueType};
 
 #[cfg(test)]
@@ -47,6 +49,7 @@ impl Dispatch {
     /// Runs a kernel over whole arguments. It checks the arity and argument kinds against
     /// the kernel's inputs and unifies array lengths first. Then an elementwise kernel gets
     /// its output allocated and is called once, a reduction is updated once with all rows
+    /// (never when there are none), a scan is updated once with all rows into its output array
     /// (never when there are none), a selection is called once with base 0, and a whole
     /// kernel is called as is. Fails when `reg` is not the registry this dispatch was resolved
     /// from, or when kernels were added to it since.
@@ -55,7 +58,9 @@ impl Dispatch {
         let def = reg.get(id);
         match self.entry(id) {
             // Whole kernels check their own arguments.
-            KernelImpl::Whole(f) => f(args),
+            // SAFETY: resolve installs an entry only for an ISA whose is_available()
+            // returned true.
+            KernelImpl::Whole(f) => unsafe { f(args) },
             KernelImpl::Elementwise(f) => {
                 let (call_args, rows) = prepare(def, args)?;
                 match def.output {
@@ -96,6 +101,23 @@ impl Dispatch {
                 }
                 reducer.finish().map(Value::Scalar)
             }
+            KernelImpl::Scan(make) => {
+                let (call_args, rows) = prepare(def, args)?;
+                let n = rows.ok_or("a scan needs an array operand")?;
+                let ValueType::Array(t) = def.output else {
+                    return Err("a scan must produce an array".into());
+                };
+                // SAFETY: resolve installs an entry only for an ISA whose is_available()
+                // returned true.
+                let mut scanner = unsafe { make() };
+                Array::build_bytes(n, t, |out| {
+                    if n > 0 {
+                        scanner.update(&call_args, out)?;
+                    }
+                    Ok(())
+                })
+                .map(Value::Array)
+            }
             KernelImpl::Selection(f) => {
                 let (call_args, _) = prepare(def, args)?;
                 let ValueType::Array(t) = def.output else {
@@ -130,6 +152,18 @@ impl Dispatch {
             // returned true.
             KernelImpl::Reduction(make) => Ok(unsafe { make() }),
             _ => Err(format!("{} is not a reduction", reg.get(id).name)),
+        }
+    }
+
+    /// A new state of scan `id`, to be fed tile by tile under the contract of `Scanner`. Fails
+    /// for another registry or a kernel that is not a scan.
+    pub fn scanner(&self, reg: &Registry, id: KernelId) -> Result<Box<dyn Scanner>, String> {
+        self.check_registry(reg)?;
+        match self.entry(id) {
+            // SAFETY: resolve installs an entry only for an ISA whose is_available()
+            // returned true.
+            KernelImpl::Scan(make) => Ok(unsafe { make() }),
+            _ => Err(format!("{} is not a scan", reg.get(id).name)),
         }
     }
 

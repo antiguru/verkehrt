@@ -8,6 +8,7 @@
 use std::marker::PhantomData;
 
 use crate::kernels::arch;
+use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
     InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
@@ -196,7 +197,7 @@ macro_rules! impl_ordered_float {
     )*};
 }
 
-impl_ordered_int!(i64, i32, u8);
+impl_ordered_int!(i64, i32, u8, u64);
 impl_ordered_float!(f64, f32);
 
 /// The running state of one reduction over rows of `T`, behind the reducers below.
@@ -372,7 +373,7 @@ macro_rules! impl_int_accum {
     )*};
 }
 
-impl_int_accum!(i64 => i64, i32 => i64, u8 => u64);
+impl_int_accum!(i64 => i64, i32 => i64, u8 => u64, u64 => u64);
 
 /// `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true). An empty array is an error.
 pub struct Extreme<T, const MAX: bool> {
@@ -512,6 +513,48 @@ impl_bool_accum!(BoolCount, 0, i64, I64, |a, x| *a += usize::from(x), |s| {
     i64::try_from(s).map_err(|e| e.to_string())
 });
 
+/// Bitwise `and` fold of integers, with all ones as the identity.
+pub struct BitAndFold<T>(T);
+
+/// Bitwise `or` fold of integers, with 0 as the identity.
+pub struct BitOrFold<T>(T);
+
+/// Bitwise `xor` fold of integers, with 0 as the identity.
+pub struct BitXorFold<T>(T);
+
+macro_rules! impl_bit_fold {
+    ($name:ident, $t:ty, $init:expr, |$a:ident, $x:ident| $step:expr) => {
+        impl Accum<$t> for $name<$t> {
+            type Out = $t;
+            fn new() -> Self {
+                $name($init)
+            }
+            #[inline(always)]
+            fn feed(&mut self, n: usize, f: impl Fn(usize) -> $t) -> Result<(), String> {
+                for i in 0..n {
+                    let $x = f(i);
+                    let $a = &mut self.0;
+                    $step;
+                }
+                Ok(())
+            }
+            fn finish(self) -> Result<$t, String> {
+                Ok(self.0)
+            }
+        }
+    };
+}
+
+macro_rules! impl_bit_folds {
+    ($($t:ty),*) => {$(
+        impl_bit_fold!(BitAndFold, $t, !0, |a, x| *a &= x);
+        impl_bit_fold!(BitOrFold, $t, 0, |a, x| *a |= x);
+        impl_bit_fold!(BitXorFold, $t, 0, |a, x| *a ^= x);
+    )*};
+}
+
+impl_bit_folds!(i64, i32, u8, u64);
+
 /// Element types with kernels for every numeric reduction.
 pub trait Reducible: Ordered {
     /// The result type of `add`. Narrow integers widen.
@@ -541,7 +584,7 @@ macro_rules! impl_reducible_int {
 }
 
 impl_reducible_float!(f64, f32);
-impl_reducible_int!(i64 => i64, i32 => i64, u8 => u64);
+impl_reducible_int!(i64 => i64, i32 => i64, u8 => u64, u64 => u64);
 
 /// The array argument of a one-argument reduction, checked against `ty`.
 pub(crate) fn array_arg(v: &Value, ty: ScalarType) -> Result<&Array, String> {
@@ -603,7 +646,7 @@ fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
         op: Some(op),
         inputs: vec![InputSpec::Array(A::IN_TYPE)],
         output: ValueType::Scalar(A::OUT_TYPE),
-        cost: u64::try_from(A::IN_TYPE.width()).expect("width fits in u64"),
+        cost: width(A::IN_TYPE),
         commutative: false,
         pattern: None,
         impls,
@@ -637,6 +680,22 @@ fn register_numeric<T: Reducible>(reg: &mut Registry) {
     });
 }
 
+/// Bitwise reductions on an integer type.
+fn register_bits<T: Elem>(reg: &mut Registry)
+where
+    BitAndFold<T>: Accum<T>,
+    BitOrFold<T>: Accum<T>,
+    BitXorFold<T>: Accum<T>,
+{
+    let n = T::TYPE.name();
+    let and = Op::Reduce(ReduceOp::And);
+    add_reduction::<T, BitAndFold<T>>(reg, and, format!("reduce_and_{n}"));
+    let or = Op::Reduce(ReduceOp::Or);
+    add_reduction::<T, BitOrFold<T>>(reg, or, format!("reduce_or_{n}"));
+    let xor = Op::Reduce(ReduceOp::Xor);
+    add_reduction::<T, BitXorFold<T>>(reg, xor, format!("reduce_xor_{n}"));
+}
+
 /// Bool reductions read the 0/1 byte storage.
 fn register_bool(reg: &mut Registry) {
     add_reduction::<u8, BoolAnd>(reg, Op::Reduce(ReduceOp::And), "reduce_and_bool".into());
@@ -653,5 +712,10 @@ pub(crate) fn register(reg: &mut Registry) {
     register_numeric::<i64>(reg);
     register_numeric::<i32>(reg);
     register_numeric::<u8>(reg);
+    register_numeric::<u64>(reg);
+    register_bits::<i64>(reg);
+    register_bits::<i32>(reg);
+    register_bits::<u8>(reg);
+    register_bits::<u64>(reg);
     register_bool(reg);
 }

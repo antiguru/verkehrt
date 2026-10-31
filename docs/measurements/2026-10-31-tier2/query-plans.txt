@@ -1,0 +1,51 @@
+== tpch/q01
+plan 14: (le_i64 l_shipdate 10471)
+plan 16: (compress_i64 l_extendedprice m)
+plan 20: (add_i64 (mul_i64 (cast_u8_i64 (compress_u8 l_returnflag_bytes m)) 256) (cast_u8_i64 (compress_u8 l_linestatus_bytes m)))
+plan 21: 65536
+plan 22: (histogram key n)
+plan 24: (where (lt_i64 0 counts))
+plan 25: (mul_i64 price (sub_i64 100 (compress_i64 l_discount m)))
+plan 27: (gather_i64 counts groups)
+plan 29: (div_const_i64 groups 256)
+plan 30: (cast_i64_u8 rf)
+plan 31: (cast_i64_u8 (sub_i64 groups (mul_i64 rf 256)))
+plan 32: (gather_i64 (reduce_into_add_i64 key (compress_i64 l_quantity m) n) groups)
+plan 33: (gather_i64 (reduce_into_add_i64 key price n) groups)
+plan 34: (gather_i64 (reduce_into_add_i64 key disc_price n) groups)
+plan 35: (gather_i64 (reduce_into_add_i64 key (mul_i64 disc_price (add_i64 100 (compress_i64 l_tax m))) n) groups)
+plan 36: (div_f64 (cast_i64_f64 sum_qty) (cast_i64_f64 c))
+plan 37: c
+== tpch/q06
+plan 9: (and_bool (and_bool (le_i64 8766 l_shipdate) (lt_i64 l_shipdate 9131)) (and_bool (and_bool (le_i64 5 l_discount) (le_i64 l_discount 7)) (lt_i64 l_quantity 24)))
+plan 10: (dot_i64 (compress_i64 l_extendedprice m) (compress_i64 l_discount m))
+== clickbench/q01
+plan 5: (count_ne_i64 AdvEngineID 0)
+== clickbench/q02
+plan 6: (reduce_add_i64 AdvEngineID)
+plan 7: (length_i64 AdvEngineID)
+plan 8: (div_f64_s (cast_i64_f64_s (reduce_add_i64 ResolutionWidth)) (cast_i64_f64_s (length_i64 ResolutionWidth)))
+== clickbench/q06
+plan 5: (reduce_min_i64 EventDate)
+plan 6: (reduce_max_i64 EventDate)
+== clickbench/q07
+plan 5: (filter_ne_i64 AdvEngineID 0)
+plan 8: (if (lt_i64_s 0 (length_i64 k)) then (reduce_min_i64 k) else 0)
+plan 9: (sub_i64 k base)
+plan 11: (histogram shifted (if (lt_i64_s 0 (length_i64 shifted)) then (add_i64_s (reduce_max_i64 shifted) 1) else 0))
+plan 13: (where (lt_i64 0 counts))
+plan 14: (gather_i64 counts keys)
+plan 15: (argsort_i64 (sub_i64 0 c))
+plan 16: (add_i64 (gather_i64 keys order) base)
+plan 17: (gather_i64 c order)
+== clickbench/q42
+plan 11: (div_const_i64 (compress_i64 EventTime (and_bool (and_bool (eq_i64 CounterID 62) (and_bool (le_i64 15900 EventDate) (le_i64 EventDate 15901))) (and_bool (eq_i64 IsRefresh 0) (eq_i64 DontCountHits 0)))) 60)
+plan 14: (if (lt_i64_s 0 (length_i64 minute)) then (reduce_min_i64 minute) else 0)
+plan 15: (sub_i64 minute base)
+plan 17: (histogram keys (if (lt_i64_s 0 (length_i64 keys)) then (add_i64_s (reduce_max_i64 keys) 1) else 0))
+plan 18: (where (lt_i64 0 counts))
+plan 20: (length_i64 groups)
+plan 21: (min_i64_s g 1000)
+plan 22: (min_i64_s g 1010)
+plan 23: (mul_i64 (add_i64 (slice_i64 groups lo hi) base) 60)
+plan 24: (slice_i64 (gather_i64 counts groups) lo hi)

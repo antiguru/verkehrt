@@ -57,6 +57,28 @@ pub trait Reducer: Send {
     fn finish(self: Box<Self>) -> Result<Scalar, String>;
 }
 
+/// Creates the state of a scan, which maps an array to an array of the same length where a
+/// row may depend on the rows before it. The caller guarantees that the CPU supports the
+/// entry's ISA.
+///
+/// The `Rows` windows that the scanner's `update` receives are aligned for their element type
+/// only, as for `ElementwiseFn`, and its arguments are not checked by the caller, as for
+/// `ReducerFn`.
+pub type ScanFn = unsafe fn() -> Box<dyn Scanner>;
+
+/// The running state of one scan.
+///
+/// `update` consumes one tile and writes the output rows of exactly that tile to `out`, the
+/// bytes of the tile's rows of the output type. The state carries to the next `update`.
+/// Tiles may have any length, and the output must not depend on how the rows split into
+/// tiles. A `Bool` output must be written as 0 or 1. An empty input means no `update` at all.
+pub trait Scanner: Send {
+    /// Consumes one tile. `args` may arrive with unchecked kinds and row counts, and `out`
+    /// with a row count that differs from the arguments', see `ScanFn`. An `update` that
+    /// relies on them for memory safety must check them itself.
+    fn update(&mut self, args: &[Arg], out: &mut [u8]) -> Result<(), String>;
+}
+
 /// A selection entry. It appends the selected rows of this tile to `out`, and `base` is the
 /// tile's first row index in the whole array. The caller guarantees that the CPU supports
 /// the entry's ISA.
@@ -78,6 +100,17 @@ pub trait ElementwiseBody: 'static {
 /// The portable body of a reduction: a `Reducer` that starts from `new`, see `ElementwiseBody`.
 pub trait ReductionBody: Reducer + Sized + 'static {
     fn new() -> Self;
+}
+
+/// The portable body of a scan: a `Scanner` that starts from `new`, see `ElementwiseBody`.
+pub trait ScanBody: Scanner + Sized + 'static {
+    fn new() -> Self;
+}
+
+/// The portable body of a whole kernel. `run` has the contract of `WholeFn` and needs no CPU
+/// feature, see `ElementwiseBody`.
+pub trait WholeBody: 'static {
+    fn run(args: &[Value]) -> Result<Value, String>;
 }
 
 /// The portable body of a selection. `run` has the contract of `SelectionFn` and needs no
@@ -102,8 +135,18 @@ fn scalar_selection<S: SelectionBody>(
     S::run(args, base, out)
 }
 
-/// A kernel that sees its whole arguments at once, for class `Whole`.
-pub type WholeFn = fn(&[Value]) -> Result<Value, String>;
+fn scalar_scanner<S: ScanBody>() -> Box<dyn Scanner> {
+    Box::new(S::new())
+}
+
+fn scalar_whole<W: WholeBody>(args: &[Value]) -> Result<Value, String> {
+    W::run(args)
+}
+
+/// A kernel that sees its whole arguments at once, for class `Whole`. It checks its own
+/// arguments. The caller guarantees that the CPU supports the entry's ISA, which a plain
+/// function does not need.
+pub type WholeFn = unsafe fn(&[Value]) -> Result<Value, String>;
 
 /// The entry of a kernel variant. The variant of the entry matches `KernelDef::class`.
 #[derive(Clone, Copy)]
@@ -111,6 +154,7 @@ pub enum KernelImpl {
     Elementwise(ElementwiseFn),
     Reduction(ReducerFn),
     Selection(SelectionFn),
+    Scan(ScanFn),
     Whole(WholeFn),
 }
 
@@ -122,6 +166,7 @@ impl KernelImpl {
             (KernelImpl::Elementwise(_), KernelClass::Elementwise)
                 | (KernelImpl::Reduction(_), KernelClass::Reduction)
                 | (KernelImpl::Selection(_), KernelClass::Selection)
+                | (KernelImpl::Scan(_), KernelClass::Scan)
                 | (KernelImpl::Whole(_), KernelClass::Whole)
         )
     }
@@ -157,6 +202,22 @@ impl KernelImpl {
     pub(crate) fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         let mut impls = KernelImpl::Selection(scalar_selection::<S>).scalar_only();
         arch::add_selection::<S>(&mut impls);
+        impls
+    }
+
+    /// The table of a scan body, see `elementwise`.
+    pub(crate) fn scan<S: ScanBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+        let mut impls = KernelImpl::Scan(scalar_scanner::<S>).scalar_only();
+        arch::add_scan::<S>(&mut impls);
+        impls
+    }
+
+    /// The table of a whole body, see `elementwise`. A whole kernel whose body is a loop over
+    /// its arguments gets auto variants this way, and one that only forwards to other kernels
+    /// stays `scalar_only`.
+    pub(crate) fn whole<W: WholeBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+        let mut impls = KernelImpl::Whole(scalar_whole::<W>).scalar_only();
+        arch::add_whole::<W>(&mut impls);
         impls
     }
 }
@@ -256,6 +317,7 @@ pub enum KernelClass {
     Elementwise,
     Reduction,
     Selection,
+    Scan,
     Whole,
 }
 
@@ -296,6 +358,14 @@ impl KernelDef {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct KernelId(pub u32);
 
+/// How lowering applies an op to its operands, see `Registry::lookup_lifted`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lifted {
+    pub kernel: KernelId,
+    /// Per operand, whether it is a scalar broadcast to an array.
+    pub bcast: Vec<bool>,
+}
+
 pub struct Registry {
     /// Identifies this registry by pointer, so that a `Dispatch` can tell which registry it was
     /// resolved from.
@@ -313,6 +383,8 @@ impl Registry {
         scalar::elementwise::register(&mut reg);
         scalar::reduce::register(&mut reg);
         scalar::select::register(&mut reg);
+        scalar::scan::register(&mut reg);
+        scalar::index::register(&mut reg);
         scalar::construct::register(&mut reg);
         scalar::fused::register(&mut reg);
         reg
@@ -362,6 +434,67 @@ impl Registry {
             .iter()
             .copied()
             .find(|id| self.get(*id).accepts(args))
+    }
+
+    /// Resolves `op` on operands of types `args` the way lowering builds the operation. With
+    /// no array operand this is `lookup`. With one, the kernel that `lookup` finds on `args`
+    /// decides which scalars are broadcast: those at its `Either` positions, while a scalar at
+    /// a `Scalar` position stays. When no kernel accepts `args`, every scalar is broadcast,
+    /// unless `op` has a kernel with a `Scalar` input. The kernel is then looked up on the
+    /// broadcast types. On failure, returns the operand types that the error reports.
+    pub fn lookup_lifted(&self, op: Op, args: &[ValueType]) -> Result<Lifted, Vec<ValueType>> {
+        if !args.iter().any(|t| matches!(t, ValueType::Array(_))) {
+            return match self.lookup(op, args) {
+                Some(kernel) => Ok(Lifted {
+                    kernel,
+                    bcast: vec![false; args.len()],
+                }),
+                None => Err(args.to_vec()),
+            };
+        }
+        let bcast: Vec<bool> = match self.lookup(op, args) {
+            Some(id) => self
+                .get(id)
+                .inputs
+                .iter()
+                .zip(args)
+                .map(|(spec, t)| {
+                    matches!(spec, InputSpec::Either(_)) && matches!(t, ValueType::Scalar(_))
+                })
+                .collect(),
+            // Broadcasting would hide the operand types the user wrote, so the error
+            // reports them as given. `lookup` on `args` already failed, so no second
+            // lookup is needed.
+            None if self.has_scalar_input(op) => return Err(args.to_vec()),
+            None => args
+                .iter()
+                .map(|t| matches!(t, ValueType::Scalar(_)))
+                .collect(),
+        };
+        let tys: Vec<ValueType> = args
+            .iter()
+            .zip(&bcast)
+            .map(|(t, b)| match (t, b) {
+                (ValueType::Scalar(s), true) => ValueType::Array(*s),
+                _ => *t,
+            })
+            .collect();
+        match self.lookup(op, &tys) {
+            Some(kernel) => Ok(Lifted { kernel, bcast }),
+            None => Err(tys),
+        }
+    }
+
+    /// Whether some kernel of `op` takes a scalar that must stay a scalar.
+    pub fn has_scalar_input(&self, op: Op) -> bool {
+        self.by_op.get(&op).is_some_and(|ids| {
+            ids.iter().any(|id| {
+                self.get(*id)
+                    .inputs
+                    .iter()
+                    .any(|s| matches!(s, InputSpec::Scalar(_)))
+            })
+        })
     }
 
     pub fn get(&self, id: KernelId) -> &KernelDef {

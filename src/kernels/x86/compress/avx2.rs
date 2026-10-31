@@ -193,6 +193,7 @@ macro_rules! lanes_32 {
 
 lanes_64!(f64);
 lanes_64!(i64);
+lanes_64!(u64);
 lanes_32!(f32);
 lanes_32!(i32);
 
@@ -254,6 +255,29 @@ impl Compare for i64 {
         let mask = |r: __m256i| bits(_mm256_movemask_pd(_mm256_castsi256_pd(r)));
         // AVX2 has only signed `==` and `>`. The other predicates are their negations or
         // take the operands swapped.
+        match CMPS[C].1 {
+            Cmp::Eq => mask(_mm256_cmpeq_epi64(v, c)),
+            Cmp::Ne => mask(_mm256_cmpeq_epi64(v, c)) ^ 0xf,
+            Cmp::Lt => mask(_mm256_cmpgt_epi64(c, v)),
+            Cmp::Le => mask(_mm256_cmpgt_epi64(v, c)) ^ 0xf,
+            Cmp::Gt => mask(_mm256_cmpgt_epi64(v, c)),
+            Cmp::Ge => mask(_mm256_cmpgt_epi64(c, v)) ^ 0xf,
+        }
+    }
+}
+
+impl Compare for u64 {
+    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // states. Nothing assumes more than element alignment.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn compare<const C: usize>(v: __m256i, c: u64) -> u64 {
+        // AVX2 has no unsigned compare. Flipping bit 63 of both operands maps the unsigned
+        // order onto the signed order, then the predicates are those of `i64`.
+        let bias = _mm256_set1_epi64x(i64::MIN);
+        let v = _mm256_xor_si256(v, bias);
+        let c = _mm256_xor_si256(_mm256_set1_epi64x(c.cast_signed()), bias);
+        let mask = |r: __m256i| bits(_mm256_movemask_pd(_mm256_castsi256_pd(r)));
         match CMPS[C].1 {
             Cmp::Eq => mask(_mm256_cmpeq_epi64(v, c)),
             Cmp::Ne => mask(_mm256_cmpeq_epi64(v, c)) ^ 0xf,

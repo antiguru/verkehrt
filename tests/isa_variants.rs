@@ -122,6 +122,7 @@ fn input_strategy(ty: ScalarType, special: bool) -> BoxedStrategy<Input> {
         ScalarType::I64 => input_of(any::<i64>().boxed(), Scalar::I64),
         ScalarType::I32 => input_of(any::<i32>().boxed(), Scalar::I32),
         ScalarType::U8 => input_of(any::<u8>().boxed(), Scalar::U8),
+        ScalarType::U64 => input_of(any::<u64>().boxed(), Scalar::U64),
         ScalarType::Bool => (
             // A dense prefix of true rows and an empty suffix runs the chunks after the last
             // survivor of a selection, which keep a vector of room past it.
@@ -167,6 +168,48 @@ fn case_strategy(def: &KernelDef) -> BoxedStrategy<Case> {
         .boxed()
 }
 
+/// The index operand of a `gather` over `n` rows: the raw rows `start..start + n` mapped into
+/// `0..n`, which is only possible once `n` is known. One case in eight forces one index out
+/// of range, to `n` or to -1, so the error path is compared as well as the value path.
+fn gather_indices(input: &Input, start: usize, n: usize) -> Value {
+    let raw = input.rows.as_slice::<i64>();
+    let raw = &raw[start..start + n];
+    let bound = i64::try_from(n).expect("row count fits in i64");
+    let mut idx: Vec<i64> = raw
+        .iter()
+        .map(|&r| if n == 0 { 0 } else { r.rem_euclid(bound) })
+        .collect();
+    if n > 0 && raw[0].rem_euclid(8) == 0 {
+        let at = usize::try_from(raw[n - 1].unsigned_abs() % u64::try_from(n).unwrap()).unwrap();
+        idx[at] = if raw[n - 1] % 2 == 0 { bound } else { -1 };
+    }
+    Value::Array(Array::from_vec(idx))
+}
+
+/// The bucket count of a `histogram` or `reduce_into_*` case, drawn in `1..=64` from the scalar
+/// operand of the case.
+fn bucket_count(def: &KernelDef, case: &Case) -> i64 {
+    let k = def.inputs.len() - 1;
+    let Scalar::I64(raw) = case.inputs[k].scalar else {
+        panic!("{} takes an i64 bucket count", def.name);
+    };
+    raw.rem_euclid(64) + 1
+}
+
+/// The key operand of a bucket kernel: the raw rows `start..start + n` mapped into `0..buckets`.
+/// One case in eight forces one key out of range, to `buckets` or to -1, so the error path is
+/// compared as well as the value path.
+fn bucket_keys(input: &Input, start: usize, n: usize, buckets: i64) -> Value {
+    let raw = input.rows.as_slice::<i64>();
+    let raw = &raw[start..start + n];
+    let mut keys: Vec<i64> = raw.iter().map(|&r| r.rem_euclid(buckets)).collect();
+    if n > 0 && raw[0].rem_euclid(8) == 0 {
+        let at = usize::try_from(raw[n - 1].unsigned_abs() % u64::try_from(n).unwrap()).unwrap();
+        keys[at] = if raw[n - 1] % 2 == 0 { buckets } else { -1 };
+    }
+    Value::Array(Array::from_vec(keys))
+}
+
 /// The arguments for `n` rows, starting at row 0 of each buffer when `aligned`, else at each
 /// input's own offset.
 fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value> {
@@ -190,6 +233,18 @@ fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value>
     (0..def.inputs.len())
         .map(|k| {
             let input = &case.inputs[k];
+            if def.name.starts_with("gather_") && k == 1 {
+                return gather_indices(input, start(input), n);
+            }
+            if def.name == "histogram" || def.name.starts_with("reduce_into_") {
+                let buckets = bucket_count(def, case);
+                if k == def.inputs.len() - 1 {
+                    return Value::Scalar(Scalar::I64(buckets));
+                }
+                if k == 0 {
+                    return bucket_keys(input, start(input), n, buckets);
+                }
+            }
             if is_array(k) {
                 return Value::Array(input.rows.slice(start(input), n));
             }
@@ -283,6 +338,31 @@ fn reduce_tiled(
     reducer.finish().map(Value::Scalar)
 }
 
+/// The variant's scan fed tile by tile into one destination. An empty input gets no update.
+fn scan_tiled(
+    reg: &Registry,
+    dispatch: &Dispatch,
+    id: KernelId,
+    args: &[Value],
+    n: usize,
+) -> Result<Value, String> {
+    let ValueType::Array(t) = reg.get(id).output else {
+        return Err("a scan must produce an array".into());
+    };
+    let w = t.width();
+    let mut scanner = dispatch.scanner(reg, id)?;
+    Array::build_bytes(n, t, |out| {
+        if n > 0 {
+            for (start, end) in tiles(n, &TILE_CUTS) {
+                let dst = &mut out[start * w..end * w];
+                scanner.update(&tile_args(args, start, end), dst)?;
+            }
+        }
+        Ok(())
+    })
+    .map(Value::Array)
+}
+
 /// The variant's elementwise kernel called once per tile into one destination. `None` when
 /// the kernel does not produce an array from an array operand, which `call` covers alone.
 fn elementwise_tiled(
@@ -353,6 +433,8 @@ fn check_case(
                 KernelClass::Elementwise => elementwise_tiled(reg, variant, id, &args, n),
                 KernelClass::Reduction => Some(reduce_tiled(reg, variant, id, &args, n)),
                 KernelClass::Selection => Some(select_tiled(reg, variant, id, &args, n)),
+                KernelClass::Scan => Some(scan_tiled(reg, variant, id, &args, n)),
+                // `call` above already ran the whole kernel's ISA entry.
                 KernelClass::Whole => None,
             };
             if let Some(tiled) = tiled {
@@ -446,6 +528,11 @@ fn isa_variants_match_scalar() {
     }
 }
 
+/// Name prefixes of the whole kernels that loop over their arguments, so they have auto
+/// entries. The list is kept here and not derived from the impls tables, so that a kernel
+/// registered with `scalar_only()` by mistake fails the test.
+const WHOLE_AUTO_PREFIXES: [&str; 4] = ["gather_", "histogram", "reduce_into_", "argsort_"];
+
 #[test]
 fn every_array_kernel_has_auto_variants() {
     let reg = Registry::new();
@@ -455,8 +542,8 @@ fn every_array_kernel_has_auto_variants() {
                 .inputs
                 .iter()
                 .any(|s| matches!(s, InputSpec::Either(_) | InputSpec::Array(_))),
-            KernelClass::Reduction | KernelClass::Selection => true,
-            KernelClass::Whole => false,
+            KernelClass::Reduction | KernelClass::Selection | KernelClass::Scan => true,
+            KernelClass::Whole => WHOLE_AUTO_PREFIXES.iter().any(|p| def.name.starts_with(p)),
         };
         for isa in Isa::ALL.into_iter().filter(|isa| *isa != Isa::Scalar) {
             let variant = Variant {
@@ -496,7 +583,7 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             assert_eq!(by_intrinsics.variant_used(id), auto, "{name}");
         }
         let mut selections = vec!["where".to_string()];
-        for t in ["f64", "f32", "i64", "i32"] {
+        for t in ["f64", "f32", "i64", "i32", "u64"] {
             selections.push(format!("compress_{t}"));
             for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
                 selections.push(format!("filter_{cmp}_{t}"));
@@ -545,10 +632,10 @@ fn neon_intrinsics_resolve_for_selections() {
         assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
     }
     let mut selections = vec!["where".to_string()];
-    for t in ["f64", "f32", "i64", "i32", "u8", "bool"] {
+    for t in ["f64", "f32", "i64", "i32", "u64", "u8", "bool"] {
         selections.push(format!("compress_{t}"));
     }
-    for t in ["f64", "f32", "i64", "i32"] {
+    for t in ["f64", "f32", "i64", "i32", "u64"] {
         for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
             selections.push(format!("filter_{cmp}_{t}"));
         }

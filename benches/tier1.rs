@@ -1,6 +1,7 @@
-//! Tier 1 kernels against native Rust loops, and the dispatch crossover sweep.
+//! Tier 1 and tier 2 kernels against native Rust loops, and the dispatch crossover sweep.
 //!
-//! Groups are `tier1/<program>/<variant>` and `crossover/<program>/<n>`. Interpreter variants
+//! Groups are `tier1/<program>/<variant>`, `tier2/<program>/<variant>`, and
+//! `crossover/<program>/<n>`. Interpreter variants
 //! measure `Prepared::execute` only. Native baselines are plain loops compiled for the baseline
 //! target and, per ISA, under the same `#[target_feature]` set as the ISA's kernels.
 //! Throughput is input bytes read, so criterion's bytes/s are the input bandwidth.
@@ -12,7 +13,7 @@ use std::time::Duration;
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
 use verkehrt::kernels::{Backend, Isa};
-use verkehrt::value::{Array, Scalar, Value};
+use verkehrt::value::{Array, Elem, Scalar, Value};
 use verkehrt::{Interpreter, Options, Prepared};
 
 const N: usize = 10_000_000;
@@ -265,10 +266,11 @@ macro_rules! call_native {
 struct Interp {
     label: String,
     interp: Interpreter,
-    /// Whether it uses the intrinsics backend. On x86-64 only the selections have intrinsics
-    /// entries, so only the `filter` groups measure these variants. On aarch64 the selections
-    /// and the float extremes (`min`, `argmin`) have them. Elsewhere the intrinsics backend
-    /// resolves to the scalar entries, so those groups skip it.
+    /// Whether it uses the intrinsics backend. On x86-64 the selections, the 64-bit
+    /// `gather`s, and the AVX-512 `scan_by_add` on 64-bit integers have intrinsics entries,
+    /// so only the `filter`, `gather`, and `scan_by` groups measure these variants. On
+    /// aarch64 the selections and the float extremes (`min`, `argmin`) have them. Elsewhere
+    /// the intrinsics backend resolves to the scalar entries, so those groups skip it.
     intrinsics: bool,
 }
 
@@ -638,6 +640,418 @@ fn tier1(c: &mut Criterion) {
     }
 }
 
+/// Buckets of the `histogram` and `reduce_into` groups.
+const BUCKETS: usize = 1024;
+/// Divisor of the `div_const` groups.
+const DIVISOR: i64 = 60;
+
+/// `n` pseudo-random words from splitmix64, mapped through `f`. Deterministic per seed.
+fn splitmix<T>(n: usize, seed: u64, f: impl Fn(u64) -> T) -> Vec<T> {
+    let mut s = seed;
+    (0..n)
+        .map(|_| {
+            s = s.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut z = s;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            f(z ^ (z >> 31))
+        })
+        .collect()
+}
+
+#[inline(always)]
+fn add_i64_body(x: &[i64], y: &[i64]) -> Vec<i64> {
+    x.iter().zip(y).map(|(a, b)| a.wrapping_add(*b)).collect()
+}
+
+/// The inclusive prefix sum, wrapping like `scan(x, add)`.
+#[inline(always)]
+fn scan_add_body(x: &[i64]) -> Vec<i64> {
+    let mut acc = 0i64;
+    x.iter()
+        .map(|&v| {
+            acc = acc.wrapping_add(v);
+            acc
+        })
+        .collect()
+}
+
+/// The count per key with Rust's bounds-checked indexing, which panics where `histogram`
+/// returns an error.
+#[inline(always)]
+fn histogram_body(keys: &[i64], n: usize) -> Vec<i64> {
+    let mut h = vec![0i64; n];
+    for &k in keys {
+        h[k as usize] += 1;
+    }
+    h
+}
+
+/// The wrapping sum per key, see `histogram_body`.
+#[inline(always)]
+fn reduce_into_add_body(keys: &[i64], vals: &[i64], n: usize) -> Vec<i64> {
+    let mut h = vec![0i64; n];
+    for (&k, &v) in keys.iter().zip(vals) {
+        let b = &mut h[k as usize];
+        *b = b.wrapping_add(v);
+    }
+    h
+}
+
+/// Division by the constant `DIVISOR`, which the compiler lowers to a multiply-high.
+#[inline(always)]
+fn div_const_body(x: &[i64]) -> Vec<i64> {
+    x.iter().map(|v| v / DIVISOR).collect()
+}
+
+native_fns!(n_add_i64, add_i64_body, (x: &[i64], y: &[i64]) -> Vec<i64>);
+native_fns!(n_scan_add, scan_add_body, (x: &[i64]) -> Vec<i64>);
+native_fns!(n_histogram, histogram_body, (keys: &[i64], n: usize) -> Vec<i64>);
+native_fns!(
+    n_reduce_into_add,
+    reduce_into_add_body,
+    (keys: &[i64], vals: &[i64], n: usize) -> Vec<i64>
+);
+native_fns!(n_div_const, div_const_body, (x: &[i64]) -> Vec<i64>);
+
+/// Whether every index lies in `0..n`, checked without an early exit as the `gather` kernel
+/// does before it reads a row.
+#[inline(always)]
+fn indices_in_range(idx: &[i64], n: usize) -> bool {
+    let n = n as u64;
+    !idx.iter().fold(false, |b, &i| b | (i.cast_unsigned() >= n))
+}
+
+/// `gather` with the same bounds pass as the kernel. The baseline target uses indexed loads,
+/// the ISA flavors use the hardware gathers, four rows per `vpgatherqq` on AVX2 and eight on
+/// AVX-512, so they are not the shared portable body.
+mod n_gather {
+    use super::indices_in_range;
+
+    pub fn base(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+        assert!(indices_in_range(idx, xs.len()), "gather index out of range");
+        idx.iter().map(|&i| xs[i as usize]).collect()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    pub fn avx2(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+        use std::arch::x86_64::{
+            __m256i, _mm256_i64gather_epi64, _mm256_loadu_si256, _mm256_storeu_si256,
+        };
+        assert!(indices_in_range(idx, xs.len()), "gather index out of range");
+        let mut out = vec![0i64; idx.len()];
+        let (ic, it) = idx.as_chunks::<4>();
+        let (oc, ot) = out.as_chunks_mut::<4>();
+        for (i, o) in ic.iter().zip(oc.iter_mut()) {
+            // SAFETY: the function is compiled with avx2, which its caller checked. The load
+            // and store touch exactly the four `i64` of `i` and `o`, unaligned accesses are
+            // allowed. Every index lies in `0..xs.len()` by the assertion above, so each
+            // gathered address `xs + 8 * i` is a row of `xs`.
+            unsafe {
+                let v = _mm256_loadu_si256(i.as_ptr().cast::<__m256i>());
+                let g = _mm256_i64gather_epi64::<8>(xs.as_ptr(), v);
+                _mm256_storeu_si256(o.as_mut_ptr().cast::<__m256i>(), g);
+            }
+        }
+        for (o, &i) in ot.iter_mut().zip(it) {
+            *o = xs[i as usize];
+        }
+        out
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    pub fn avx512(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+        use std::arch::x86_64::{_mm512_i64gather_epi64, _mm512_loadu_si512, _mm512_storeu_si512};
+        assert!(indices_in_range(idx, xs.len()), "gather index out of range");
+        let mut out = vec![0i64; idx.len()];
+        let (ic, it) = idx.as_chunks::<8>();
+        let (oc, ot) = out.as_chunks_mut::<8>();
+        for (i, o) in ic.iter().zip(oc.iter_mut()) {
+            // SAFETY: the function is compiled with avx512f, which its caller checked. The
+            // load and store touch exactly the eight `i64` of `i` and `o`, unaligned accesses
+            // are allowed. Every index lies in `0..xs.len()` by the assertion above, so each
+            // gathered address `xs + 8 * i` is a row of `xs`.
+            unsafe {
+                let v = _mm512_loadu_si512(i.as_ptr().cast());
+                let g = _mm512_i64gather_epi64::<8>(v, xs.as_ptr());
+                _mm512_storeu_si512(o.as_mut_ptr().cast(), g);
+            }
+        }
+        for (o, &i) in ot.iter_mut().zip(it) {
+            *o = xs[i as usize];
+        }
+        out
+    }
+}
+
+fn rows_of<T: Elem>(v: &Value) -> &[T] {
+    match v {
+        Value::Array(a) => a.as_slice::<T>(),
+        other => panic!("expected an array, got {other}"),
+    }
+}
+
+/// Adds every interpreter variant of `interps` to `g`, after checking its answer to `src`
+/// on `ins` against `want`.
+fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
+    g: &mut BenchmarkGroup<'_, WallTime>,
+    interps: &[&Interp],
+    src: &str,
+    ins: &[(&str, Value)],
+    want: &[T],
+) {
+    for it in interps {
+        let p = it.interp.prepare(src).unwrap();
+        let out = run(&p, &it.interp, ins);
+        assert!(rows_of::<T>(&out) == want, "{src}: {}", it.label);
+        g.bench_function(&it.label, |b| {
+            b.iter(|| run(&p, &it.interp, black_box(ins)))
+        });
+    }
+}
+
+/// The tier 2 kernels at `N` rows. Each group has the scalar and auto variants, the
+/// intrinsics variants where the kernel has intrinsics entries, and, for the kernels the spec
+/// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
+fn tier2(c: &mut Criterion) {
+    let all_interps = interpreters();
+    // Among the tier 2 kernels only `gather` and, on AVX-512, `scan_by_add` have intrinsics
+    // entries on x86-64, so only their groups measure them. AVX2 `scan_by_add` has none, so
+    // its intrinsics variant would rerun the auto entry and is left out.
+    let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
+    let all: Vec<&Interp> = all_interps.iter().collect();
+    let scan_by: Vec<&Interp> = all_interps
+        .iter()
+        .filter(|it| !it.intrinsics || it.label == "avx512-intrinsics")
+        .collect();
+    let nats = natives();
+    let bytes = u64::try_from(N * size_of::<i64>()).unwrap();
+    let x = splitmix(N, 1, u64::cast_signed);
+    let y = splitmix(N, 2, u64::cast_signed);
+    let keys = splitmix(N, 3, |r| (r % BUCKETS as u64).cast_signed());
+    let idx = splitmix(N, 4, |r| (r % N as u64).cast_signed());
+    let starts = splitmix(N, 5, |r| r % 16 == 0);
+    let xv = Value::Array(Array::from_vec(x.clone()));
+    let yv = Value::Array(Array::from_vec(y.clone()));
+    let kv = Value::Array(Array::from_vec(keys.clone()));
+    let iv = Value::Array(Array::from_vec(idx.clone()));
+    let sv = Value::Array(Array::from_bools(&starts));
+    let xu: Vec<u64> = x.iter().map(|v| v.cast_unsigned()).collect();
+    let xuv = Value::Array(Array::from_vec(xu.clone()));
+
+    // The streaming reference: two rows read, one written, no dependency between rows.
+    {
+        let want = n_add_i64::base(&x, &y);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_add_i64(&x, &y)), want);
+        }
+        let mut g = c.benchmark_group("tier2/add-i64");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(2 * bytes));
+        let src = "input x: i64[]; input y: i64[]; export z = x + y;";
+        let ins = [("x", xv.clone()), ("y", yv.clone())];
+        interp_variants(&mut g, &auto, src, &ins, &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_add_i64(black_box(&x), black_box(&y))))
+            });
+        }
+        g.finish();
+    }
+
+    // scan
+    {
+        let want = n_scan_add::base(&x);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_scan_add(&x)), want);
+        }
+        let mut g = c.benchmark_group("tier2/scan-add-i64");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        let src = "input x: i64[]; export s = scan(x, add);";
+        interp_variants(&mut g, &auto, src, &[("x", xv.clone())], &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_scan_add(black_box(&x))))
+            });
+        }
+        g.finish();
+    }
+
+    // gather, random indices into the whole array
+    {
+        let want = n_gather::base(&x, &idx);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_gather(&x, &idx)), want);
+        }
+        let mut g = c.benchmark_group("tier2/gather-i64");
+        configure(&mut g);
+        // One index and one source row per output row.
+        g.throughput(Throughput::Bytes(2 * bytes));
+        let src = "input x: i64[]; input i: i64[]; export g = gather(x, i);";
+        let ins = [("x", xv.clone()), ("i", iv.clone())];
+        interp_variants(&mut g, &all, src, &ins, &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_gather(black_box(&x), black_box(&idx))))
+            });
+        }
+        g.finish();
+    }
+
+    // histogram, keys uniform in 0..BUCKETS
+    {
+        let want = n_histogram::base(&keys, BUCKETS);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_histogram(&keys, BUCKETS)), want);
+        }
+        let mut g = c.benchmark_group("tier2/histogram");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        let src = format!("input k: i64[]; export h = histogram(k, {BUCKETS});");
+        interp_variants(&mut g, &auto, &src, &[("k", kv.clone())], &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_histogram(black_box(&keys), BUCKETS)))
+            });
+        }
+        g.finish();
+    }
+
+    // reduce_into, keys uniform in 0..BUCKETS
+    {
+        let want = n_reduce_into_add::base(&keys, &x, BUCKETS);
+        for n in &nats {
+            assert_eq!(
+                call_native!(*n, n_reduce_into_add(&keys, &x, BUCKETS)),
+                want
+            );
+        }
+        let mut g = c.benchmark_group("tier2/reduce-into-add-i64");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(2 * bytes));
+        let src = format!(
+            "input k: i64[]; input v: i64[]; export r = reduce_into(k, v, {BUCKETS}, add);"
+        );
+        let ins = [("k", kv.clone()), ("v", xv.clone())];
+        interp_variants(&mut g, &auto, &src, &ins, &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| {
+                    call_native!(
+                        *n,
+                        n_reduce_into_add(black_box(&keys), black_box(&x), BUCKETS)
+                    )
+                })
+            });
+        }
+        g.finish();
+    }
+
+    // div_const
+    {
+        let want = n_div_const::base(&x);
+        for n in &nats {
+            assert_eq!(call_native!(*n, n_div_const(&x)), want);
+        }
+        let mut g = c.benchmark_group("tier2/div-const-i64");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        let src = format!("input x: i64[]; export q = div_const(x, {DIVISOR});");
+        interp_variants(&mut g, &auto, &src, &[("x", xv.clone())], &want);
+        for n in &nats {
+            g.bench_function(n.native().label(), |b| {
+                b.iter(|| call_native!(*n, n_div_const(black_box(&x))))
+            });
+        }
+        g.finish();
+    }
+
+    // The other new kernels, interpreter variants only, for the auto over scalar ratio.
+    let xs_ins = [("x", xv.clone())];
+    let xy_ins = [("x", xv.clone()), ("y", yv.clone())];
+    let mut sorted: Vec<i64> = (0..N as i64).collect();
+    sorted.sort_by_key(|&i| x[i as usize]);
+    let others: [(&str, &str, &[(&str, Value)], Vec<i64>, u64); 5] = [
+        (
+            "prev-i64",
+            "input x: i64[]; export p = prev(x, 0);",
+            &xs_ins,
+            std::iter::once(0)
+                .chain(x[..N - 1].iter().copied())
+                .collect(),
+            bytes,
+        ),
+        (
+            "and-i64",
+            "input x: i64[]; input y: i64[]; export z = and(x, y);",
+            &xy_ins,
+            x.iter().zip(&y).map(|(a, b)| a & b).collect(),
+            2 * bytes,
+        ),
+        (
+            "xor-i64",
+            "input x: i64[]; input y: i64[]; export z = xor(x, y);",
+            &xy_ins,
+            x.iter().zip(&y).map(|(a, b)| a ^ b).collect(),
+            2 * bytes,
+        ),
+        (
+            "not-i64",
+            "input x: i64[]; export z = not(x);",
+            &xs_ins,
+            x.iter().map(|a| !a).collect(),
+            bytes,
+        ),
+        (
+            "argsort-i64",
+            "input x: i64[]; export o = argsort(x);",
+            &xs_ins,
+            sorted,
+            bytes,
+        ),
+    ];
+    for (name, src, ins, want, b) in &others {
+        let mut g = c.benchmark_group(format!("tier2/{name}"));
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(*b));
+        interp_variants(&mut g, &auto, src, ins, want);
+        g.finish();
+    }
+    {
+        let mut acc = 0i64;
+        let want: Vec<i64> = x
+            .iter()
+            .zip(&starts)
+            .enumerate()
+            .map(|(i, (&v, &s))| {
+                acc = if s || i == 0 { v } else { acc.wrapping_add(v) };
+                acc
+            })
+            .collect();
+        let mut g = c.benchmark_group("tier2/scan-by-add-i64");
+        configure(&mut g);
+        // The rows and one byte of segment starts per row.
+        g.throughput(Throughput::Bytes(bytes + u64::try_from(N).unwrap()));
+        let src = "input x: i64[]; input s: bool[]; export r = scan_by(x, s, add);";
+        let ins = [("x", xv.clone()), ("s", sv.clone())];
+        interp_variants(&mut g, &scan_by, src, &ins, &want);
+        g.finish();
+    }
+    {
+        let du = DIVISOR.cast_unsigned();
+        let want: Vec<u64> = xu.iter().map(|v| v / du).collect();
+        let mut g = c.benchmark_group("tier2/div-const-u64");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        let src = format!("input x: u64[]; export q = div_const(x, {du}u64);");
+        interp_variants(&mut g, &auto, &src, &[("x", xuv.clone())], &want);
+        g.finish();
+    }
+}
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn crossover_group<'a>(
     c: &'a mut Criterion,
@@ -763,5 +1177,5 @@ fn crossover(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, tier1, crossover);
+criterion_group!(benches, tier1, tier2, crossover);
 criterion_main!(benches);

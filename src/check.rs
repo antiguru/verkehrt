@@ -1,17 +1,22 @@
 //! The type checker. It turns the AST into a typed AST and enforces the language's typing
-//! rules: kernel lookup through the registry, the lambda liftability rules, and the ban on
-//! recursion. Lambdas, calls, and `if` stay intact because lowering handles them next.
+//! rules: kernel lookup through the registry, the lambda liftability rules including kernel
+//! lookup on the lifted types of lambda bodies, and the ban on recursion. Lambdas, calls,
+//! and `if` stay intact because lowering handles them next.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::error::{Error, Span};
 use crate::kernels::Registry;
+use crate::lower::higher::Higher;
 use crate::ops::{Op, ReduceOp};
 use crate::syntax::ast::{self, BinOp, ExprKind};
 use crate::value::{ScalarType, ValueType};
 
+mod lifting;
 mod typed;
 pub use typed::*;
+
+use lifting::Lifting;
 
 #[cfg(test)]
 mod tests;
@@ -88,9 +93,39 @@ pub fn check(prog: &ast::Program, reg: &Registry, env: &mut Globals) -> Result<T
     Ok(TProgram { stmts })
 }
 
+#[derive(Clone, Copy)]
+enum FoldKind {
+    Reduce,
+    Scan,
+    ScanBy,
+    ReduceInto,
+}
+
+impl FoldKind {
+    /// The number of arguments before the operation name, the arrays and for `reduce_into`
+    /// the bucket count.
+    fn arrays(self) -> usize {
+        match self {
+            FoldKind::Reduce | FoldKind::Scan => 1,
+            FoldKind::ScanBy => 2,
+            FoldKind::ReduceInto => 3,
+        }
+    }
+
+    fn op(self, r: ReduceOp) -> Op {
+        match self {
+            FoldKind::Reduce => Op::Reduce(r),
+            FoldKind::Scan => Op::Scan(r),
+            FoldKind::ScanBy => Op::ScanBy(r),
+            FoldKind::ReduceInto => Op::ReduceInto(r),
+        }
+    }
+}
+
 enum Builtin {
     Op(Op, usize),
-    Reduce,
+    /// `reduce`, `scan`, `scan_by`, and `reduce_into`: the arguments, then an operation name.
+    Fold(FoldKind),
     Map,
     ZipMap,
     Filter,
@@ -106,6 +141,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "sqrt" => (Op::Sqrt, 1),
         "and" => (Op::And, 2),
         "or" => (Op::Or, 2),
+        "xor" => (Op::Xor, 2),
         "not" => (Op::Not, 1),
         "select" => (Op::Select, 3),
         "sum" => (Op::Reduce(ReduceOp::Add), 1),
@@ -116,12 +152,21 @@ fn builtin(name: &str) -> Option<Builtin> {
         "argmax" => (Op::ArgMax, 1),
         "compress" => (Op::Compress, 2),
         "where" => (Op::Where, 1),
+        "prev" => (Op::Prev, 2),
         "iota" => (Op::Iota, 1),
         "fill" => (Op::Fill, 2),
+        "gather" => (Op::Gather, 2),
+        "slice" => (Op::Slice, 3),
+        "histogram" => (Op::Histogram, 2),
+        "div_const" => (Op::DivConst, 2),
+        "argsort" => (Op::ArgSort, 1),
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),
-        "reduce" => return Some(Builtin::Reduce),
+        "reduce" => return Some(Builtin::Fold(FoldKind::Reduce)),
+        "scan" => return Some(Builtin::Fold(FoldKind::Scan)),
+        "scan_by" => return Some(Builtin::Fold(FoldKind::ScanBy)),
+        "reduce_into" => return Some(Builtin::Fold(FoldKind::ReduceInto)),
         "map" => return Some(Builtin::Map),
         "zip_map" => return Some(Builtin::ZipMap),
         "filter" => return Some(Builtin::Filter),
@@ -185,6 +230,7 @@ fn is_elementwise(op: Op) -> bool {
             | Op::Sub
             | Op::Mul
             | Op::Div
+            | Op::DivConst
             | Op::Neg
             | Op::Abs
             | Op::Min
@@ -198,6 +244,7 @@ fn is_elementwise(op: Op) -> bool {
             | Op::Ge
             | Op::And
             | Op::Or
+            | Op::Xor
             | Op::Not
             | Op::Select
             | Op::Cast(_)
@@ -267,6 +314,7 @@ fn op_name(op: Op) -> String {
         Op::Sub => "-".into(),
         Op::Mul => "*".into(),
         Op::Div => "/".into(),
+        Op::DivConst => "div_const".into(),
         Op::Eq => "==".into(),
         Op::Ne => "!=".into(),
         Op::Lt => "<".into(),
@@ -276,6 +324,9 @@ fn op_name(op: Op) -> String {
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         Op::Reduce(r) => format!("reduce({})", reduce_name(r)),
+        Op::Scan(r) => format!("scan({})", reduce_name(r)),
+        Op::ScanBy(r) => format!("scan_by({})", reduce_name(r)),
+        Op::ReduceInto(r) => format!("reduce_into({})", reduce_name(r)),
         other => format!("{other:?}").to_lowercase(),
     }
 }
@@ -296,6 +347,9 @@ struct Checker<'a> {
     calls: Vec<FnId>,
     /// Functions called from lambdas, whose bodies must satisfy the lambda rules.
     deferred: Vec<(FnId, Span)>,
+    /// Lambdas with their higher-order call, the types of the arrays it maps over, and its
+    /// span, checked on their lifted types once every function body is known.
+    lifts: Vec<(Higher, TLambda, Vec<ValueType>, Span)>,
 }
 
 impl<'a> Checker<'a> {
@@ -309,6 +363,7 @@ impl<'a> Checker<'a> {
             lambda_vars: Vec::new(),
             calls: Vec::new(),
             deferred: Vec::new(),
+            lifts: Vec::new(),
         }
     }
 
@@ -350,6 +405,12 @@ impl<'a> Checker<'a> {
                     span,
                 ));
             }
+        }
+        // A lambda body may call functions declared later or in the body of a function
+        // checked later, so this runs last.
+        let mut lifting = Lifting::new(self.reg, self.g);
+        for (kind, lam, xs, span) in &self.lifts {
+            lifting.lambda(*kind, lam, xs, *span)?;
         }
         Ok(stmts)
     }
@@ -761,33 +822,38 @@ impl<'a> Checker<'a> {
                 };
                 self.prim(op, name, targs, span, false)
             }
-            Some(Builtin::Reduce) => {
+            Some(Builtin::Fold(kind)) => {
                 if self.in_lambda {
                     return Err(Error::ty(
                         format!("'{name}' cannot be used inside a lambda"),
                         span,
                     ));
                 }
-                let [x, op] = args else {
+                let arrays = kind.arrays();
+                let Some((op, xs)) = args.split_last().filter(|(_, xs)| xs.len() == arrays) else {
                     return Err(Error::ty(
-                        format!("'reduce' takes 2 arguments, got {}", args.len()),
+                        format!(
+                            "'{name}' takes {} arguments, got {}",
+                            arrays + 1,
+                            args.len()
+                        ),
                         span,
                     ));
                 };
                 let ExprKind::Name(n) = &op.kind else {
                     return Err(Error::ty(
-                        "reduce takes an operation name such as add or max",
+                        format!("{name} takes an operation name such as add or max"),
                         op.span,
                     ));
                 };
                 let Some(r) = reduce_op(n) else {
                     return Err(Error::ty(
-                        format!("unknown reduce operation '{n}'"),
+                        format!("unknown {name} operation '{n}'"),
                         op.span,
                     ));
                 };
-                let x = self.check_expr(x)?;
-                self.prim(Op::Reduce(r), "reduce", vec![x], span, false)
+                let targs = self.check_args(xs)?;
+                self.prim(kind.op(r), name, targs, span, false)
             }
             Some(Builtin::Map) => self.check_higher(name, args, 1, span),
             Some(Builtin::ZipMap) => self.check_higher(name, args, 2, span),
@@ -872,6 +938,13 @@ impl<'a> Checker<'a> {
             xs.push(x);
         }
         let lambda = self.check_lambda_arg(&args[arrays], &elems)?;
+        let higher = match name {
+            "map" => Higher::Map,
+            "zip_map" => Higher::ZipMap,
+            _ => Higher::Filter,
+        };
+        let tys = xs.iter().map(|x| x.ty).collect();
+        self.lifts.push((higher, lambda.clone(), tys, span));
         let ValueType::Scalar(ret) = lambda.body.ty else {
             return Err(Error::ty(
                 format!("'{name}' function must return a scalar"),

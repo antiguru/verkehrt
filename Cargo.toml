@@ -99,3 +99,7 @@ harness = false
 [[bench]]
 name = "corgi"
 harness = false
+
+[[bench]]
+name = "acceptance"
+harness = false

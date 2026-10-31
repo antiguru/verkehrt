@@ -4,6 +4,7 @@
 use std::marker::PhantomData;
 use std::ops::Range;
 
+use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{arity_error, rows_arg, tag};
 use crate::kernels::{
     InputSpec, KernelClass, KernelDef, KernelImpl, Registry, SelectionBody, Variant,
@@ -209,7 +210,7 @@ fn compress<T: Elem, const BOOL: bool>(reg: &mut Registry) {
         output: ValueType::Array(ty),
         // Read the value and the mask byte, write the survivors, plus a byte of
         // branch and compaction overhead per row.
-        cost: 2 * u64::try_from(ty.width()).expect("width fits in u64") + 1,
+        cost: 2 * width(ty) + 1,
         commutative: false,
         pattern: None,
         impls: compress_impls::<T, BOOL>(),
@@ -235,6 +236,7 @@ pub(crate) fn register(reg: &mut Registry) {
     compress::<f64, false>(reg);
     compress::<f32, false>(reg);
     compress::<i64, false>(reg);
+    compress::<u64, false>(reg);
     compress::<i32, false>(reg);
     compress::<u8, false>(reg);
     // Bool arrays are stored as `u8`.

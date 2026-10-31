@@ -1,6 +1,6 @@
 use crate::value::ScalarType;
 
-/// Associative folds that `Op::Reduce` can apply.
+/// Associative folds that `Op::Reduce`, `Op::Scan`, `Op::ScanBy`, and `Op::ReduceInto` can apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReduceOp {
     Add,
@@ -32,11 +32,16 @@ pub enum Op {
     Ge,
     And,
     Or,
+    Xor,
     Not,
     Select,
     /// Cast to the given scalar type.
     Cast(ScalarType),
     Reduce(ReduceOp),
+    /// The running fold of a whole array, one output row per input row.
+    Scan(ReduceOp),
+    /// `Scan` that restarts at every row where the `bool` operand is true.
+    ScanBy(ReduceOp),
     Count,
     Any,
     All,
@@ -44,8 +49,25 @@ pub enum Op {
     ArgMax,
     Compress,
     Where,
+    /// Each row's predecessor, with the second operand in row 0.
+    Prev,
     Iota,
     Fill,
+    /// The rows of the first operand at the positions of the `i64` second operand.
+    Gather,
+    /// The rows `start..end` of the first operand as a view, with `start` and `end` the
+    /// `i64` scalar operands.
+    Slice,
+    /// The number of occurrences of each key in `0..n`, with the `i64` scalar operand `n`.
+    Histogram,
+    /// Truncating division of the first operand by the scalar second operand, which is never
+    /// zero. It wraps, so `MIN / -1` is `MIN`.
+    DivConst,
+    /// The positions of the rows of the operand in stable ascending order, as `i64`.
+    ArgSort,
+    /// The fold of the values per key in `0..n`, an empty bucket holding the identity of the
+    /// fold. The operands are the keys, the values, and the `i64` scalar `n`.
+    ReduceInto(ReduceOp),
     RandI64,
     RandF64,
     /// Load a file as an array of the given element type.
