@@ -11,7 +11,7 @@
 //! finishes the rest with the portable predicated loop. The loops and entries are shared
 //! with the other ISAs, see `crate::kernels::select_loops`.
 
-use crate::kernels::{Feature, FeatureSet, SelectionFn};
+use crate::kernels::{FeatureSet, SelectionFn};
 use crate::value::{Elem, ScalarType};
 
 mod avx2;
@@ -52,14 +52,9 @@ pub(crate) fn compress_entries<T: Elem, const BOOL: bool>()
             Some((avx512::compress::<i32, BOOL>, NO_EXTRA)),
         ),
         // AVX2 has no byte compress, so `u8` and bool keep the auto entry there. The AVX-512
-        // byte compress is `vpcompressb`, a VBMI2 instruction, so its entry declares it.
-        ScalarType::U8 => (
-            None,
-            Some((
-                avx512_vbmi2::compress::<u8, BOOL>,
-                FeatureSet::of(&[Feature::Avx512vbmi2]),
-            )),
-        ),
+        // byte compress is `vpcompressb`, a VBMI2 instruction, so its constructor pairs the
+        // entry with the feature it declares.
+        ScalarType::U8 => (None, Some(avx512_vbmi2::compress_entry::<BOOL>())),
         _ => (None, None),
     }
 }

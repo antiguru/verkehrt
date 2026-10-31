@@ -3,13 +3,17 @@
 //! of the vector, which is then stored whole.
 //!
 //! VBMI2 is not part of the x86-64-v4 level, so everything here is compiled for the v4 string
-//! plus `avx512vbmi2`, and the only entry, `compress` on `u8`, is registered declaring
-//! `avx512vbmi2`. `Lanes` is private to this module and only `u8` implements it, so no entry
-//! that is compiled for the v4 level alone can reach a function compiled here.
+//! plus `avx512vbmi2`. The module exposes its entries only through `compress_entry`, which
+//! returns the entry together with the `FeatureSet` it declares, so a registration cannot omit
+//! the declaration. The compiled functions are private to this module (the macro-generated
+//! entry sits in the private module `entries`) and `Lanes` is private with only `u8`
+//! implementing it, so no entry that is compiled for the v4 level alone can reach a function
+//! compiled here.
 
 use std::arch::x86_64::*;
 
 use crate::kernels::select_loops::{ones, selection_loops};
+use crate::kernels::{Feature, FeatureSet, SelectionFn};
 use crate::value::Elem;
 
 /// A row type that AVX-512 with VBMI2 selects `LANES` rows at a time, see the `Lanes` trait
@@ -18,7 +22,7 @@ use crate::value::Elem;
 /// The methods are `unsafe` because they read and write through raw pointers and need the
 /// CPU features of the `Isa::X86_64V4` level plus `avx512vbmi2`. Each states the memory its
 /// pointers must cover.
-pub(super) trait Lanes: Elem {
+trait Lanes: Elem {
     const LANES: usize;
     /// A vector of `LANES` rows.
     type Vector: Copy;
@@ -90,7 +94,21 @@ impl Lanes for u8 {
     }
 }
 
-selection_loops!(
-    compress: "AVX-512 VBMI2",
-    "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl,avx512vbmi2"
-);
+/// The features that every entry of this module declares beyond the x86-64-v4 level.
+const DECLARED: FeatureSet = FeatureSet::of(&[Feature::Avx512vbmi2]);
+
+/// The macro-generated entry, private to `avx512_vbmi2` through its `pub(super)` visibility.
+mod entries {
+    use super::*;
+
+    selection_loops!(
+        compress: "AVX-512 VBMI2",
+        "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl,avx512vbmi2"
+    );
+}
+
+/// The `compress` entry on `u8` rows, whose semantic type is `tag::<u8, BOOL>()`, together
+/// with the features it declares beyond the x86-64-v4 level. Registration must use both.
+pub(super) fn compress_entry<const BOOL: bool>() -> (SelectionFn, FeatureSet) {
+    (entries::compress::<u8, BOOL>, DECLARED)
+}

@@ -18,7 +18,7 @@ use crate::value::{Array, Elem, Value};
 /// semantic type is `tag::<T, BOOL>()`, `None` where it has none.
 pub(crate) fn gather_entries<T: Elem, const BOOL: bool>() -> (Option<WholeFn>, Option<WholeFn>) {
     if size_of::<T>() == 8 && !BOOL {
-        (Some(avx2::<T>), Some(avx512::<T>))
+        (Some(v3::<T>), Some(v4::<T>))
     } else {
         (None, None)
     }
@@ -48,7 +48,7 @@ fn rest(xs: &[u64], idx: &[i64], out: &mut [u64]) {
 #[target_feature(
     enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
 )]
-unsafe fn avx2<T: Elem>(args: &[Value]) -> Result<Value, String> {
+unsafe fn v3<T: Elem>(args: &[Value]) -> Result<Value, String> {
     let (xs, idx) = checked::<T>(args)?;
     Array::build_bytes(idx.len(), T::TYPE, |out| {
         let out: &mut [u64] = bytemuck::cast_slice_mut(out);
@@ -78,7 +78,7 @@ unsafe fn avx2<T: Elem>(args: &[Value]) -> Result<Value, String> {
 #[target_feature(
     enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
 )]
-unsafe fn avx512<T: Elem>(args: &[Value]) -> Result<Value, String> {
+unsafe fn v4<T: Elem>(args: &[Value]) -> Result<Value, String> {
     let (xs, idx) = checked::<T>(args)?;
     Array::build_bytes(idx.len(), T::TYPE, |out| {
         let out: &mut [u64] = bytemuck::cast_slice_mut(out);

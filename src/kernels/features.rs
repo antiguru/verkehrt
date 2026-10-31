@@ -61,9 +61,12 @@ features! {
     Neon => "neon",
 }
 
-/// A set of CPU features.
+/// A set of CPU features, one bit per `Feature::ALL` position in a `u64`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct FeatureSet(u64);
+
+// A feature past the 64th would overflow the bit set.
+const _: () = assert!(Feature::ALL.len() <= 64);
 
 impl FeatureSet {
     pub const EMPTY: FeatureSet = FeatureSet(0);

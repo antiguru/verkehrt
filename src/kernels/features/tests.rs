@@ -153,26 +153,45 @@ fn macro_bodies(src: &str) -> Vec<(&str, Range<usize>)> {
         .collect()
 }
 
-/// The feature strings in `src`: each `target_feature(enable = ...)` argument, and the last
+/// The identifier at the start of `s`, after whitespace, empty if none.
+fn leading_ident(s: &str) -> &str {
+    let s = s.trim_start();
+    &s[..s
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(s.len())]
+}
+
+/// The feature strings in `src`, each with the name of the item it applies to: the function
+/// that follows a `target_feature` attribute, or the first argument of a macro invocation when
+/// it is an identifier, else empty. Each `target_feature(enable = ...)` argument, and the last
 /// argument of each invocation of a macro that forwards it to `#[target_feature]`. An
 /// argument that is a metavariable (`$features`) is allowed only inside the definition of a
 /// forwarding macro, whose invocations are checked instead. Any other argument that is not a
 /// string literal fails.
-fn feature_strings(src: &str) -> Vec<String> {
+fn feature_strings(src: &str) -> Vec<(String, String)> {
     let bodies = macro_bodies(src);
-    let mut args: Vec<(usize, &str)> = Vec::new();
+    // The byte offset, the item name, and the feature argument.
+    let mut args: Vec<(usize, String, &str)> = Vec::new();
     for (at, m) in src.match_indices("target_feature") {
         let open = skip_whitespace(src, at + m.len());
         if !src[open..].starts_with('(') {
             // The word in a comment, a string, or an identifier such as `is_x86_feature_detected`.
             continue;
         }
-        let arg = src[open + 1..closing(src, open)]
+        let close = closing(src, open);
+        // The next function after the attribute. Attributes and doc comments may sit between.
+        let fn_at = src[close..]
+            .match_indices("fn ")
+            .map(|(i, _)| close + i)
+            .find(|&i| !src[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_'))
+            .unwrap_or_else(|| panic!("no function after target_feature at byte {at}"));
+        let item = leading_ident(&src[fn_at + 3..]).to_string();
+        let arg = src[open + 1..close]
             .trim()
             .strip_prefix("enable")
             .and_then(|r| r.trim_start().strip_prefix('='))
             .unwrap_or_else(|| panic!("unknown target_feature form at byte {at}"));
-        args.push((at, arg.trim()));
+        args.push((at, item, arg.trim()));
     }
     for name in FORWARDING_MACROS {
         for (at, m) in src.match_indices(&format!("{name}!")) {
@@ -189,13 +208,17 @@ fn feature_strings(src: &str) -> Vec<String> {
                 Some(head) => &list[head.rfind('"').expect("an opening quote")..],
                 None => list.rsplit(',').next().unwrap().trim(),
             };
-            args.push((at, last));
+            let item = leading_ident(&src[open + 1..]).to_string();
+            args.push((at, item, last));
         }
     }
     args.into_iter()
-        .filter_map(|(at, arg)| {
+        .filter_map(|(at, item, arg)| {
             if let Some(s) = arg.strip_prefix('"') {
-                Some(s.strip_suffix('"').expect("a string literal").to_string())
+                Some((
+                    item,
+                    s.strip_suffix('"').expect("a string literal").to_string(),
+                ))
             } else {
                 assert!(
                     arg.starts_with('$')
@@ -211,13 +234,31 @@ fn feature_strings(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// Every feature string that reaches `#[target_feature]` in `src/` and `benches/` is a level
-/// string, so a level's `FeatureSet` and the code compiled for it agree. The VBMI2 string is
-/// confined to the module that only VBMI2-declaring entries reach, so no bench carries it
-/// unless a bench function uses VBMI2.
+/// The level that registers the code at `item` of the file `rel`, as the slot in the counts of
+/// `target_feature_strings_match_levels`: 0 for x86-64-v3, 1 for x86-64-v4, 2 for x86-64-v4
+/// plus VBMI2, 3 for NEON. `None` for code that registers no level.
+fn registered_slot(rel: &str, item: &str) -> Option<usize> {
+    match (rel, item) {
+        ("src/kernels/x86/compress/avx2.rs", _) => Some(0),
+        ("src/kernels/x86/compress/avx512.rs" | "src/kernels/x86/scan.rs", _) => Some(1),
+        ("src/kernels/x86/compress/avx512_vbmi2.rs", _) => Some(2),
+        ("src/kernels/x86/gather.rs" | "benches/tier1.rs", "v3") => Some(0),
+        ("src/kernels/x86/gather.rs" | "benches/tier1.rs", "v4") => Some(1),
+        ("src/kernels/x86.rs", "x86_64_v3") => Some(0),
+        ("src/kernels/x86.rs", "x86_64_v4") => Some(1),
+        (rel, _) if rel.starts_with("src/kernels/aarch64/") => Some(3),
+        _ => None,
+    }
+}
+
+/// Every feature string that reaches `#[target_feature]` in `src/` and `benches/` is the string
+/// of the level that registers the code it compiles, so a level's `FeatureSet` and the code
+/// installed for it agree. The v3 string is accepted only in the code registered as v3, the v4
+/// string only in v4 code, the v4 plus VBMI2 string only in `avx512_vbmi2.rs`, and `neon` only
+/// under `aarch64`. Files that hold both levels attribute each string to the function or
+/// macro invocation it applies to, see `registered_slot`.
 #[test]
 fn target_feature_strings_match_levels() {
-    const VBMI2_FILE: &str = "src/kernels/x86/compress/avx512_vbmi2.rs";
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     // This file holds the patterns in its extractor.
     let own = root.join(file!());
@@ -228,6 +269,7 @@ fn target_feature_strings_match_levels() {
     let v4 = level(Isa::X86_64V4);
     let v4_vbmi2 = v4.union(FeatureSet::of(&[Avx512vbmi2]));
     let neon = level(Isa::Neon);
+    let slot_sets = [v3, v4, v4_vbmi2, neon];
     // Matches of v3, v4, v4 plus VBMI2, and NEON.
     let mut counts = [0usize; 4];
     for path in files {
@@ -241,20 +283,16 @@ fn target_feature_strings_match_levels() {
             .unwrap()
             .replace('\\', "/");
         let src = std::fs::read_to_string(&path).unwrap();
-        for s in feature_strings(&src) {
+        for (item, s) in feature_strings(&src) {
             let set =
                 FeatureSet::parse(&s).unwrap_or_else(|| panic!("{rel}: unknown feature in {s:?}"));
-            let slot = if set == v3 {
-                0
-            } else if set == v4 {
-                1
-            } else if set == v4_vbmi2 && rel == VBMI2_FILE {
-                2
-            } else if set == neon && rel.starts_with("src/kernels/aarch64") {
-                3
-            } else {
-                panic!("{rel}: feature string {s:?} is not a level string of this file");
-            };
+            let slot = registered_slot(&rel, &item)
+                .unwrap_or_else(|| panic!("{rel}: item {item:?} registers no level for {s:?}"));
+            assert_eq!(
+                set, slot_sets[slot],
+                "{rel}: item {item:?} is registered at slot {slot} (v3, v4, v4 plus VBMI2, \
+                 neon) but its feature string is {s:?}"
+            );
             counts[slot] += 1;
         }
     }

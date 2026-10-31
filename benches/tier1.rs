@@ -208,8 +208,8 @@ fn argmin_body(x: &[f64]) -> i64 {
     i64::try_from(best.1).unwrap()
 }
 
-/// Defines a module with `base`, `avx2`, and `avx512` functions around one shared body. The
-/// `avx2` and `avx512` functions are compiled for the x86-64-v3 and x86-64-v4 levels and
+/// Defines a module with `base`, `v3`, and `v4` functions around one shared body. The
+/// `v3` and `v4` functions are compiled for the x86-64-v3 and x86-64-v4 levels and
 /// exist on x86-64 only.
 macro_rules! native_fns {
     ($name:ident, $body:ident, ($($arg:ident: $ty:ty),*) -> $ret:ty) => {
@@ -220,12 +220,12 @@ macro_rules! native_fns {
             }
             #[cfg(target_arch = "x86_64")]
             #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
-            pub fn avx2($($arg: $ty),*) -> $ret {
+            pub fn v3($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
             #[cfg(target_arch = "x86_64")]
             #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
-            pub fn avx512($($arg: $ty),*) -> $ret {
+            pub fn v4($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
         }
@@ -253,12 +253,12 @@ macro_rules! call_native {
             // `available` found the x86-64-v3 level through `features::runnable`. The
             // arguments are ordinary safe references, so only the CPU features are required.
             #[cfg(target_arch = "x86_64")]
-            Native::X86_64V3 => unsafe { $m::avx2($($arg),*) },
+            Native::X86_64V3 => unsafe { $m::v3($($arg),*) },
             // SAFETY: as above, `Native::check` returned the `Checked` because `available`
             // found the x86-64-v4 level through `features::runnable`. The arguments are
             // ordinary safe references.
             #[cfg(target_arch = "x86_64")]
-            Native::X86_64V4 => unsafe { $m::avx512($($arg),*) },
+            Native::X86_64V4 => unsafe { $m::v4($($arg),*) },
         }
     }};
 }
@@ -738,7 +738,7 @@ mod n_gather {
     #[target_feature(
         enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
     )]
-    pub fn avx2(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+    pub fn v3(xs: &[i64], idx: &[i64]) -> Vec<i64> {
         use std::arch::x86_64::{
             __m256i, _mm256_i64gather_epi64, _mm256_loadu_si256, _mm256_storeu_si256,
         };
@@ -767,7 +767,7 @@ mod n_gather {
     #[target_feature(
         enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
     )]
-    pub fn avx512(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+    pub fn v4(xs: &[i64], idx: &[i64]) -> Vec<i64> {
         use std::arch::x86_64::{_mm512_i64gather_epi64, _mm512_loadu_si512, _mm512_storeu_si512};
         assert!(indices_in_range(idx, xs.len()), "gather index out of range");
         let mut out = vec![0i64; idx.len()];
