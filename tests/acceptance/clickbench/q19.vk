@@ -1,5 +1,5 @@
 // sql: SELECT UserID FROM hits WHERE UserID = 435090932899640449
-// output: [u]
+// output: [i]
 input UserID: i64[];
 
 // The answer is empty on this data, but the filter is still evaluated over every row.

@@ -2,15 +2,10 @@
 // output: g
 input UserID: i64[];
 
-// The data stores a signed column with its sign bit flipped, so that unsigned order is signed
-// order. Adding 2^63 wraps and flips the bit back, and subtracting in two steps keeps every
-// constant within i64.
-let id = (UserID - 9223372036854775807) - 1;
-
 // The ids spread over all of i64 and sum to about 2^80, so a sum of them wraps. Each id splits at
 // 2^32 into x = hi * 2^32 + lo exactly. `div_const` truncates toward zero, so lo is the remainder
 // with x's sign. Neither part's sum leaves i64 for fewer than 2^31 rows, and the parts combine in f64.
-let hi = div_const(id, 4294967296);
-let lo = id - (hi * 4294967296);
-let n = cast_f64(length(id));
+let hi = div_const(UserID, 4294967296);
+let lo = UserID - (hi * 4294967296);
+let n = cast_f64(length(UserID));
 export a = ((cast_f64(sum(hi)) * 4294967296.0) + cast_f64(sum(lo))) / n;
