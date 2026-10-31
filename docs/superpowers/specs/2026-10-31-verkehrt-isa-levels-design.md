@@ -20,7 +20,7 @@ The psABI levels give each name a fixed, documented meaning that compilers and d
 ## Non-goals
 
 * No new kernels. A kernel that could use a newly available extension stays as is, unless the re-measurement shows it already vectorizes under v4.
-* No change to aarch64 beyond what the shared types require. NEON stays one level with no declared extras. SVE and optional NEON extensions are out of scope.
+* No change to aarch64 beyond what the shared types require. NEON stays one level with no declared extras, and SVE and optional NEON extensions are out of scope. The aarch64 baseline differs by target today: `rustc --print cfg` shows that `aarch64-apple-darwin` enables `neon` plus `dotprod`, `fp16`, `fhm`, `rdm`, `rcpc`, `lse`, `crc`, `aes`, `sha2`, `sha3`, and more at compile time, while `aarch64-unknown-linux-gnu` enables only `neon`. The scalar and NEON entries are therefore M1-level code on macOS and plain NEON on Linux, and the aarch64 measurements describe the macOS build. `Feature` is designed to take aarch64 features later, so a plan that wants CRC32, PMULL, or dotprod on Linux declares them per entry the same way.
 * No x86-64-v2 level, and no level between v3 and v4. A CPU without AVX2 runs the scalar entries, as today.
 * No fix for issue #7 (the `auto`-entry ISA guard), which stays separate.
 
@@ -35,7 +35,7 @@ The feature strings follow the x86-64 psABI and use Rust's `target_feature` name
 
 | Level | `#[target_feature]` string |
 |---|---|
-| `x86-64-v3` | `avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave` plus the x86-64-v2 features `cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3` |
+| `x86-64-v3` | `avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave` plus the x86-64-v2 features `cmpxchg16b,lahfsahf,popcnt,sse3,sse4.1,sse4.2,ssse3` |
 | `x86-64-v4` | the v3 string plus `avx512f,avx512bw,avx512cd,avx512dq,avx512vl` |
 
 A level is available when the CPU reports every feature of its string and the disable set contains none of them. Disabling a level feature therefore drops the whole level, for example `--disable avx512dq` makes `Isa::detect` return `x86-64-v3`. The builder may drop features from the strings that Rust cannot name or that `is_x86_feature_detected!` cannot check, and records each dropped one in the spec's level table.
@@ -46,7 +46,7 @@ Enabling `fma` is safe for bit identity. Rust never contracts a separate multipl
 
 A `Feature` enum names every feature that a level contains or an entry may declare, with `Feature::name` returning the `target_feature` name (`"avx512vbmi2"`). A `FeatureSet` is a `Copy` bit set of features, so `Options` stays `Copy`. `FeatureSet::detect()` reads every feature once at startup.
 
-`Feature` is the same on every target, so `Options` and `--disable` behave the same everywhere (my call). On aarch64 no x86 feature is ever detected, so disabling one is a no-op, just as disabling a feature that an x86 CPU lacks is a no-op.
+`Feature` is the same on every target, so `Options` and `--disable` behave the same everywhere (my call). On aarch64 no x86 feature is ever detected, so disabling one changes nothing, just as disabling a feature that an x86 CPU lacks changes nothing. The CLI prints a note on stderr for each disabled feature that detection did not report, so a disable without effect cannot pass for a fallback test.
 
 Today exactly one intrinsics entry declares an extra feature. The AVX-512 byte `compress` entry, which serves `compress` on `u8` and bool, declares `avx512vbmi2`. Its `#[target_feature]` string is the v4 string plus `avx512vbmi2`. Every other intrinsics entry (the 32-bit and 64-bit `compress`, `where`, the `filter_<cmp>` entries, `gather`, `scan_by_add`) fits in its level and declares nothing. The builder confirms this by checking each intrinsic's required features in the Intel intrinsics guide or `core::arch` documentation, and lists any other entry that needs an extra.
 
@@ -58,9 +58,9 @@ Each slot of a kernel's variant table holds the entry and the features it declar
 2. the `auto` entry of the level, when the level is available
 3. the scalar entry
 
-A requested level that is unavailable resolves every kernel to scalar, as today. The variant that `Dispatch` records, and that `--trace` and `--stats` print, is the entry that was installed, so a fallback caused by a missing feature shows as the level's `auto` variant.
+A requested level that is unavailable resolves every kernel to scalar in `Registry::resolve`, as today. `Interpreter::new` keeps rejecting a forced level that is unavailable with a usage error, and the disable set counts: `--isa x86-64-v4 --disable avx512dq` fails with "instruction set 'x86-64-v4' is not available", which keeps a mistyped disable visible instead of silently running scalar. Without `--isa`, `Isa::detect` applies the disable set and picks the best remaining level. The variant that `Dispatch` records, and that `--trace` and `--stats` print, is the entry that was installed, so a fallback caused by a missing feature shows as the level's `auto` variant.
 
-Every `SAFETY` comment that argues from "`resolve` installed the entry after `is_available` returned true" now argues from the level and the declared features. `Dispatch` keeps calling only entries that `resolve` installed.
+One predicate decides whether an entry may run: `runnable(isa, declared, available)`, true when every feature of the level of `isa` and every feature in `declared` is in `available`. The selection function calls it for each candidate, and `Isa::is_available` is the same predicate with an empty `declared` set. Every `SAFETY` comment in `dispatch.rs`, `auto.rs`, and the x86 intrinsics points at this predicate instead of restating the check. `Dispatch` keeps calling only entries that `resolve` installed.
 
 ## Options and CLI
 
@@ -83,9 +83,10 @@ The results go into a new `docs/measurements/2026-10-31-isa-levels.md` with the 
 ## Testing
 
 * The cross-variant property tests in `tests/isa_variants.rs` and `src/kernels/tests.rs` iterate a fixed list of configurations and compare every entry to scalar bit for bit: `x86-64-v3`, `x86-64-v4`, and `x86-64-v4` with `avx512vbmi2` disabled (my call). A configuration the CPU cannot run is skipped with a message.
+* A pure test checks that removing a level feature from a synthetic available set drops the level: with `avx512dq` removed, the best available level is `x86-64-v3`, and with `avx2` removed, it is scalar.
 * A test of the pure selection function checks the fallback order with synthetic feature sets: an entry whose declared feature is absent resolves to the level's `auto` entry, and an entry whose level is absent resolves to scalar. It installs no entry, so it runs on every CPU.
 * A test runs byte `compress` with `avx512vbmi2` disabled and checks that it resolves to the `auto` variant and matches scalar. It skips with a message on a CPU without v4, like the existing ISA tests.
-* A CLI test checks that `--disable` rejects an unknown name and that `--isa avx512` is now an error.
+* A CLI test checks that `--disable` rejects an unknown name, that `--isa avx512` is now an error, and that `--isa x86-64-v4 --disable avx512dq` fails with the unavailable error on a CPU with v4.
 
 ## Left to the builder
 
