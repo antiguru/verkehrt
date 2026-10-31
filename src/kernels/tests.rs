@@ -347,7 +347,7 @@ fn kernel_names_are_unique_valid_identifiers() {
                 KernelClass::Reduction
             }
             Some(Op::Compress | Op::Where) => KernelClass::Selection,
-            Some(Op::Prev) => KernelClass::Scan,
+            Some(Op::Prev | Op::Scan(_) | Op::ScanBy(_)) => KernelClass::Scan,
             Some(
                 Op::Iota
                 | Op::Fill
@@ -1127,13 +1127,15 @@ fn variant_entry_counts_are_stable() {
     // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
     // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
     // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`
-    // added 46 scalar and 29 auto entries per x86 ISA, and no intrinsics entries.
+    // added 46 scalar and 29 auto entries per x86 ISA, and no intrinsics entries. The 70
+    // `scan_<op>_<t>` and `scan_by_<op>_<t>` kernels added 70 scalar and 70 auto entries per
+    // x86 ISA.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [617, 318, 36, 318, 38, 0, 0]);
+    assert_eq!(counts, [687, 388, 36, 388, 38, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [617, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [687, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {
@@ -1250,4 +1252,94 @@ fn bitwise_reductions_have_identities() {
     assert_eq!(r("reduce_and_u64", &empty), Scalar::U64(u64::MAX));
     assert_eq!(r("reduce_or_u64", &empty), Scalar::U64(0));
     assert_eq!(r("reduce_xor_u64", &empty), Scalar::U64(0));
+}
+
+fn i64v(v: &[i64]) -> Value {
+    Value::Array(Array::from_vec(v.to_vec()))
+}
+
+/// The array a kernel produces through the scalar implementation.
+fn run_arr(name: &str, args: &[Value]) -> Array {
+    arr(call(&Registry::new(), name, args).unwrap())
+}
+
+#[test]
+fn scan_add_i64_is_a_prefix_sum() {
+    let r = run_arr("scan_add_i64", &[i64v(&[1, 2, 3, 4])]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 6, 10]);
+    let wrapped = run_arr("scan_add_i64", &[i64v(&[i64::MAX, 1])]);
+    assert_eq!(wrapped.as_slice::<i64>(), &[i64::MAX, i64::MIN]);
+}
+
+#[test]
+fn scan_add_i32_widens() {
+    let r = run_arr("scan_add_i32", &[i32s(&[i32::MAX, 1])]);
+    assert_eq!(r.as_slice::<i64>(), &[2147483647, 2147483648]);
+}
+
+#[test]
+fn scan_add_u8_widens() {
+    let r = run_arr("scan_add_u8", &[u8s(&[255, 1])]);
+    assert_eq!(r.as_slice::<u64>(), &[255, 256]);
+}
+
+#[test]
+fn scan_max_f64_propagates_nan() {
+    let nan = run_arr("scan_max_f64", &[f64s(&[1.0, f64::NAN, 3.0])]);
+    let nan = nan.as_slice::<f64>();
+    assert_eq!(nan[0], 1.0);
+    assert!(nan[1].is_nan() && nan[2].is_nan());
+    let zeros = run_arr("scan_max_f64", &[f64s(&[-0.0, 0.0])]);
+    let bits: Vec<u64> = zeros
+        .as_slice::<f64>()
+        .iter()
+        .map(|x| x.to_bits())
+        .collect();
+    assert_eq!(bits, [(-0.0f64).to_bits(), 0.0f64.to_bits()]);
+}
+
+#[test]
+fn scan_by_restarts_at_starts() {
+    let starts = bools(&[false, false, true, false, true]);
+    let r = run_arr("scan_by_add_i64", &[i64v(&[1, 2, 3, 4, 5]), starts]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 3, 7, 5]);
+    // Row 0 starts a segment whether or not `starts[0]` says so.
+    let first = run_arr("scan_by_add_i64", &[i64v(&[1, 2]), bools(&[true, false])]);
+    assert_eq!(first.as_slice::<i64>(), &[1, 3]);
+}
+
+#[test]
+fn scan_bool_and_bitwise_kernels() {
+    let xor = run_arr("scan_xor_bool", &[bools(&[true, true, true, false])]);
+    assert_eq!(xor.as_bool_bytes(), &[1, 0, 1, 1]);
+    let and = run_arr("scan_and_i32", &[i32s(&[7, 3, 1, 6])]);
+    assert_eq!(and.as_slice::<i32>(), &[7, 3, 1, 0]);
+    let mul = run_arr("scan_mul_i64", &[i64v(&[2, 3, 4])]);
+    assert_eq!(mul.as_slice::<i64>(), &[2, 6, 24]);
+    let min = run_arr("scan_min_i64", &[i64v(&[3, 1, 2])]);
+    assert_eq!(min.as_slice::<i64>(), &[3, 1, 1]);
+    let starts = bools(&[false, false, true, false]);
+    let max = run_arr("scan_by_max_u64", &[u64s(&[5, 1, 9, 2]), starts]);
+    assert_eq!(max.as_slice::<u64>(), &[5, 5, 9, 9]);
+}
+
+#[test]
+fn scan_last_equals_sum() {
+    let reg = Registry::new();
+    let xs: Vec<i64> = (0..500)
+        .map(|i| splitmix64(u64::try_from(i).unwrap()) as i64)
+        .collect();
+    let scan64 = run_arr("scan_add_i64", &[i64v(&xs)]);
+    let sum64 = scalar(call(&reg, "reduce_add_i64", &[i64v(&xs)]));
+    assert_eq!(
+        Scalar::I64(*scan64.as_slice::<i64>().last().unwrap()),
+        sum64
+    );
+    let ys: Vec<i32> = xs.iter().map(|&x| x as i32).collect();
+    let scan32 = run_arr("scan_add_i32", &[i32s(&ys)]);
+    let sum32 = scalar(call(&reg, "reduce_add_i32", &[i32s(&ys)]));
+    assert_eq!(
+        Scalar::I64(*scan32.as_slice::<i64>().last().unwrap()),
+        sum32
+    );
 }

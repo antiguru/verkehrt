@@ -93,6 +93,8 @@ pub struct Lowered {
 pub fn op_name(op: Op) -> String {
     match op {
         Op::Reduce(r) => format!("reduce_{}", format!("{r:?}").to_lowercase()),
+        Op::Scan(r) => format!("scan_{}", format!("{r:?}").to_lowercase()),
+        Op::ScanBy(r) => format!("scan_by_{}", format!("{r:?}").to_lowercase()),
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         other => format!("{other:?}").to_lowercase(),

@@ -88,9 +88,35 @@ pub fn check(prog: &ast::Program, reg: &Registry, env: &mut Globals) -> Result<T
     Ok(TProgram { stmts })
 }
 
+#[derive(Clone, Copy)]
+enum FoldKind {
+    Reduce,
+    Scan,
+    ScanBy,
+}
+
+impl FoldKind {
+    /// The number of array arguments before the operation name.
+    fn arrays(self) -> usize {
+        match self {
+            FoldKind::Reduce | FoldKind::Scan => 1,
+            FoldKind::ScanBy => 2,
+        }
+    }
+
+    fn op(self, r: ReduceOp) -> Op {
+        match self {
+            FoldKind::Reduce => Op::Reduce(r),
+            FoldKind::Scan => Op::Scan(r),
+            FoldKind::ScanBy => Op::ScanBy(r),
+        }
+    }
+}
+
 enum Builtin {
     Op(Op, usize),
-    Reduce,
+    /// `reduce`, `scan`, and `scan_by`: the arrays, then an operation name.
+    Fold(FoldKind),
     Map,
     ZipMap,
     Filter,
@@ -123,7 +149,9 @@ fn builtin(name: &str) -> Option<Builtin> {
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),
-        "reduce" => return Some(Builtin::Reduce),
+        "reduce" => return Some(Builtin::Fold(FoldKind::Reduce)),
+        "scan" => return Some(Builtin::Fold(FoldKind::Scan)),
+        "scan_by" => return Some(Builtin::Fold(FoldKind::ScanBy)),
         "map" => return Some(Builtin::Map),
         "zip_map" => return Some(Builtin::ZipMap),
         "filter" => return Some(Builtin::Filter),
@@ -279,6 +307,8 @@ fn op_name(op: Op) -> String {
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         Op::Reduce(r) => format!("reduce({})", reduce_name(r)),
+        Op::Scan(r) => format!("scan({})", reduce_name(r)),
+        Op::ScanBy(r) => format!("scan_by({})", reduce_name(r)),
         other => format!("{other:?}").to_lowercase(),
     }
 }
@@ -764,33 +794,38 @@ impl<'a> Checker<'a> {
                 };
                 self.prim(op, name, targs, span, false)
             }
-            Some(Builtin::Reduce) => {
+            Some(Builtin::Fold(kind)) => {
                 if self.in_lambda {
                     return Err(Error::ty(
                         format!("'{name}' cannot be used inside a lambda"),
                         span,
                     ));
                 }
-                let [x, op] = args else {
+                let arrays = kind.arrays();
+                let Some((op, xs)) = args.split_last().filter(|(_, xs)| xs.len() == arrays) else {
                     return Err(Error::ty(
-                        format!("'reduce' takes 2 arguments, got {}", args.len()),
+                        format!(
+                            "'{name}' takes {} arguments, got {}",
+                            arrays + 1,
+                            args.len()
+                        ),
                         span,
                     ));
                 };
                 let ExprKind::Name(n) = &op.kind else {
                     return Err(Error::ty(
-                        "reduce takes an operation name such as add or max",
+                        format!("{name} takes an operation name such as add or max"),
                         op.span,
                     ));
                 };
                 let Some(r) = reduce_op(n) else {
                     return Err(Error::ty(
-                        format!("unknown reduce operation '{n}'"),
+                        format!("unknown {name} operation '{n}'"),
                         op.span,
                     ));
                 };
-                let x = self.check_expr(x)?;
-                self.prim(Op::Reduce(r), "reduce", vec![x], span, false)
+                let targs = self.check_args(xs)?;
+                self.prim(kind.op(r), name, targs, span, false)
             }
             Some(Builtin::Map) => self.check_higher(name, args, 1, span),
             Some(Builtin::ZipMap) => self.check_higher(name, args, 2, span),

@@ -292,3 +292,31 @@ fn duplicate_input_and_export_are_rejected() {
     // An input and an export are different namespaces of the host interface.
     run("input a: f64; export b = a; let b = 1.0;").unwrap();
 }
+
+#[test]
+fn scan_add_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0, 2.0]; let s = scan(x, add);",
+        "no kernel for 'scan' on f64[]",
+    );
+}
+
+#[test]
+fn scan_rejects_unknown_operations() {
+    type_err(
+        "let x = [1, 2]; let s = scan(x, foo);",
+        "unknown scan operation 'foo'",
+    );
+    type_err(
+        "let x = [1, 2]; let s = scan_by(x, [true, false], foo);",
+        "unknown scan_by operation 'foo'",
+    );
+}
+
+#[test]
+fn scan_is_rejected_inside_a_lambda() {
+    type_err(
+        "let x = [1, 2]; let m = map(x, |v| scan(v, add));",
+        "'scan' cannot be used inside a lambda",
+    );
+}

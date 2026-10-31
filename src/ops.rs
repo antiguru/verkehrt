@@ -1,6 +1,6 @@
 use crate::value::ScalarType;
 
-/// Associative folds that `Op::Reduce` can apply.
+/// Associative folds that `Op::Reduce`, `Op::Scan`, and `Op::ScanBy` can apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReduceOp {
     Add,
@@ -38,6 +38,10 @@ pub enum Op {
     /// Cast to the given scalar type.
     Cast(ScalarType),
     Reduce(ReduceOp),
+    /// The running fold of a whole array, one output row per input row.
+    Scan(ReduceOp),
+    /// `Scan` that restarts at every row where the `bool` operand is true.
+    ScanBy(ReduceOp),
     Count,
     Any,
     All,
