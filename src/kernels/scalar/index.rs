@@ -2,21 +2,13 @@
 
 use std::marker::PhantomData;
 
-use crate::kernels::scalar::construct::add_whole;
+use crate::kernels::scalar::construct::{add_whole, i64_arg, width};
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::scan::ScanOp;
 use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Variant, WholeBody};
 use crate::ops::Op;
-use crate::value::{Array, Elem, Scalar, ScalarType, Value, ValueType};
-
-/// An `i64` scalar argument.
-fn i64_arg(v: &Value) -> Result<i64, String> {
-    match v {
-        Value::Scalar(Scalar::I64(n)) => Ok(*n),
-        other => Err(format!("expected i64, got {}", other.ty())),
-    }
-}
+use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
 /// The rows of `a` as storage type `T`, which is `u8` for a bool array. The caller has checked
 /// the element type of `a` against `T`.
@@ -51,15 +43,7 @@ impl<T: Elem, const BOOL: bool> Gather<T, BOOL> {
         let xs = Self::rows(array_arg(xs, Self::ELEM)?);
         let idx = array_arg(idx, ScalarType::I64)?.as_slice::<i64>();
         let n = u64::try_from(xs.len()).expect("length fits in u64");
-        // The error must not depend on the order of the rows, so every index is checked
-        // before any row is written. Negative indices wrap to values above `n`. The fold has
-        // no early exit, so it vectorizes.
-        let bad = idx.iter().fold(false, |b, &i| b | (i.cast_unsigned() >= n));
-        if bad {
-            let i = idx
-                .iter()
-                .find(|&&i| i.cast_unsigned() >= n)
-                .expect("a bad index exists");
+        if let Some(i) = first_out_of_range(idx, n) {
             return Err(format!("gather index {i} out of range for length {n}"));
         }
         Ok((xs, idx))
@@ -105,6 +89,24 @@ fn run_slice(args: &[Value], ty: ScalarType) -> Result<Value, String> {
     Ok(Value::Array(xs.slice(s, e - s)))
 }
 
+/// The first value of `vals` outside `0..bound`, if any.
+///
+/// The callers check every value before they write any row, so their error does not depend
+/// on the order of the rows. Negative values wrap to values above `bound` as unsigned, so one
+/// comparison covers both ends. The fold has no early exit, so it vectorizes, and the search
+/// for the offender runs only on the error path.
+#[inline(always)]
+fn first_out_of_range(vals: &[i64], bound: u64) -> Option<i64> {
+    let bad = vals
+        .iter()
+        .fold(false, |b, &v| b | (v.cast_unsigned() >= bound));
+    if bad {
+        vals.iter().copied().find(|&v| v.cast_unsigned() >= bound)
+    } else {
+        None
+    }
+}
+
 /// The bucket count `n` and the keys, checked to lie in `0..n`. A negative `n` and a key outside
 /// `0..n` are errors.
 #[inline(always)]
@@ -114,18 +116,7 @@ fn checked_keys<'a>(keys: &'a Value, n: &Value) -> Result<(&'a [i64], usize), St
     let Ok(count) = usize::try_from(buckets) else {
         return Err(format!("negative bucket count {buckets}"));
     };
-    // The error must not depend on the order of the keys, so every key is checked before any
-    // bucket is written. Negative keys wrap to values above `n`. The fold has no early exit,
-    // so it vectorizes.
-    let bound = buckets.cast_unsigned();
-    let bad = keys
-        .iter()
-        .fold(false, |b, &k| b | (k.cast_unsigned() >= bound));
-    if bad {
-        let k = keys
-            .iter()
-            .find(|&&k| k.cast_unsigned() >= bound)
-            .expect("a bad key exists");
+    if let Some(k) = first_out_of_range(keys, buckets.cast_unsigned()) {
         return Err(format!("bucket key {k} out of range for {buckets} buckets"));
     }
     Ok((keys, count))
@@ -216,10 +207,6 @@ impl<T: Elem, O: ScanOp<T>> WholeBody for ReduceInto<T, O> {
         })
         .map(Value::Array)
     }
-}
-
-fn width(ty: ScalarType) -> u64 {
-    u64::try_from(ty.width()).expect("width fits in u64")
 }
 
 // The kernel closures must coerce to bare function pointers, so their type arguments are

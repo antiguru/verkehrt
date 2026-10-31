@@ -20,7 +20,7 @@ pub fn splitmix64(x: u64) -> u64 {
 const UNIT_53: f64 = 1.0 / 9_007_199_254_740_992.0;
 
 /// An `i64` scalar argument.
-fn i64_arg(v: &Value) -> Result<i64, String> {
+pub(crate) fn i64_arg(v: &Value) -> Result<i64, String> {
     match v {
         Value::Scalar(Scalar::I64(n)) => Ok(*n),
         other => Err(format!("expected i64, got {}", other.ty())),
@@ -142,7 +142,8 @@ pub(crate) fn add_whole(
     });
 }
 
-fn width(ty: ScalarType) -> u64 {
+/// The width of `ty` in bytes, as the `u64` that kernel costs use.
+pub(crate) fn width(ty: ScalarType) -> u64 {
     u64::try_from(ty.width()).expect("width fits in u64")
 }
 

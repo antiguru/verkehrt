@@ -4,6 +4,7 @@
 use std::marker::PhantomData;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
+use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, out_rows, rows_arg, splat_arg, tag};
 use crate::kernels::scalar::index::ReduceInto;
 use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, ScanBody, Scanner};
@@ -64,7 +65,7 @@ fn register_prev<T: Elem, const BOOL: bool>(reg: &mut Registry) {
         inputs: vec![InputSpec::Array(ty), InputSpec::Scalar(ty)],
         output: ValueType::Array(ty),
         // One row read and one row written.
-        cost: 2 * u64::try_from(ty.width()).expect("width fits in u64"),
+        cost: 2 * width(ty),
         commutative: false,
         pattern: None,
         impls: KernelImpl::scan::<Prev<T, BOOL>>(),
@@ -328,7 +329,6 @@ impl<T: Elem, O: ScanOp<T>, const BY: bool> ScanBody for Scan<T, O, BY> {
 fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
     let op = format!("{r:?}").to_lowercase();
     let n = O::IN_TYPE.name();
-    let width = |t: ScalarType| u64::try_from(t.width()).expect("width fits in u64");
     // One row read and one row written, and the starts byte for `scan_by`.
     let cost = width(O::IN_TYPE) + width(O::OUT_TYPE);
     reg.add(KernelDef {
