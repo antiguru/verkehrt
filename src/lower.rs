@@ -257,14 +257,12 @@ impl Lowerer<'_> {
     /// decides which scalars next to an array operand are broadcast: those at `Either`
     /// positions, while a `Scalar` input keeps its scalar. When no kernel accepts the operands
     /// as given, every scalar next to an array is broadcast and the lookup runs on the lifted
-    /// types.
+    /// types, unless the op has a kernel with a `Scalar` input. Then the error reports the
+    /// operands as given, because the lifted types would not be the ones the user wrote.
     fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let lift = args.iter().any(|a| is_array(a.ty));
-        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
-        let specs = self
-            .reg
-            .lookup(op, &tys)
-            .map(|id| self.reg.get(id).inputs.clone());
+        if !args.iter().any(|a| is_array(a.ty)) {
+            return self.op_exact(op, args, span);
+        }
         let bcast = |a: Term| match a.ty {
             ValueType::Scalar(t) => {
                 let operand_span = a.span;
@@ -276,19 +274,18 @@ impl Lowerer<'_> {
             }
             _ => a,
         };
-        let args: Vec<Term> = match specs {
-            Some(specs) => args
+        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+        let args: Vec<Term> = match self.reg.lookup(op, &tys) {
+            Some(id) => args
                 .into_iter()
-                .zip(specs)
+                .zip(&self.reg.get(id).inputs)
                 .map(|(a, spec)| match spec {
-                    InputSpec::Either(_) if lift => bcast(a),
+                    InputSpec::Either(_) => bcast(a),
                     _ => a,
                 })
                 .collect(),
-            None => args
-                .into_iter()
-                .map(|a| if lift { bcast(a) } else { a })
-                .collect(),
+            None if self.reg.has_scalar_input(op) => args,
+            None => args.into_iter().map(bcast).collect(),
         };
         self.op_exact(op, args, span)
     }

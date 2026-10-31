@@ -428,6 +428,18 @@ impl Registry {
             .find(|id| self.get(*id).accepts(args))
     }
 
+    /// Whether some kernel of `op` takes a scalar that must stay a scalar.
+    pub fn has_scalar_input(&self, op: Op) -> bool {
+        self.by_op.get(&op).is_some_and(|ids| {
+            ids.iter().any(|id| {
+                self.get(*id)
+                    .inputs
+                    .iter()
+                    .any(|s| matches!(s, InputSpec::Scalar(_)))
+            })
+        })
+    }
+
     pub fn get(&self, id: KernelId) -> &KernelDef {
         &self.defs[usize::try_from(id.0).expect("u32 fits in usize")]
     }

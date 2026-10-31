@@ -505,3 +505,27 @@ fn div_const_lifts_in_a_lambda() {
         ["bind x = L_c", "print div_const(L_x, L_c)"]
     );
 }
+
+#[test]
+fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
+    // `div_const` has a `Scalar` input, so a scalar next to an array is not broadcast to
+    // find a kernel and the message must show `f64`, not the lifted `f64[]`.
+    let g = Globals::new();
+    let reg = Registry::new();
+    let mut lw = Lowerer {
+        g: &g,
+        reg: &reg,
+        leaves: Leaves(Vec::new()),
+        env: HashMap::new(),
+        lambda_depth: 0,
+    };
+    let span = Span { line: 1, col: 1 };
+    let xs = lw.leaf(Leaf::Var(VarId(0)), ValueType::Array(ScalarType::I64), span);
+    let d = lw.leaf(
+        Leaf::Var(VarId(1)),
+        ValueType::Scalar(ScalarType::F64),
+        span,
+    );
+    let e = lw.op(Op::DivConst, vec![xs, d], span).unwrap_err();
+    assert_eq!(e.message, "no kernel for 'div_const' on i64[], f64");
+}
