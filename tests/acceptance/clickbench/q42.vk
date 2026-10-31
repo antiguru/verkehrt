@@ -9,13 +9,16 @@ input EventTime: i64[];
 
 let m = and(and(CounterID == 62, and(EventDate >= 15900, EventDate <= 15901)), and(IsRefresh == 0, DontCountHits == 0));
 let minute = div_const(compress(EventTime, m), 60);
-// The bucket count comes from the filtered minutes, and an empty filter has no groups.
-let nb = if length(minute) > 0 { reduce(minute, max) + 1 } else { 0 };
-let counts = histogram(minute, nb);
+// A key with a small range becomes a bucket index by subtracting its minimum, and the bucket count
+// comes from the shifted keys. An empty filter has no groups.
+let base = if length(minute) > 0 { reduce(minute, min) } else { 0 };
+let keys = minute - base;
+let nb = if length(keys) > 0 { reduce(keys, max) + 1 } else { 0 };
+let counts = histogram(keys, nb);
 let groups = where(counts > 0);
 // OFFSET 1000 LIMIT 10, clamped to the number of groups.
 let g = length(groups);
 let lo = min(g, 1000);
 let hi = min(g, 1010);
-export M = slice(groups, lo, hi) * 60;
+export M = (slice(groups, lo, hi) + base) * 60;
 export PageViews = slice(gather(counts, groups), lo, hi);

@@ -113,8 +113,8 @@ The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 f
 These are single runs on AC power in high power mode, except two reruns of `argmin`, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
 Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
 
-On the tier 2 workloads, six of the seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
-ClickBench q42 is the exception, at 3.05x DuckDB and 2.61x corgi, and it is the first gap to close.
+On the tier 2 workloads, all seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
+ClickBench q42 first measured 21.59 ms because of a program bug, an unshifted bucket key, and subtracting the key's minimum took it to 2.60 ms.
 Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop on AVX2, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
 The bucket loops of `histogram` and `reduce_into`, 64-bit `div_const`, integer `scan`, and `argsort` stay scalar loops on x86, and the measurement document records why for each.
 Benching the tier 2 kernels found that the `auto` entries of whole kernels called the scalar build of their bodies, which was fixed, and no test guards against it recurring.

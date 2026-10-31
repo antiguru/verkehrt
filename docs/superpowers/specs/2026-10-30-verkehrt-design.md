@@ -228,7 +228,7 @@ Later tiers extend the primitive set, and each entry records where the model str
 
 Plan 4 implemented the rows below, and `docs/measurements/2026-10-31-tier2.md` has the numbers behind every verdict.
 "Strain case" marks a kernel that is a scalar loop on that ISA after measurement, which the anti-goals allow only with a catalog entry.
-The aarch64 column records what the NEON instruction set offers, and the NEON measurements follow from the M5 session, so entries there say which kernels run their scalar entry, which the baseline build compiles for NEON.
+The aarch64 column names the NEON situation where it is known, such as `gather` having no instruction, and otherwise says the kernel runs its scalar entry, which the baseline build compiles for NEON. The NEON measurements follow from the M5 session.
 
 | Problem | Primitives | x86-64 | aarch64 | Notes |
 |---|---|---|---|---|
@@ -239,7 +239,7 @@ The aarch64 column records what the NEON instruction set offers, and the NEON me
 | Histogram | `histogram(keys, n)` | Vectorized bounds pass, scalar bucket loop (strain case). | Scalar entry | `vpconflictq` and 8 replicated sub-histograms with gather and scatter were prototyped and lost by 1.5x to 1.9x on uniform keys. 1.72x of native, with a single-pass bounds check as the known improvement. |
 | Bucketed reduction | `reduce_into(keys, vals, n, op)` | Vectorized bounds pass, scalar bucket loop (strain case). | Scalar entry | 1.94x of native, with the same single-pass improvement. `histogram` is `reduce_into` with a fill of 1, and the planner does not yet cover that form with `histogram`. |
 | Division by constant | `div_const(x, c)` | `ymm` or `zmm` shifts and sign fix, with a scalar `mul` per lane for the 64-bit multiply-high (strain case on `i64` and `u64`). | Scalar entry | Neither AVX2 nor AVX-512 has a 64-bit multiply-high. `i64` runs at 0.65 of scalar and 0.85 of the native loop, and `u64` runs at the scalar entry's speed. |
-| Sort | `argsort(x)` | Scalar stable sort, with only the index initialization compiled for the ISA (strain case). | Scalar entry | 0.10 GB/s at 10M rows. Tier 3 replaces it with sorting networks or a radix sort built from `histogram` and `scatter`. |
+| Sort | `argsort(x)` | Scalar sort, stable through an index tiebreak, with only the index initialization compiled for the ISA (strain case). | Scalar entry | 0.10 GB/s at 10M rows. Tier 3 replaces it with sorting networks or a radix sort built from `histogram` and `scatter`. |
 | Bitwise | `and`, `or`, `xor`, `not` on `i64`, `u64`, `i32`, `u8` | `ymm` and `zmm` loops, memory-bound at the bandwidth of `add` | Scalar entry | `xor` also covers `bool`, and the integer `reduce`, `scan`, `scan_by`, and `reduce_into` take `and`, `or`, and `xor`. |
 | Slice | `slice(x, start, end)` | A view, no kernel | Same | Invalid bounds are a runtime error. |
 | Group-by on sorted keys | `scan_by`, `prev`, `compress` | Run starts from `prev` and a compare, `scan_by`, then `compress` on the run ends | Same | No primitive of its own, and `tests/programs/group_sorted.vk` shows it. |

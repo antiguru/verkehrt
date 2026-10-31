@@ -3,12 +3,15 @@
 input AdvEngineID: i64[];
 
 let k = compress(AdvEngineID, AdvEngineID != 0);
-// The bucket count comes from the filtered keys, and an empty filter has no groups.
-let nb = if length(k) > 0 { reduce(k, max) + 1 } else { 0 };
-let counts = histogram(k, nb);
+// A key with a small range becomes a bucket index by subtracting its minimum, and the bucket count
+// comes from the shifted keys. An empty filter has no groups.
+let base = if length(k) > 0 { reduce(k, min) } else { 0 };
+let shifted = k - base;
+let nb = if length(shifted) > 0 { reduce(shifted, max) + 1 } else { 0 };
+let counts = histogram(shifted, nb);
 // `where` lists the keys in ascending order, so a stable sort on descending counts breaks ties by key.
 let keys = where(counts > 0);
 let c = gather(counts, keys);
 let order = argsort(0 - c);
-export AdvEngineID = gather(keys, order);
+export AdvEngineID = gather(keys, order) + base;
 export c = gather(c, order);
