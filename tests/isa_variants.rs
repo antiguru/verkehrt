@@ -7,11 +7,11 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
 
-use verkehrt::kernels::{
-    Backend, Dispatch, Feature, FeatureSet, InputSpec, Isa, KernelClass, KernelDef, KernelId, Registry,
-    Variant,
-};
 use verkehrt::kernels::features::runnable;
+use verkehrt::kernels::{
+    Backend, Dispatch, Feature, FeatureSet, InputSpec, Isa, KernelClass, KernelDef, KernelId,
+    Registry, Variant,
+};
 use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
 /// Row counts of every checked call, around the vector widths of AVX2, AVX-512, and NEON.
@@ -560,9 +560,19 @@ fn isa_variants_match_scalar() {
         if has_auto_entries(isa) {
             assert!(auto.tested > 0, "no auto variants for {}", isa.name());
         } else {
-            assert_eq!(auto.tested, 0, "unexpected auto variants for {}", isa.name());
+            assert_eq!(
+                auto.tested,
+                0,
+                "unexpected auto variants for {}",
+                isa.name()
+            );
         }
-        assert_eq!(auto.fell_back, 0, "auto entries declare no features");
+        assert_eq!(
+            auto.fell_back,
+            0,
+            "auto entries declare no features on {}",
+            isa.name()
+        );
         if disable.contains(Feature::Avx512vbmi2) {
             // compress_u8 and compress_bool.
             assert_eq!(fell_back, 2);
