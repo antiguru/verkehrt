@@ -320,6 +320,9 @@ impl Array {
 
     /// Like `build`, but fails instead of panicking when `len` elements exceed `isize::MAX`
     /// bytes or the allocation fails. For lengths that come from program values.
+    // Inlined so that `f` compiles in the caller's context: a kernel body that fills its
+    // output here inside a `#[target_feature]` entry is then vectorized for that entry's ISA.
+    #[inline(always)]
     pub fn try_build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Result<Array, String> {
         let mut blocks = Array::try_zeroed(len, T::TYPE)?;
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
@@ -356,6 +359,8 @@ impl Array {
     /// Like `build`, but `f` fills the raw bytes of the `len` elements of `elem` and may fail.
     /// The buffer is zeroed and 64-byte aligned. Fails instead of panicking when the size
     /// exceeds `isize::MAX` bytes or the allocation fails. For `Bool`, `f` must write only 0 or 1.
+    // Inlined for the reason given at `try_build`.
+    #[inline(always)]
     pub fn build_bytes(
         len: usize,
         elem: ScalarType,

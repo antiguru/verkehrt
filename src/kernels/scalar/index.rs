@@ -20,6 +20,7 @@ fn i64_arg(v: &Value) -> Result<i64, String> {
 
 /// The rows of `a` as storage type `T`, which is `u8` for a bool array. The caller has checked
 /// the element type of `a` against `T`.
+#[inline(always)]
 fn rows_of<T: Elem>(a: &Array) -> &[T] {
     if a.elem() == ScalarType::Bool {
         bytemuck::cast_slice(a.as_bool_bytes())
@@ -35,12 +36,14 @@ pub(crate) struct Gather<T, const BOOL: bool>(PhantomData<fn() -> T>);
 impl<T: Elem, const BOOL: bool> Gather<T, BOOL> {
     const ELEM: ScalarType = if BOOL { ScalarType::Bool } else { T::TYPE };
 
+    #[inline(always)]
     fn rows(a: &Array) -> &[T] {
         rows_of(a)
     }
 }
 
 impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
+    #[inline(always)]
     fn run(args: &[Value]) -> Result<Value, String> {
         let [xs, idx] = args else {
             return Err(arity_error(2, args.len()));
@@ -96,6 +99,7 @@ fn run_slice(args: &[Value], ty: ScalarType) -> Result<Value, String> {
 
 /// The bucket count `n` and the keys, checked to lie in `0..n`. A negative `n` and a key outside
 /// `0..n` are errors.
+#[inline(always)]
 fn checked_keys<'a>(keys: &'a Value, n: &Value) -> Result<(&'a [i64], usize), String> {
     let keys = array_arg(keys, ScalarType::I64)?.as_slice::<i64>();
     let buckets = i64_arg(n)?;
@@ -121,6 +125,7 @@ fn checked_keys<'a>(keys: &'a Value, n: &Value) -> Result<(&'a [i64], usize), St
 
 /// The bucket of a key that `checked_keys` accepted. The clamp is a no-op after the check and
 /// keeps the loop free of an exit, a bucket exists whenever a key does.
+#[inline(always)]
 fn bucket(k: i64, count: usize) -> usize {
     usize::try_from(k.cast_unsigned())
         .unwrap_or(0)
@@ -131,6 +136,7 @@ fn bucket(k: i64, count: usize) -> usize {
 pub(crate) struct Histogram;
 
 impl WholeBody for Histogram {
+    #[inline(always)]
     fn run(args: &[Value]) -> Result<Value, String> {
         let [keys, n] = args else {
             return Err(arity_error(2, args.len()));
@@ -151,6 +157,7 @@ impl WholeBody for Histogram {
 pub(crate) struct ArgSort<T>(PhantomData<fn() -> T>);
 
 impl<T: Elem + Ord> WholeBody for ArgSort<T> {
+    #[inline(always)]
     fn run(args: &[Value]) -> Result<Value, String> {
         let [xs] = args else {
             return Err(arity_error(1, args.len()));
@@ -176,6 +183,7 @@ impl<T: Elem + Ord> WholeBody for ArgSort<T> {
 pub(crate) struct ReduceInto<T, O>(PhantomData<fn() -> (T, O)>);
 
 impl<T: Elem, O: ScanOp<T>> WholeBody for ReduceInto<T, O> {
+    #[inline(always)]
     fn run(args: &[Value]) -> Result<Value, String> {
         let [keys, vals, n] = args else {
             return Err(arity_error(3, args.len()));
