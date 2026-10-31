@@ -81,9 +81,10 @@ Float `add` and `mul` do not associate, so a vectorized scan or a bucketed sum n
 Plan 4 rejects float `add` and `mul` in `scan`, `scan_by`, and `reduce_into` with the usual "no kernel" type error, and a later phase closes the gap (see "Deferred: surface gaps").
 The rejection is temporary scope, not a statement that these combinations are out of the language, because a primitive that works for some operator and type pairs and not others is a wrinkle in the surface.
 
-Results stay bit-identical rather than equal within a tolerance.
-A tolerance would let results differ between ISAs, which the base spec's anti-goals rule out, and it would break the intended host: Differential Dataflow cancels a retraction against the original update only when both compute the same bits.
-Bit-identity is also what makes fusion legal without per-kernel error analysis, since a fused kernel then matches the reference exactly.
+Results stay bit-identical across ISAs and backends rather than equal within a tolerance.
+The intended host needs less: Differential Dataflow cancels a retraction against the original update only when both compute the same bits, but one dataflow runs one detected variant, and Materialize's materialized views correct themselves against persisted output, so determinism per variant would suffice there.
+Identity across variants is a stronger choice that the language makes for three reasons. It has cost nothing measurable so far, because the canonical 16-accumulator order fits every ISA and the tier 1 kernels run within 1.04x of native. It keeps the scalar kernel an exact test oracle for every variant. And the executor mixes backends within one program, falling back from intrinsics to `auto` to scalar per kernel, so per-variant orders would let the same expression produce different bits depending on whether the planner fused it, for example `sum(t)` against a fused `dot` when `t = x * y` is also used elsewhere.
+If a kernel shows a measured cost from a canonical order, such as the float scan in "Deferred: surface gaps" or a kernel that wants FMA, per-variant determinism is the fallback to weigh against that cost, decided with the measurement in hand.
 
 Out-of-range indices and keys, a zero divisor, and invalid `slice` bounds are runtime errors, which the base spec's ordering rules allow to surface in any order.
 `gather` on an empty `idx` returns an empty array, and `histogram` and `reduce_into` with `n = 0` and empty keys return empty arrays.
