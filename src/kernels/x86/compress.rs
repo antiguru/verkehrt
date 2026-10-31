@@ -35,6 +35,10 @@ pub(crate) fn compress_entries<T: Elem, const BOOL: bool>() -> Entries {
             Some(avx2::compress::<i64, BOOL>),
             Some(avx512::compress::<i64, BOOL>),
         ),
+        ScalarType::U64 => (
+            Some(avx2::compress::<u64, BOOL>),
+            Some(avx512::compress::<u64, BOOL>),
+        ),
         ScalarType::I32 => (
             Some(avx2::compress::<i32, BOOL>),
             Some(avx512::compress::<i32, BOOL>),
@@ -58,6 +62,7 @@ pub(crate) fn filter_entries<T: Elem, const C: usize>() -> Entries {
         ScalarType::F64 => (Some(avx2::filter::<f64, C>), Some(avx512::filter::<f64, C>)),
         ScalarType::F32 => (Some(avx2::filter::<f32, C>), Some(avx512::filter::<f32, C>)),
         ScalarType::I64 => (Some(avx2::filter::<i64, C>), Some(avx512::filter::<i64, C>)),
+        ScalarType::U64 => (Some(avx2::filter::<u64, C>), Some(avx512::filter::<u64, C>)),
         ScalarType::I32 => (Some(avx2::filter::<i32, C>), Some(avx512::filter::<i32, C>)),
         _ => (None, None),
     }

@@ -235,6 +235,7 @@ pub(crate) fn register(reg: &mut Registry) {
     compress::<f64, false>(reg);
     compress::<f32, false>(reg);
     compress::<i64, false>(reg);
+    compress::<u64, false>(reg);
     compress::<i32, false>(reg);
     compress::<u8, false>(reg);
     // Bool arrays are stored as `u8`.

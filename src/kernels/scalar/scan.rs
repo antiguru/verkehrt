@@ -73,6 +73,7 @@ pub(crate) fn register(reg: &mut Registry) {
     register_prev::<f64, false>(reg);
     register_prev::<f32, false>(reg);
     register_prev::<i64, false>(reg);
+    register_prev::<u64, false>(reg);
     register_prev::<i32, false>(reg);
     register_prev::<u8, false>(reg);
     register_prev::<u8, true>(reg);

@@ -216,7 +216,7 @@ impl KernelImpl {
     /// its arguments gets auto variants this way, and one that only forwards to other kernels
     /// stays `scalar_only`.
     // The tests build one, no registered kernel does yet.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     pub(crate) fn whole<W: WholeBody>() -> [Option<KernelImpl>; Variant::COUNT] {
         let mut impls = KernelImpl::Whole(scalar_whole::<W>).scalar_only();
         arch::add_whole::<W>(&mut impls);

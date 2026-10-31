@@ -122,6 +122,7 @@ fn input_strategy(ty: ScalarType, special: bool) -> BoxedStrategy<Input> {
         ScalarType::I64 => input_of(any::<i64>().boxed(), Scalar::I64),
         ScalarType::I32 => input_of(any::<i32>().boxed(), Scalar::I32),
         ScalarType::U8 => input_of(any::<u8>().boxed(), Scalar::U8),
+        ScalarType::U64 => input_of(any::<u64>().boxed(), Scalar::U64),
         ScalarType::Bool => (
             // A dense prefix of true rows and an empty suffix runs the chunks after the last
             // survivor of a selection, which keep a vector of room past it.
@@ -528,7 +529,7 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             assert_eq!(by_intrinsics.variant_used(id), auto, "{name}");
         }
         let mut selections = vec!["where".to_string()];
-        for t in ["f64", "f32", "i64", "i32"] {
+        for t in ["f64", "f32", "i64", "i32", "u64"] {
             selections.push(format!("compress_{t}"));
             for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
                 selections.push(format!("filter_{cmp}_{t}"));
@@ -577,10 +578,10 @@ fn neon_intrinsics_resolve_for_selections() {
         assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
     }
     let mut selections = vec!["where".to_string()];
-    for t in ["f64", "f32", "i64", "i32", "u8", "bool"] {
+    for t in ["f64", "f32", "i64", "i32", "u64", "u8", "bool"] {
         selections.push(format!("compress_{t}"));
     }
-    for t in ["f64", "f32", "i64", "i32"] {
+    for t in ["f64", "f32", "i64", "i32", "u64"] {
         for cmp in ["eq", "ne", "lt", "le", "gt", "ge"] {
             selections.push(format!("filter_{cmp}_{t}"));
         }

@@ -41,7 +41,7 @@ pub(crate) fn add_selection<S: SelectionBody>(_impls: &mut [Option<KernelImpl>])
 pub(crate) fn add_scan<S: ScanBody>(_impls: &mut [Option<KernelImpl>]) {}
 
 /// Adds the ISA variants of a whole body to its table.
-#[allow(dead_code)]
+#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) fn add_whole<W: WholeBody>(_impls: &mut [Option<KernelImpl>]) {}
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic

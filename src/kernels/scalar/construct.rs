@@ -223,6 +223,7 @@ pub(crate) fn register(reg: &mut Registry) {
     fill!(reg, f64, ScalarType::F64);
     fill!(reg, f32, ScalarType::F32);
     fill!(reg, i64, ScalarType::I64);
+    fill!(reg, u64, ScalarType::U64);
     fill!(reg, i32, ScalarType::I32);
     fill!(reg, u8, ScalarType::U8);
     // Bool arrays are stored as `u8`.
@@ -249,17 +250,20 @@ pub(crate) fn register(reg: &mut Registry) {
     load!(reg, f64, ScalarType::F64);
     load!(reg, f32, ScalarType::F32);
     load!(reg, i64, ScalarType::I64);
+    load!(reg, u64, ScalarType::U64);
     load!(reg, i32, ScalarType::I32);
     load!(reg, u8, ScalarType::U8);
     length!(reg, ScalarType::F64);
     length!(reg, ScalarType::F32);
     length!(reg, ScalarType::I64);
+    length!(reg, ScalarType::U64);
     length!(reg, ScalarType::I32);
     length!(reg, ScalarType::U8);
     length!(reg, ScalarType::Bool);
     same_len!(reg, ScalarType::F64);
     same_len!(reg, ScalarType::F32);
     same_len!(reg, ScalarType::I64);
+    same_len!(reg, ScalarType::U64);
     same_len!(reg, ScalarType::I32);
     same_len!(reg, ScalarType::U8);
     same_len!(reg, ScalarType::Bool);

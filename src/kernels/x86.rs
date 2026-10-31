@@ -66,7 +66,7 @@ pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
 }
 
 /// Adds the AVX2 and AVX-512 auto entries of a whole body to its table.
-#[allow(dead_code)]
+#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
     impls[AVX2_AUTO.index()] = Some(KernelImpl::Whole(auto::avx2::whole::<W>));
     impls[AVX512_AUTO.index()] = Some(KernelImpl::Whole(auto::avx512::whole::<W>));

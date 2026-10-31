@@ -105,6 +105,11 @@ fn pool_strategy(ty: ScalarType, mix: Mix) -> BoxedStrategy<(usize, Pool)> {
             prop_oneof![1 => any::<i64>(), 1 => -3i64..3].boxed(),
             Scalar::I64,
         ),
+        // The high half of the range holds the values a signed compare gets wrong.
+        ScalarType::U64 => pool_of(
+            prop_oneof![1 => any::<u64>(), 1 => 0u64..6, 1 => (u64::MAX - 3)..=u64::MAX].boxed(),
+            Scalar::U64,
+        ),
         ScalarType::I32 => pool_of(
             prop_oneof![1 => any::<i32>(), 1 => -3i32..3].boxed(),
             Scalar::I32,

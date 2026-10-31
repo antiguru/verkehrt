@@ -46,7 +46,7 @@ macro_rules! auto_backend {
             // SAFETY: as for `elementwise`, the caller guarantees the CPU features and the
             // body is safe Rust.
             #[target_feature(enable = $features)]
-            #[allow(dead_code)]
+            #[cfg_attr(not(test), expect(dead_code))]
             pub(crate) unsafe fn whole<W: WholeBody>(args: &[Value]) -> Result<Value, String> {
                 W::run(args)
             }

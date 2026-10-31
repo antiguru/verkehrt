@@ -1124,11 +1124,88 @@ fn variant_entry_counts_are_stable() {
         }
     }
     // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
-    // recorded before the architecture layer existed.
+    // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
+    // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
+    // six `filter_<cmp>_u64`).
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [515, 237, 29, 237, 31, 0, 0]);
-    // NEON intrinsics cover 6 compress kernels, `where`, 24 fused filters, and the 8 float
+    assert_eq!(counts, [571, 289, 36, 289, 38, 0, 0]);
+    // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [515, 0, 0, 0, 0, 0, 39]);
+    assert_eq!(counts, [571, 0, 0, 0, 0, 0, 46]);
+}
+
+fn u64s(v: &[u64]) -> Value {
+    Value::Array(Array::from_vec(v.to_vec()))
+}
+
+fn u64_s(v: u64) -> Value {
+    Value::Scalar(Scalar::U64(v))
+}
+
+#[test]
+fn u64_compares_unsigned() {
+    let reg = Registry::new();
+    // A signed compare reads `1 << 63` as negative, so it gets this wrong.
+    let r = call(&reg, "gt_u64", &[u64s(&[1 << 63, 1]), u64_s(1)]);
+    assert_eq!(arr(r.unwrap()).as_bool_bytes(), &[1, 0]);
+}
+
+#[test]
+fn u64_casts_follow_as() {
+    let reg = Registry::new();
+    let to_f64 = call(&reg, "cast_u64_f64", &[u64s(&[u64::MAX])]);
+    assert_eq!(
+        arr(to_f64.unwrap()).as_slice::<f64>(),
+        &[18446744073709551615.0]
+    );
+    let from_f64 = call(&reg, "cast_f64_u64", &[f64s(&[-1.0, 1e30, f64::NAN])]);
+    assert_eq!(arr(from_f64.unwrap()).as_slice::<u64>(), &[0, u64::MAX, 0]);
+    let to_i64 = call(&reg, "cast_u64_i64", &[u64s(&[1 << 63])]);
+    assert_eq!(arr(to_i64.unwrap()).as_slice::<i64>(), &[i64::MIN]);
+    let minus_one = Value::Array(Array::from_vec(vec![-1i64]));
+    let from_i64 = call(&reg, "cast_i64_u64", &[minus_one]);
+    assert_eq!(arr(from_i64.unwrap()).as_slice::<u64>(), &[u64::MAX]);
+}
+
+#[test]
+fn u64_sum_and_extremes() {
+    let reg = Registry::new();
+    let x = u64s(&[3, 1 << 63, 7]);
+    let sum = scalar(call(&reg, "reduce_add_u64", std::slice::from_ref(&x)));
+    assert_eq!(sum, Scalar::U64((1 << 63) + 10));
+    let min = scalar(call(&reg, "reduce_min_u64", std::slice::from_ref(&x)));
+    assert_eq!(min, Scalar::U64(3));
+    let max = scalar(call(&reg, "reduce_max_u64", std::slice::from_ref(&x)));
+    assert_eq!(max, Scalar::U64(1 << 63));
+    let argmax = scalar(call(&reg, "argmax_u64", std::slice::from_ref(&x)));
+    assert_eq!(argmax, Scalar::I64(1));
+    let argmin = scalar(call(&reg, "argmin_u64", std::slice::from_ref(&x)));
+    assert_eq!(argmin, Scalar::I64(0));
+    let mul = scalar(call(&reg, "reduce_mul_u64", &[u64s(&[1 << 63, 2])]));
+    assert_eq!(mul, Scalar::U64(0));
+}
+
+/// The `_i64` kernels with no `_u64` twin by design.
+const NO_U64_TWIN: &[&str] = &[
+    // Signed only: unsigned values have no negation or absolute value.
+    "neg_i64", "abs_i64",
+    // The generator is defined by its `i64` bits, there is no unsigned variant of it.
+    "rand_i64",
+];
+
+#[test]
+fn every_i64_kernel_has_a_u64_twin() {
+    let reg = Registry::new();
+    let mut missing = vec![];
+    for (_, def) in reg.iter() {
+        let name = &def.name;
+        let Some(stem) = name.strip_suffix("_i64") else {
+            continue;
+        };
+        if !NO_U64_TWIN.contains(&name.as_str()) && reg.by_name(&format!("{stem}_u64")).is_none() {
+            missing.push(name.clone());
+        }
+    }
+    assert!(missing.is_empty(), "no u64 twin for {missing:?}");
 }

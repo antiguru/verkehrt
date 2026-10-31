@@ -193,6 +193,7 @@ fn random_scalar(ty: ScalarType, seed: u64, i: usize) -> Scalar {
         ScalarType::I64 => Scalar::I64(small),
         ScalarType::I32 => Scalar::I32(i32::try_from(small).unwrap()),
         ScalarType::U8 => Scalar::U8(u8::try_from(r % 200).unwrap()),
+        ScalarType::U64 => Scalar::U64(r % 200),
         ScalarType::Bool => Scalar::Bool(r & 1 == 1),
         other => panic!("no random data for {other:?}"),
     }
@@ -238,6 +239,13 @@ fn random_array(ty: ScalarType, n: usize, seed: u64, nan_at: Option<usize>) -> A
         ScalarType::U8 => Array::from_vec(
             rows.map(|s| match s {
                 Scalar::U8(v) => v,
+                _ => unreachable!(),
+            })
+            .collect(),
+        ),
+        ScalarType::U64 => Array::from_vec(
+            rows.map(|s| match s {
+                Scalar::U64(v) => v,
                 _ => unreachable!(),
             })
             .collect(),

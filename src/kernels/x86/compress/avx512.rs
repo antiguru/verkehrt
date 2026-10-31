@@ -135,6 +135,7 @@ macro_rules! lanes_32 {
 
 lanes_64!(f64);
 lanes_64!(i64);
+lanes_64!(u64);
 lanes_32!(f32);
 lanes_32!(i32);
 
@@ -234,6 +235,26 @@ impl Compare for i64 {
             Cmp::Le => _mm512_cmp_epi64_mask::<_MM_CMPINT_LE>(v, c),
             Cmp::Gt => _mm512_cmp_epi64_mask::<_MM_CMPINT_NLE>(v, c),
             Cmp::Ge => _mm512_cmp_epi64_mask::<_MM_CMPINT_NLT>(v, c),
+        };
+        u64::from(m)
+    }
+}
+
+impl Compare for u64 {
+    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
+    unsafe fn compare<const C: usize>(v: __m512i, c: u64) -> u64 {
+        let c = _mm512_set1_epi64(c.cast_signed());
+        // Unsigned compares (`vpcmpuq`), with the predicates of `i64`.
+        let m = match CMPS[C].1 {
+            Cmp::Eq => _mm512_cmp_epu64_mask::<_MM_CMPINT_EQ>(v, c),
+            Cmp::Ne => _mm512_cmp_epu64_mask::<_MM_CMPINT_NE>(v, c),
+            Cmp::Lt => _mm512_cmp_epu64_mask::<_MM_CMPINT_LT>(v, c),
+            Cmp::Le => _mm512_cmp_epu64_mask::<_MM_CMPINT_LE>(v, c),
+            Cmp::Gt => _mm512_cmp_epu64_mask::<_MM_CMPINT_NLE>(v, c),
+            Cmp::Ge => _mm512_cmp_epu64_mask::<_MM_CMPINT_NLT>(v, c),
         };
         u64::from(m)
     }

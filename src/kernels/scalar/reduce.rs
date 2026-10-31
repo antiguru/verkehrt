@@ -196,7 +196,7 @@ macro_rules! impl_ordered_float {
     )*};
 }
 
-impl_ordered_int!(i64, i32, u8);
+impl_ordered_int!(i64, i32, u8, u64);
 impl_ordered_float!(f64, f32);
 
 /// The running state of one reduction over rows of `T`, behind the reducers below.
@@ -372,7 +372,7 @@ macro_rules! impl_int_accum {
     )*};
 }
 
-impl_int_accum!(i64 => i64, i32 => i64, u8 => u64);
+impl_int_accum!(i64 => i64, i32 => i64, u8 => u64, u64 => u64);
 
 /// `reduce_min` (`MAX` false) or `reduce_max` (`MAX` true). An empty array is an error.
 pub struct Extreme<T, const MAX: bool> {
@@ -541,7 +541,7 @@ macro_rules! impl_reducible_int {
 }
 
 impl_reducible_float!(f64, f32);
-impl_reducible_int!(i64 => i64, i32 => i64, u8 => u64);
+impl_reducible_int!(i64 => i64, i32 => i64, u8 => u64, u64 => u64);
 
 /// The array argument of a one-argument reduction, checked against `ty`.
 pub(crate) fn array_arg(v: &Value, ty: ScalarType) -> Result<&Array, String> {
@@ -653,5 +653,6 @@ pub(crate) fn register(reg: &mut Registry) {
     register_numeric::<i64>(reg);
     register_numeric::<i32>(reg);
     register_numeric::<u8>(reg);
+    register_numeric::<u64>(reg);
     register_bool(reg);
 }
