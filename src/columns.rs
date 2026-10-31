@@ -77,7 +77,7 @@ fn load_single_bytes(dir: &Path, column: &str) -> Result<Array, String> {
     }
     for (i, w) in ends.as_chunks::<8>().0.iter().enumerate() {
         let end = u64::from_le_bytes(*w);
-        if end != u64::try_from(i + 1).unwrap() {
+        if usize::try_from(end) != Ok(i + 1) {
             return Err(format!(
                 "column '{column}' row {i} ends at byte {end}, so it is not one byte per row"
             ));

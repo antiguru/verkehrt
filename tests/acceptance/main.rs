@@ -2,8 +2,6 @@
 //! suites read `VERKEHRT_CLICKBENCH` and `VERKEHRT_TPCH`, the directories `prepare.py` wrote,
 //! and skip when the variable is unset.
 
-// A test crate root resolves `mod` next to itself, so the helper in `acceptance/` needs the path.
-#[path = "acceptance/harness.rs"]
 mod harness;
 
 use std::fs;
@@ -110,8 +108,9 @@ fn run_suite(var: &str, queries: &str) {
     let dir = PathBuf::from(dir);
     let programs = PathBuf::from("tests/acceptance").join(queries);
     let mut entries: Vec<PathBuf> = fs::read_dir(&programs)
-        .map(|d| d.map(|e| e.unwrap().path()).collect())
-        .unwrap_or_default();
+        .unwrap_or_else(|e| panic!("program directory {}: {e}", programs.display()))
+        .map(|d| d.unwrap().path())
+        .collect();
     entries.sort();
     let mut failures = Vec::new();
     let mut ran = 0;
@@ -132,6 +131,7 @@ fn run_suite(var: &str, queries: &str) {
             Err(e) => failures.push(format!("{name}: {e}")),
         }
     }
+    assert!(ran > 0, "no .vk programs in {}", programs.display());
     eprintln!("{queries}: {ran} queries");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
