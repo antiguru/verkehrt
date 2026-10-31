@@ -35,7 +35,7 @@ The feature strings follow the x86-64 psABI and use Rust's `target_feature` name
 
 | Level | `#[target_feature]` string |
 |---|---|
-| `x86-64-v3` | `avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave` plus the x86-64-v2 features `cmpxchg16b,lahfsahf,popcnt,sse3,sse4.1,sse4.2,ssse3` |
+| `x86-64-v3` | `avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave` plus the x86-64-v2 features `cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3`. Dropped: `lahfsahf`, which rustc 1.99 rejects as unstable in `#[target_feature]` and unknown in `is_x86_feature_detected!`. |
 | `x86-64-v4` | the v3 string plus `avx512f,avx512bw,avx512cd,avx512dq,avx512vl` |
 
 A level is available when the CPU reports every feature of its string and the disable set contains none of them. Disabling a level feature therefore drops the whole level, for example `--disable avx512dq` makes `Isa::detect` return `x86-64-v3`. The builder may drop features from the strings that Rust cannot name or that `is_x86_feature_detected!` cannot check, and records each dropped one in the spec's level table.
@@ -46,7 +46,7 @@ Enabling `fma` is safe for bit identity. Rust never contracts a separate multipl
 
 A `Feature` enum names every feature that a level contains or an entry may declare, with `Feature::name` returning the `target_feature` name (`"avx512vbmi2"`). A `FeatureSet` is a `Copy` bit set of features, so `Options` stays `Copy`. `FeatureSet::detect()` reads every feature once at startup.
 
-`Feature` is the same on every target, so `Options` and `--disable` behave the same everywhere (my call). On aarch64 no x86 feature is ever detected, so disabling one changes nothing, just as disabling a feature that an x86 CPU lacks changes nothing. The CLI prints a note on stderr for each disabled feature that detection did not report, so a disable without effect cannot pass for a fallback test.
+`Feature` is the same on every target, so `Options` and `--disable` behave the same everywhere (my call). It includes `neon`, the feature of the NEON level, so detection carries the architecture: `runnable` needs no `cfg!` check, because on aarch64 `detect` never reports an x86 feature and on x86-64 it never reports `neon`. On aarch64 no x86 feature is ever detected, so disabling one changes nothing, just as disabling a feature that an x86 CPU lacks changes nothing. The CLI prints a note on stderr for each disabled feature that detection did not report, so a disable without effect cannot pass for a fallback test.
 
 Today exactly one intrinsics entry declares an extra feature. The AVX-512 byte `compress` entry, which serves `compress` on `u8` and bool, declares `avx512vbmi2`. Its `#[target_feature]` string is the v4 string plus `avx512vbmi2`. Every other intrinsics entry (the 32-bit and 64-bit `compress`, `where`, the `filter_<cmp>` entries, `gather`, `scan_by_add`) fits in its level and declares nothing. The builder confirms this by checking each intrinsic's required features in the Intel intrinsics guide or `core::arch` documentation, and lists any other entry that needs an extra.
 
