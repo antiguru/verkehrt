@@ -74,6 +74,8 @@ The empty-bucket identity of `min` and `max` is the type's largest and smallest 
 Plan 4 implements it with a scalar stable sort and records it in the catalog as a strain case, and tier 3 replaces it with sorting networks or a radix sort built from `histogram` and `scatter`.
 Descending order and multi-key order are written by the user: `argsort(0 - c)` sorts descending, and a stable sort on the secondary key followed by a stable sort on the primary key gives a two-key order.
 
+Integer bitwise operations close a gap that tier 1 left (user decision): `and`, `or`, and `not` gain bitwise kernels on `i64`, `u64`, `i32`, and `u8`, a new elementwise `xor` covers those types and `bool`, and `reduce`, `scan`, `scan_by`, and `reduce_into` accept `and`, `or`, and `xor` on the integer types.
+
 Group-by on sorted keys, which the catalog lists for tier 2, needs no primitive of its own.
 It is `scan_by` over run starts found with `prev`, followed by `compress` on the run ends, and plan 4 includes a test program for it.
 

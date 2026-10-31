@@ -36,28 +36,28 @@
 
 ## Review focus
 
-* `div_const(i64::MIN, -1)` and `div_const(i32::MIN, -1)` return the dividend (wrapping), and negative dividends and divisors truncate toward zero. Test in Task 7.
-* A filter that selects no rows, feeding `reduce(keys, max)` for a bucket count, must give the SQL's empty answer, not the empty-array error of `reduce_max`. Query programs guard with a lazy `if length(k) > 0`. Test in Task 9 (synthetic data where the filter keeps nothing).
-* `histogram(keys, n)` and `reduce_into` with a huge `n` (for example `1 << 62`) return an allocation error instead of aborting. Test in Task 5.
-* `slice` of a `slice` composes offsets: `slice(slice(x, 2, 8), 1, 3)` is rows 3 and 4 of `x`. Test in Task 4.
-* Keys equal to `n - 1` are accepted, keys equal to `n` and negative keys are rejected, for `histogram`, `reduce_into`, and index `length(xs) - 1` against `length(xs)` and `-1` for `gather`. Tests in Tasks 4 and 5.
+* `div_const(i64::MIN, -1)` and `div_const(i32::MIN, -1)` return the dividend (wrapping), and negative dividends and divisors truncate toward zero. Test in Task 8.
+* A filter that selects no rows, feeding `reduce(keys, max)` for a bucket count, must give the SQL's empty answer, not the empty-array error of `reduce_max`. Query programs guard with a lazy `if length(k) > 0`. Test in Task 10 (synthetic data where the filter keeps nothing).
+* `histogram(keys, n)` and `reduce_into` with a huge `n` (for example `1 << 62`) return an allocation error instead of aborting. Test in Task 6.
+* `slice` of a `slice` composes offsets: `slice(slice(x, 2, 8), 1, 3)` is rows 3 and 4 of `x`. Test in Task 5.
+* Keys equal to `n - 1` are accepted, keys equal to `n` and negative keys are rejected, for `histogram`, `reduce_into`, and index `length(xs) - 1` against `length(xs)` and `-1` for `gather`. Tests in Tasks 5 and 6.
 
 ## File structure
 
 * `src/kernels.rs`: `KernelClass::Scan`, `ScanFn`, `Scanner`, `ScanBody`, `WholeBody`, the `WholeFn` change, and the `KernelImpl` table builders (Task 1).
 * `src/kernels/auto.rs`, `src/kernels/arch.rs`, `src/kernels/x86.rs`, `src/kernels/aarch64.rs`: auto entries and registration hooks for scans and whole bodies (Task 1).
 * `src/kernels/dispatch.rs`: `call` for scans, `Dispatch::scanner` (Task 1).
-* `src/columns.rs` (new), `src/interp.rs`: column-file loading and `Prepared::inputs` (Task 9).
-* `src/kernels/scalar/scan.rs` (new): `prev`, `scan`, `scan_by` bodies and registration (Tasks 1 and 3).
-* `src/kernels/scalar/index.rs` (new): `gather`, `slice`, `histogram`, `reduce_into`, `argsort` bodies and registration (Tasks 4, 5, 6).
-* `src/kernels/scalar/elementwise.rs`: `div_const` (Task 7).
-* `src/ops.rs`, `src/check.rs`, `src/lower.rs`: new ops, builtins with an operation-name argument, `op_name` (Tasks 1 to 7).
-* `tests/isa_variants.rs`: scan class and whole kernels with variants, index-aware argument generation (Tasks 1, 4, 5).
+* `src/columns.rs` (new), `src/interp.rs`: column-file loading and `Prepared::inputs` (Task 10).
+* `src/kernels/scalar/scan.rs` (new): `prev`, `scan`, `scan_by` bodies and registration (Tasks 1 and 4).
+* `src/kernels/scalar/index.rs` (new): `gather`, `slice`, `histogram`, `reduce_into`, `argsort` bodies and registration (Tasks 5, 6, 8).
+* `src/kernels/scalar/elementwise.rs`: `div_const` (Task 8).
+* `src/ops.rs`, `src/check.rs`, `src/lower.rs`: new ops, builtins with an operation-name argument, `op_name` (Tasks 1 to 8).
+* `tests/isa_variants.rs`: scan class and whole kernels with variants, index-aware argument generation (Tasks 1, 5, 6).
 * `tests/programs/`: one program per primitive group plus the sorted group-by and string-length programs (Tasks 1 to 8).
-* `scripts/prepare-acceptance.sh` (new): data preparation (Task 8).
-* `tests/acceptance.rs`, `tests/acceptance/` (new): harness, synthetic check, query programs (Tasks 10, 10).
-* `benches/acceptance.rs` (new), `benches/tier1.rs`: benches (Task 11).
-* `docs/measurements/2026-10-31-tier2.md` (new), the base spec's catalog, `README.md` (Task 12).
+* `scripts/prepare-acceptance.sh` (new): data preparation (Task 9).
+* `tests/acceptance.rs`, `tests/acceptance/` (new): harness, synthetic check, query programs (Tasks 10, 11).
+* `benches/acceptance.rs` (new), `benches/tier1.rs`: benches (Task 12).
+* `docs/measurements/2026-10-31-tier2.md` (new), the base spec's catalog, `README.md` (Task 13).
 
 ---
 
@@ -100,7 +100,7 @@
 
 **Interfaces:**
 * Produces: every kernel family that has an `i64` kernel gets a `u64` kernel with the same inputs and the `u64` element type: the elementwise arithmetic and comparisons, casts from and to every array type, `reduce` with `add`, `mul`, `min`, `max`, `argmin`, `argmax`, the selections (`compress`, fused filters), the fused reductions (`dot`, `count_<cmp>`), `fill`, `load_u64`, and `prev` from Task 1. `sum` of `u64` returns `u64`. Comparisons are unsigned, arithmetic wraps, and casts follow Rust `as`.
-* `ScalarType::V1_ARRAY` gains `U64`, with its doc updated, and Task 12 updates the base spec's "Scope of the first version" line.
+* `ScalarType::V1_ARRAY` gains `U64`, with its doc updated, and Task 13 updates the base spec's "Scope of the first version" line.
 
 - [ ] **Step 1: Write the failing tests.**
   * `u64_compares_unsigned`: `[1 << 63, 1]` with `> 1` gives `[true, false]`, which a signed compare gets wrong.
@@ -113,7 +113,28 @@
 - [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass, and the entry-count test in `tests/isa_variants.rs` is updated to the new counts with the increase explained in the commit message.
 - [ ] **Step 5: Commit** `Add u64 kernels`.
 
-### Task 3: `scan` and `scan_by`
+### Task 3: Integer bitwise operations
+
+**Files:**
+* Modify: `src/ops.rs`, `src/check.rs`, `src/kernels/scalar/elementwise.rs`, `src/kernels/scalar/reduce.rs`
+* Test: `src/kernels/tests.rs`, `src/check/tests.rs`, `tests/programs.rs`
+* Create: `tests/programs/bitwise.vk`, `tests/programs/bitwise.out`
+
+**Interfaces:**
+* Produces: `and`, `or`, and `not` gain kernels on `i64`, `u64`, `i32`, and `u8` (bitwise), next to the existing `bool` kernels, through the same `Op::And`, `Op::Or`, and `Op::Not`. A new elementwise `xor(a, b)` builtin with `Op::Xor` covers `bool` and the four integer types. `reduce` with `and`, `or`, and `xor` gains kernels on the four integer types, with identities all ones, 0, and 0. All of these are elementwise or reductions, so they get `auto` entries through the existing table builders.
+
+- [ ] **Step 1: Write the failing tests.**
+  * `bitwise_on_integers`: `and(12, 10)` is 8, `or(12, 10)` is 14, `xor(12, 10)` is 6, `not(0)` on `u8` is 255 and on `i64` is -1, each also on arrays.
+  * `xor_on_bool`: `xor([true, true, false], [true, false, false])` gives `[false, true, false]`, with output bytes 0 or 1.
+  * `reduce_bitwise_on_integers`: `reduce([12, 10, 6], and)` is 0, `or` is 14, `xor` is 0, and the empty-array identities are all ones, 0, and 0.
+  * `src/check/tests.rs`: `and_on_f64_has_no_kernel`.
+  * `tests/programs/bitwise.vk` using one lambda with `and` inside `map`, with `.out`.
+- [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --locked`. Expected: FAIL.
+- [ ] **Step 3: Implement** the kernels and the `xor` builtin. `xor` is elementwise for lambda lifting, like `and`.
+- [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass, with the entry-count test updated.
+- [ ] **Step 5: Commit** `Add integer bitwise operations and elementwise xor`.
+
+### Task 4: `scan` and `scan_by`
 
 **Files:**
 * Modify: `src/kernels/scalar/scan.rs`, `src/ops.rs`, `src/check.rs`, `src/lower.rs`
@@ -121,14 +142,14 @@
 * Test: `src/kernels/tests.rs`, `src/check/tests.rs`, `tests/programs.rs`
 
 **Interfaces:**
-* Consumes: `ScanBody`, `KernelImpl::scan` (Task 1), the `u64` kernels (Task 2).
+* Consumes: `ScanBody`, `KernelImpl::scan` (Task 1), the `u64` kernels (Task 2), the integer bitwise reductions (Task 3).
 * Produces `Op::Scan(ReduceOp)` and `Op::ScanBy(ReduceOp)`, builtins `scan(x, op)` and `scan_by(x, starts, op)`, and `op_name` giving `scan_<op>` and `scan_by_<op>`.
 * Kernels `scan_<op>_<t>` with input `[Array(t)]` and `scan_by_<op>_<t>` with inputs `[Array(t), Array(bool)]`, for:
-  * `i64` and `u64`: `add`, `mul`, `min`, `max`, output the element type.
-  * `i32`: `add` and `mul` with output `i64`, `min` and `max` with output `i32`.
-  * `u8`: `add` and `mul` with output `u64`, `min` and `max` with output `u8`.
+  * `i64` and `u64`: `add`, `mul`, `min`, `max`, `and`, `or`, `xor`, output the element type.
+  * `i32`: `add` and `mul` with output `i64`, `min`, `max`, `and`, `or`, `xor` with output `i32`.
+  * `u8`: `add` and `mul` with output `u64`, `min`, `max`, `and`, `or`, `xor` with output `u8`.
   * `f64`, `f32`: `min`, `max`, output the element type, IEEE `minimum` and `maximum`.
-  * `bool`: `and`, `or`, `xor`, mirroring `register_bool` in `scalar/reduce.rs`. Integer `and`, `or`, and `xor` have no `reduce` kernel today, so they are out of scope here and listed as a surface gap in Task 12.
+  * `bool`: `and`, `or`, `xor`, mirroring `register_bool` in `scalar/reduce.rs`.
 * The builtin table generalizes the existing `Builtin::Reduce` handling: the operation name is always the last argument, and the same `reduce_op` parser and error messages apply.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -145,7 +166,7 @@
 - [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass, the tiled scan check passes for every new kernel.
 - [ ] **Step 5: Commit** `Add scan and scan_by`.
 
-### Task 4: `gather` and `slice`
+### Task 5: `gather` and `slice`
 
 **Files:**
 * Create: `src/kernels/scalar/index.rs`, `tests/programs/gather.vk`, `tests/programs/gather.out`
@@ -170,7 +191,7 @@
 - [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass.
 - [ ] **Step 5: Commit** `Add gather and slice`.
 
-### Task 5: `histogram` and `reduce_into`
+### Task 6: `histogram` and `reduce_into`
 
 **Files:**
 * Modify: `src/kernels/scalar/index.rs`, `src/ops.rs`, `src/check.rs`, `tests/isa_variants.rs`
@@ -178,11 +199,11 @@
 * Test: `src/kernels/tests.rs`, `src/check/tests.rs`, `tests/isa_variants.rs`
 
 **Interfaces:**
-* Consumes: `WholeBody`, `KernelImpl::whole` (Task 1), the operation-name builtin handling (Task 3).
+* Consumes: `WholeBody`, `KernelImpl::whole` (Task 1), the operation-name builtin handling (Task 4).
 * Produces `Op::Histogram` and `Op::ReduceInto(ReduceOp)`, builtins `histogram(keys, n)` and `reduce_into(keys, vals, n, op)`, `op_name` giving `reduce_into_<op>`.
 * `histogram`: class `Whole`, with variants, inputs `[Array(i64), Scalar(i64)]`, output `Array(i64)`.
-* `reduce_into_<op>_<t>`: class `Whole`, with variants, inputs `[Array(i64), Array(t), Scalar(i64)]`, with the same type and operator coverage and output types as `scan` in Task 3. Empty buckets hold the operator's identity: `0` for `add`, `1` for `mul`, the type's largest value for `min` (`+inf` for floats), its smallest for `max` (`-inf` for floats), all ones for `and`, `0` for `or` and `xor`.
-* No planner pattern rewrites `reduce_into(keys, fill(length(keys), 1), n, add)` to `histogram`: egglog leaves do not expose a constant's value, so the pattern could not require the fill value to be 1. Task 12 lists it as a candidate that needs a constant relation in the prelude.
+* `reduce_into_<op>_<t>`: class `Whole`, with variants, inputs `[Array(i64), Array(t), Scalar(i64)]`, with the same type and operator coverage and output types as `scan` in Task 4. Empty buckets hold the operator's identity: `0` for `add`, `1` for `mul`, the type's largest value for `min` (`+inf` for floats), its smallest for `max` (`-inf` for floats), all ones for `and`, `0` for `or` and `xor`.
+* No planner pattern rewrites `reduce_into(keys, fill(length(keys), 1), n, add)` to `histogram`: egglog leaves do not expose a constant's value, so the pattern could not require the fill value to be 1. Task 13 lists it as a candidate that needs a constant relation in the prelude.
 
 - [ ] **Step 1: Write the failing tests.**
   * `histogram_counts_keys`: keys `[0, 2, 2, 3]`, `n = 5`, gives `[1, 0, 2, 1, 0]`, and empty keys with `n = 0` give `[]`.
@@ -193,20 +214,20 @@
   * `reduce_into_with_one_key_matches_reduce`: with every key 0 and `n = 1`, every supported operator gives `reduce(vals, op)` (for `min` and `max` on non-empty input).
   * `reduce_into_checks_lengths`: keys and values of different lengths are a runtime error.
   * `src/check/tests.rs`: `reduce_into_add_f64_has_no_kernel`.
-  * `tests/isa_variants.rs`: as in Task 4, `args_for` draws the bucket count in `1..=64` and maps raw keys into `0..n`, with a minority out of range, for `histogram` and `reduce_into_*`.
+  * `tests/isa_variants.rs`: as in Task 5, `args_for` draws the bucket count in `1..=64` and maps raw keys into `0..n`, with a minority out of range, for `histogram` and `reduce_into_*`.
   * `tests/programs/buckets.vk` with `.out`.
 - [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --locked`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Allocate buckets through `Array::try_build` so a failed allocation is an error. Check keys in one pass before accumulating, as `gather` does.
 - [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass.
 - [ ] **Step 5: Commit** `Add histogram and reduce_into`.
 
-### Task 6: Sorted group-by and string-length programs
+### Task 7: Sorted group-by and string-length programs
 
 **Files:**
 * Create: `tests/programs/group_sorted.vk`, `tests/programs/group_sorted.out`, `tests/programs/string_len.vk`, `tests/programs/string_len.out`
 
 **Interfaces:**
-* Consumes: `prev`, `scan`, `scan_by`, `gather`, `reduce_into`, `compress` (Tasks 1, 3, 4, 5, tier 1).
+* Consumes: `prev`, `scan`, `scan_by`, `gather`, `reduce_into`, `compress` (Tasks 1, 4, 5, 6, tier 1).
 
 - [ ] **Step 1: Write** `group_sorted.vk` over sorted keys `k = [1, 1, 2, 2, 2, 5]` and values `v = [1, 2, 3, 4, 5, 6]`, with `n = length(k)`:
   * run starts `s = or(k != prev(k, 0), iota(n) == 0)`, which needs no first key,
@@ -217,7 +238,7 @@
 - [ ] **Step 2: Run** `CARGO_INCREMENTAL=0 cargo test --locked --test programs`. Expected: PASS once the `.out` files hold the printed results, checked by hand against the values above.
 - [ ] **Step 3: Commit** `Add sorted group-by and string-length programs`.
 
-### Task 7: `div_const` and `argsort`
+### Task 8: `div_const` and `argsort`
 
 **Files:**
 * Modify: `src/kernels/scalar/elementwise.rs`, `src/kernels/scalar/index.rs`, `src/ops.rs`, `src/check.rs`, `src/lower.rs` (if `DivConst` joins the elementwise ops)
@@ -243,7 +264,7 @@
 - [ ] **Step 4: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass, `div_const_<t>` has auto entries on x86.
 - [ ] **Step 5: Commit** `Add div_const and argsort`.
 
-### Task 8: Acceptance data
+### Task 9: Acceptance data
 
 **Files:**
 * Create: `scripts/prepare-acceptance.sh`
@@ -256,17 +277,17 @@
 
 - [ ] **Step 1: Write** `scripts/prepare-acceptance.sh DATA_DIR`: `set -euo pipefail`, clone the repository if `DATA_DIR/corgi-wip` is missing and check out the pinned revision, download `hits_0.parquet` if missing, then run `uv run --with duckdb --with numpy python3 corgi-wip/corgi/benches/clickbench/prepare.py DATA_DIR/clickbench DATA_DIR/hits_0.parquet` and `uv run --with duckdb --with numpy python3 corgi-wip/corgi/benches/tpch/prepare.py DATA_DIR/tpch 0.2`, and print the DuckDB version with `uv run --with duckdb python3 -c 'import duckdb; print(duckdb.__version__)'`. Every step is idempotent.
 - [ ] **Step 2: Run** `bash scripts/prepare-acceptance.sh ~/dev/repos/data/verkehrt`. Expected: both data directories exist, `ls ~/dev/repos/data/verkehrt/clickbench/expected/` lists `q01.txt` through `q42.txt`, `ls ~/dev/repos/data/verkehrt/tpch/expected/` lists `q01.txt` and `q06.txt` among others. If the sandbox refuses the clone or the network, stop and return BLOCKED with the exact error.
-- [ ] **Step 3: Record** the DuckDB version, the total size (`du -sh`), and the row counts in the report for Task 12.
+- [ ] **Step 3: Record** the DuckDB version, the total size (`du -sh`), and the row counts in the report for Task 13.
 - [ ] **Step 4: Commit** `Add the acceptance data preparation script`.
 
-### Task 9: Acceptance harness
+### Task 10: Acceptance harness
 
 **Files:**
 * Create: `src/columns.rs`, `tests/acceptance.rs`, `tests/acceptance/harness.rs` (declared as `mod harness;` from `tests/acceptance.rs`)
 * Modify: `src/interp.rs`, `src/lib.rs`
 
 **Interfaces:**
-* Produces in the library, because the bench in Task 11 needs the same loading and may not include test files:
+* Produces in the library, because the bench in Task 12 needs the same loading and may not include test files:
   * `Prepared::inputs(&self) -> impl Iterator<Item = (&str, ValueType)>`: the declared inputs in source order.
   * `verkehrt::columns::load_inputs(dir: &Path, prepared: &Prepared) -> Result<Vec<(String, Value)>, String>`: for every declared input, reads `dir/<name>.u64` as `u64[]` or `i64[]`, whichever the input declares, or `dir/<column>.bytes` as `u8[]` when the input is named `<column>_bytes` with type `u8[]`, checking that the `.bytes` file has one byte per row of `dir/<column>.ends`. Any other input type is an error naming the input. The doc comment states this file convention.
 * Produces in `tests/acceptance/harness.rs`:
@@ -285,7 +306,7 @@
 - [ ] **Step 4: Run** `CARGO_INCREMENTAL=0 cargo test --locked --test acceptance`. Expected: PASS, with skip messages for the two suites.
 - [ ] **Step 5: Commit** `Add the acceptance harness`.
 
-### Task 10: Acceptance queries
+### Task 11: Acceptance queries
 
 **Files:**
 * Create: `tests/acceptance/tpch/q01.vk`, `tests/acceptance/tpch/q06.vk`, `tests/acceptance/clickbench/q01.vk`, `tests/acceptance/clickbench/q02.vk`, `tests/acceptance/clickbench/q06.vk`, `tests/acceptance/clickbench/q07.vk`, `tests/acceptance/clickbench/q42.vk`
@@ -297,30 +318,30 @@
 - [ ] **Step 1: Write the failing test** `acceptance_queries_match_duckdb`: for each suite whose variable is set, for each `.vk` file in its directory, `run_query` output equals `expected/<query>.txt` byte for byte, and a mismatch prints the query name, the first differing line, and both lines.
 - [ ] **Step 2: Write the programs**, as the spec's query table describes. Q1 combines the flags as `cast_i64(rf) * 256 + cast_i64(ls)` with `n = 65536` (the range of two `u8` keys), splits the key back with `div_const`, and orders by key through `where(counts > 0)`. q07 and q42 derive their bucket counts from the filtered data and guard only those scalars with a lazy `if` (`histogram`, `where`, `gather`, `argsort`, and `slice` all handle empty inputs), and q42 applies `OFFSET 1000 LIMIT 10` with `slice` and `min(length, ...)` bounds. q07 orders with one stable `argsort(0 - c)` over keys that `where` already listed in ascending order.
 - [ ] **Step 3: Run** `VERKEHRT_CLICKBENCH=~/dev/repos/data/verkehrt/clickbench VERKEHRT_TPCH=~/dev/repos/data/verkehrt/tpch CARGO_INCREMENTAL=0 cargo test --release --locked --test acceptance`. Expected: PASS for all seven. A float mismatch in the last printed digit is a real mismatch, investigate how DuckDB computes that average before changing anything.
-- [ ] **Step 4: Record plans.** Add an ignored test `acceptance_plans` that prepares each program with `Options { show_plan: true, .. }` through `Interpreter::prepare_to` and prints the plans, run it with `-- --ignored --nocapture` and the variables set, and save the output for the Task 12 report.
+- [ ] **Step 4: Record plans.** Add an ignored test `acceptance_plans` that prepares each program with `Options { show_plan: true, .. }` through `Interpreter::prepare_to` and prints the plans, run it with `-- --ignored --nocapture` and the variables set, and save the output for the Task 13 report.
 - [ ] **Step 5: Commit** `Add the seven acceptance queries`.
 
-### Task 11: Benches
+### Task 12: Benches
 
 **Files:**
 * Create: `benches/acceptance.rs`
 * Modify: `benches/tier1.rs`, `Cargo.toml` (`[[bench]] name = "acceptance" harness = false`)
 
 **Interfaces:**
-* Consumes: `Prepared::inputs` and `verkehrt::columns::load_inputs` (Task 9).
+* Consumes: `Prepared::inputs` and `verkehrt::columns::load_inputs` (Task 10).
 
 - [ ] **Step 1: Write** `benches/tier1.rs` groups at 10M rows, each with the interpreter per variant (scalar, and on x86 AVX2 and AVX-512 auto) and a native Rust loop compiled for the same ISA, like the existing tier 1 groups: `scan-add-i64`, `gather-i64` (random indices into a 10M array, with an AVX2 and AVX-512 native baseline using `_mm256_i64gather_epi64` and `_mm512_i64gather_epi64`, not a scalar indexed load), `histogram` (keys uniform in `0..1024`), `reduce-into-add-i64` (keys uniform in `0..1024`), and `div-const-i64` (divisor 60).
 - [ ] **Step 2: Write** `benches/acceptance.rs`: one criterion group per query, timing `execute` only with the program prepared and the columns loaded once, sample size 10, skipping suites whose variable is unset.
-- [ ] **Step 3: Run** `CARGO_INCREMENTAL=0 cargo bench --locked --bench tier1 -- 'scan|gather|histogram|reduce-into'` and the acceptance bench with both variables set. In the same session, run corgi's `CORGI_CLICKBENCH=~/dev/repos/data/verkehrt/clickbench CARGO_INCREMENTAL=0 cargo bench --bench clickbench -- q01 q02 q06 q07 q42` and `CORGI_TPCH=~/dev/repos/data/verkehrt/tpch CARGO_INCREMENTAL=0 cargo bench --bench tpch -- q01 q06` from `~/dev/repos/data/verkehrt/corgi-wip/corgi`, after reading its bench source to note how it times a query. Save all outputs in the scratchpad for Task 12.
+- [ ] **Step 3: Run** `CARGO_INCREMENTAL=0 cargo bench --locked --bench tier1 -- 'scan|gather|histogram|reduce-into'` and the acceptance bench with both variables set. In the same session, run corgi's `CORGI_CLICKBENCH=~/dev/repos/data/verkehrt/clickbench CARGO_INCREMENTAL=0 cargo bench --bench clickbench -- q01 q02 q06 q07 q42` and `CORGI_TPCH=~/dev/repos/data/verkehrt/tpch CARGO_INCREMENTAL=0 cargo bench --bench tpch -- q01 q06` from `~/dev/repos/data/verkehrt/corgi-wip/corgi`, after reading its bench source to note how it times a query. Save all outputs in the scratchpad for Task 13.
 - [ ] **Step 4: Decide intrinsics.** The native loop is often the same portable body, so "within 1.5x of native" cannot show that a kernel failed to vectorize. For each new kernel, record three numbers at 10M: the best `auto` time over the scalar-entry time, its GB/s against the `add_i64` streaming kernel at 10M from the same run, and its ratio to the native baseline. Then:
-  * A kernel whose `auto` entry runs at about the scalar entry's speed (ratio above 0.9) did not vectorize. It gets the intrinsics entry the spec names (log-step shifts for the integer `scan` and `scan_by`, `vpgatherqq` for `gather`, `vpconflictq` or replicated sub-histograms for `histogram` and `reduce_into` on AVX-512), or, where the spec names none or the intrinsics do not beat the scalar entry, a strain-case row in Task 12 saying it is a scalar loop on that ISA.
+  * A kernel whose `auto` entry runs at about the scalar entry's speed (ratio above 0.9) did not vectorize. It gets the intrinsics entry the spec names (log-step shifts for the integer `scan` and `scan_by`, `vpgatherqq` for `gather`, `vpconflictq` or replicated sub-histograms for `histogram` and `reduce_into` on AVX-512), or, where the spec names none or the intrinsics do not beat the scalar entry, a strain-case row in Task 13 saying it is a scalar loop on that ISA.
   * `div_const_i64` and `div_const_u64` need a 64-bit multiply-high, which neither AVX2 nor AVX-512 has, so they are expected to be strain cases like `mul_i64`. Measure and record either way.
   * A kernel more than 1.5x slower than native after that gets an entry in the measurement document naming the gap.
   Every intrinsics entry is covered by `tests/isa_variants.rs`. Record each decision with its numbers.
 - [ ] **Step 5: Run** fmt, clippy, `cargo test --locked`, release `isa_variants`. Expected: all pass.
 - [ ] **Step 6: Commit** `Add tier 2 and acceptance benches`, and one commit per intrinsics entry from Step 4 named after the kernel.
 
-### Task 12: Measurements, catalog, and README
+### Task 13: Measurements, catalog, and README
 
 **Files:**
 * Create: `docs/measurements/2026-10-31-tier2.md`
@@ -328,7 +349,7 @@
 
 - [ ] **Step 1: Ask the user** to pin the x86 governor and decide on boost before the final run, as the benchmark-host notes require, and record the setting they report.
 - [ ] **Step 2: Write** the measurement document in the form of `docs/measurements/2026-10-30-x86-kernels.md`: setup (machine, clock, corgi revision, DuckDB version, data sizes and row counts), how each system was timed, the tier 2 kernel table against native with the intrinsics decisions, and the acceptance table with Verkehrt per ISA, corgi, DuckDB one-thread, and the ratios. Name the first gap to close for plan 5 and any fused-kernel candidate visible in the traces.
-- [ ] **Step 3: Update** the base spec's tier 2 catalog: one row per new primitive with its x86 and aarch64 instructions or strain-case note, the strain cases (gather on NEON, bucketed reductions, the scalar `argsort`, and every kernel that Task 11 Step 4 found to be a scalar loop on an ISA, expected to include the integer `scan` without intrinsics and `div_const` on 64-bit types), the `u64` cast and compare costs on AVX2, the "Scope of the first version" line updated for `u64`, and a "Surface gaps" list matching the tier 2 spec's deferred section plus integer `and`, `or`, and `xor` (no reduce or elementwise kernels exist) and the `histogram` pattern for `reduce_into` with a fill of 1.
+- [ ] **Step 3: Update** the base spec's tier 2 catalog: one row per new primitive with its x86 and aarch64 instructions or strain-case note, the strain cases (gather on NEON, bucketed reductions, the scalar `argsort`, and every kernel that Task 12 Step 4 found to be a scalar loop on an ISA, expected to include the integer `scan` without intrinsics and `div_const` on 64-bit types), the `u64` cast and compare costs on AVX2, the "Scope of the first version" line updated for `u64`, and a "Surface gaps" list matching the tier 2 spec's deferred section plus the `histogram` pattern for `reduce_into` with a fill of 1.
 - [ ] **Step 4: Update** `README.md`: the primitive list where it names primitives, and a short results paragraph for the acceptance queries pointing at the measurement document, in the style of the existing results paragraphs.
 - [ ] **Step 5: Commit** `Measure tier 2 kernels and the acceptance queries`, push the branch, and open a draft pull request against `main`, marked as posted by Claude Code.
 
@@ -338,5 +359,5 @@ After the pull request is open, a session on the M5 runs the NEON part, followin
 
 * Check out the branch, run `bash scripts/prepare-acceptance.sh ~/dev/repos/data/verkehrt` there (or the M5 user's chosen directory), and run the full test suite including release `isa_variants` and the acceptance test.
 * Run the tier 2 groups of `tier1` and the acceptance bench, and corgi's two benches on the same data, on AC power in high power mode.
-* Write NEON intrinsics only for groups more than 1.5x native, as in Task 11 Step 4. `gather` has no NEON instruction, so its result is recorded as a strain case whatever it measures.
+* Write NEON intrinsics only for groups more than 1.5x native, as in Task 12 Step 4. `gather` has no NEON instruction, so its result is recorded as a strain case whatever it measures.
 * Add an aarch64 section to `docs/measurements/2026-10-31-tier2.md` and commit to the same branch.
