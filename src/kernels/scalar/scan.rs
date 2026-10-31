@@ -2,9 +2,10 @@
 //! executor feeds it tile by tile and the output never depends on where the tiles split.
 
 use std::marker::PhantomData;
-use std::ops::{BitAnd, BitOr, BitXor};
+use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use crate::kernels::scalar::elementwise::{Num, arity_error, out_rows, rows_arg, splat_arg, tag};
+use crate::kernels::scalar::index::ReduceInto;
 use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, ScanBody, Scanner};
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Elem, ScalarType, ValueType};
@@ -71,7 +72,8 @@ fn register_prev<T: Elem, const BOOL: bool>(reg: &mut Registry) {
 }
 
 /// The fold of one scan over rows of storage type `T`. The first row of a segment is `lift`ed
-/// and every later row is `step`ped into the running value, so no operation needs an identity.
+/// and every later row is `step`ped into the running value, so a scan needs no identity.
+/// `reduce_into` has empty buckets and starts every bucket at the `identity` instead.
 pub trait ScanOp<T: Elem>: Send + 'static {
     /// The storage type of the output rows.
     type Out: Elem;
@@ -85,7 +87,36 @@ pub trait ScanOp<T: Elem>: Send + 'static {
     fn lift(x: T) -> Self::Out;
 
     fn step(acc: Self::Out, x: T) -> Self::Out;
+
+    /// The value that `step` leaves unchanged on the left, so that `step(identity, x)` equals
+    /// `lift(x)` for every `x` and an empty bucket reads as the fold of no rows.
+    fn identity() -> Self::Out;
 }
+
+/// The extreme values of an ordered element type: the smallest and largest value of an
+/// integer, `-inf` and `+inf` for a float. They are the identities of `max` and `min`.
+pub trait Extremes: Num {
+    const LOWEST: Self;
+    const HIGHEST: Self;
+}
+
+macro_rules! impl_extremes {
+    ($($t:ty => $lo:expr, $hi:expr);*) => {$(
+        impl Extremes for $t {
+            const LOWEST: $t = $lo;
+            const HIGHEST: $t = $hi;
+        }
+    )*};
+}
+
+impl_extremes!(
+    i64 => i64::MIN, i64::MAX;
+    u64 => u64::MIN, u64::MAX;
+    i32 => i32::MIN, i32::MAX;
+    u8 => u8::MIN, u8::MAX;
+    f64 => f64::NEG_INFINITY, f64::INFINITY;
+    f32 => f32::NEG_INFINITY, f32::INFINITY
+);
 
 /// Wrapping sum in the widened type `W`, as `IntSum` in the reductions.
 pub struct ScanSum<W>(PhantomData<fn() -> W>);
@@ -120,9 +151,14 @@ impl<T: Elem + Into<W>, W: Num> ScanOp<T> for ScanSum<W> {
     fn step(acc: W, x: T) -> W {
         Num::add(acc, x.into())
     }
+
+    #[inline(always)]
+    fn identity() -> W {
+        W::zeroed()
+    }
 }
 
-impl<T: Elem + Into<W>, W: Num> ScanOp<T> for ScanProduct<W> {
+impl<T: Elem + Into<W>, W: Num + From<u8>> ScanOp<T> for ScanProduct<W> {
     type Out = W;
     const IN_TYPE: ScalarType = T::TYPE;
     const OUT_TYPE: ScalarType = W::TYPE;
@@ -136,9 +172,14 @@ impl<T: Elem + Into<W>, W: Num> ScanOp<T> for ScanProduct<W> {
     fn step(acc: W, x: T) -> W {
         Num::mul(acc, x.into())
     }
+
+    #[inline(always)]
+    fn identity() -> W {
+        W::from(1)
+    }
 }
 
-impl<T: Num, const MAX: bool> ScanOp<T> for ScanExtreme<MAX> {
+impl<T: Extremes, const MAX: bool> ScanOp<T> for ScanExtreme<MAX> {
     type Out = T;
     const IN_TYPE: ScalarType = T::TYPE;
     const OUT_TYPE: ScalarType = T::TYPE;
@@ -152,11 +193,18 @@ impl<T: Num, const MAX: bool> ScanOp<T> for ScanExtreme<MAX> {
     fn step(acc: T, x: T) -> T {
         if MAX { acc.max2(x) } else { acc.min2(x) }
     }
+
+    #[inline(always)]
+    fn identity() -> T {
+        if MAX { T::LOWEST } else { T::HIGHEST }
+    }
 }
 
 macro_rules! impl_bit_scan {
-    ($name:ident, $bound:ident, |$a:ident, $x:ident| $step:expr) => {
-        impl<T: Elem + $bound<Output = T>, const BOOL: bool> ScanOp<T> for $name<BOOL> {
+    ($name:ident, $bound:ident, |$a:ident, $x:ident| $step:expr, $identity:expr) => {
+        impl<T: Elem + $bound<Output = T> + Not<Output = T> + From<u8>, const BOOL: bool> ScanOp<T>
+            for $name<BOOL>
+        {
             type Out = T;
             const IN_TYPE: ScalarType = if BOOL { ScalarType::Bool } else { T::TYPE };
             const OUT_TYPE: ScalarType = if BOOL { ScalarType::Bool } else { T::TYPE };
@@ -170,13 +218,24 @@ macro_rules! impl_bit_scan {
             fn step($a: T, $x: T) -> T {
                 $step
             }
+
+            #[inline(always)]
+            fn identity() -> T {
+                $identity
+            }
         }
     };
 }
 
-impl_bit_scan!(ScanAnd, BitAnd, |a, x| a & x);
-impl_bit_scan!(ScanOr, BitOr, |a, x| a | x);
-impl_bit_scan!(ScanXor, BitXor, |a, x| a ^ x);
+// All ones, which for bool is the single true bit of the 0/1 byte.
+impl_bit_scan!(
+    ScanAnd,
+    BitAnd,
+    |a, x| a & x,
+    if BOOL { T::from(1) } else { !T::zeroed() }
+);
+impl_bit_scan!(ScanOr, BitOr, |a, x| a | x, T::zeroed());
+impl_bit_scan!(ScanXor, BitXor, |a, x| a ^ x, T::zeroed());
 
 /// The checked rows of one tile: the input, the output, and the segment starts if any.
 type Tile<'a, T, U> = (&'a [T], &'a mut [U], Option<&'a [u8]>);
@@ -252,7 +311,7 @@ impl<T: Elem, O: ScanOp<T>, const BY: bool> ScanBody for Scan<T, O, BY> {
     }
 }
 
-/// Registers `scan_<op>_<t>` and `scan_by_<op>_<t>` for the fold `O` over rows of storage
+/// Registers `scan_<op>_<t>`, `scan_by_<op>_<t>`, and `reduce_into_<op>_<t>` for the fold `O` over rows of storage
 /// type `T`.
 fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
     let op = format!("{r:?}").to_lowercase();
@@ -285,12 +344,34 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         pattern: None,
         impls: KernelImpl::scan::<Scan<T, O, true>>(),
     });
+    reg.add(KernelDef {
+        name: format!("reduce_into_{op}_{n}"),
+        class: KernelClass::Whole,
+        op: Some(Op::ReduceInto(r)),
+        inputs: vec![
+            InputSpec::Array(ScalarType::I64),
+            InputSpec::Array(O::IN_TYPE),
+            InputSpec::Scalar(ScalarType::I64),
+        ],
+        output: ValueType::Array(O::OUT_TYPE),
+        // One key and one value read, and one bucket read and written.
+        cost: 8 + width(O::IN_TYPE) + 2 * width(O::OUT_TYPE),
+        commutative: false,
+        pattern: None,
+        impls: KernelImpl::whole::<ReduceInto<T, O>>(),
+    });
 }
 
 /// The scans of an integer type `T` whose sums and products widen to `W`.
 fn register_int<
-    T: Num + Into<W> + BitAnd<Output = T> + BitOr<Output = T> + BitXor<Output = T>,
-    W: Num,
+    T: Extremes
+        + Into<W>
+        + BitAnd<Output = T>
+        + BitOr<Output = T>
+        + BitXor<Output = T>
+        + Not<Output = T>
+        + From<u8>,
+    W: Num + From<u8>,
 >(
     reg: &mut Registry,
 ) {
@@ -304,7 +385,7 @@ fn register_int<
 }
 
 /// Floats have no scan for `add` and `mul`, whose results would depend on the tiling.
-fn register_float<T: Num>(reg: &mut Registry) {
+fn register_float<T: Extremes>(reg: &mut Registry) {
     register_scan::<T, ScanExtreme<false>>(reg, ReduceOp::Min);
     register_scan::<T, ScanExtreme<true>>(reg, ReduceOp::Max);
 }

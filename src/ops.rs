@@ -1,6 +1,6 @@
 use crate::value::ScalarType;
 
-/// Associative folds that `Op::Reduce`, `Op::Scan`, and `Op::ScanBy` can apply.
+/// Associative folds that `Op::Reduce`, `Op::Scan`, `Op::ScanBy`, and `Op::ReduceInto` can apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReduceOp {
     Add,
@@ -58,6 +58,11 @@ pub enum Op {
     /// The rows `start..end` of the first operand as a view, with `start` and `end` the
     /// `i64` scalar operands.
     Slice,
+    /// The number of occurrences of each key in `0..n`, with the `i64` scalar operand `n`.
+    Histogram,
+    /// The fold of the values per key in `0..n`, an empty bucket holding the identity of the
+    /// fold. The operands are the keys, the values, and the `i64` scalar `n`.
+    ReduceInto(ReduceOp),
     RandI64,
     RandF64,
     /// Load a file as an array of the given element type.

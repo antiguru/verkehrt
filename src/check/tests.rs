@@ -320,3 +320,11 @@ fn scan_is_rejected_inside_a_lambda() {
         "'scan' cannot be used inside a lambda",
     );
 }
+
+#[test]
+fn reduce_into_add_f64_has_no_kernel() {
+    type_err(
+        "let k = [0, 1]; let v = [1.0, 2.0]; let s = reduce_into(k, v, 2, add);",
+        "no kernel for 'reduce_into' on i64[], f64[], i64",
+    );
+}

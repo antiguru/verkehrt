@@ -186,6 +186,30 @@ fn gather_indices(input: &Input, start: usize, n: usize) -> Value {
     Value::Array(Array::from_vec(idx))
 }
 
+/// The bucket count of a `histogram` or `reduce_into_*` case, drawn in `1..=64` from the scalar
+/// operand of the case.
+fn bucket_count(def: &KernelDef, case: &Case) -> i64 {
+    let k = def.inputs.len() - 1;
+    let Scalar::I64(raw) = case.inputs[k].scalar else {
+        panic!("{} takes an i64 bucket count", def.name);
+    };
+    raw.rem_euclid(64) + 1
+}
+
+/// The key operand of a bucket kernel: the raw rows `start..start + n` mapped into `0..buckets`.
+/// One case in eight forces one key out of range, to `buckets` or to -1, so the error path is
+/// compared as well as the value path.
+fn bucket_keys(input: &Input, start: usize, n: usize, buckets: i64) -> Value {
+    let raw = input.rows.as_slice::<i64>();
+    let raw = &raw[start..start + n];
+    let mut keys: Vec<i64> = raw.iter().map(|&r| r.rem_euclid(buckets)).collect();
+    if n > 0 && raw[0].rem_euclid(8) == 0 {
+        let at = usize::try_from(raw[n - 1].unsigned_abs() % u64::try_from(n).unwrap()).unwrap();
+        keys[at] = if raw[n - 1] % 2 == 0 { buckets } else { -1 };
+    }
+    Value::Array(Array::from_vec(keys))
+}
+
 /// The arguments for `n` rows, starting at row 0 of each buffer when `aligned`, else at each
 /// input's own offset.
 fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value> {
@@ -211,6 +235,15 @@ fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value>
             let input = &case.inputs[k];
             if def.name.starts_with("gather_") && k == 1 {
                 return gather_indices(input, start(input), n);
+            }
+            if def.name == "histogram" || def.name.starts_with("reduce_into_") {
+                let buckets = bucket_count(def, case);
+                if k == def.inputs.len() - 1 {
+                    return Value::Scalar(Scalar::I64(buckets));
+                }
+                if k == 0 {
+                    return bucket_keys(input, start(input), n, buckets);
+                }
             }
             if is_array(k) {
                 return Value::Array(input.rows.slice(start(input), n));

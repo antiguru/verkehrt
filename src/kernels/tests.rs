@@ -353,6 +353,8 @@ fn kernel_names_are_unique_valid_identifiers() {
                 | Op::Fill
                 | Op::Gather
                 | Op::Slice
+                | Op::Histogram
+                | Op::ReduceInto(_)
                 | Op::RandI64
                 | Op::RandF64
                 | Op::Load(_)
@@ -1133,12 +1135,14 @@ fn variant_entry_counts_are_stable() {
     // `scan_<op>_<t>` and `scan_by_<op>_<t>` kernels added 70 scalar and 70 auto entries per
     // x86 ISA. The 7 `gather_<t>` kernels added 7 scalar and 7 auto entries per x86 ISA, and
     // the 7 `slice_<t>` kernels added 7 scalar entries.
+    // `histogram` and the 35 `reduce_into_<op>_<t>` kernels added 36 scalar and 36 auto
+    // entries per x86 ISA.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [701, 395, 36, 395, 38, 0, 0]);
+    assert_eq!(counts, [737, 431, 36, 431, 38, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [701, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [737, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {
@@ -1406,4 +1410,169 @@ fn slice_rejects_bad_bounds() {
         let e = call(&reg, "slice_i64", &[xv.clone(), i64_s(start), i64_s(end)]).unwrap_err();
         assert!(e.contains(&format!("{start}..{end}")), "{e}");
     }
+}
+
+#[test]
+fn histogram_counts_keys() {
+    let h = run_arr("histogram", &[i64v(&[0, 2, 2, 3]), i64_s(5)]);
+    assert_eq!(h.as_slice::<i64>(), &[1, 0, 2, 1, 0]);
+    let none = run_arr("histogram", &[i64v(&[]), i64_s(0)]);
+    assert_eq!(none.len(), 0);
+    let empty_buckets = run_arr("histogram", &[i64v(&[]), i64_s(3)]);
+    assert_eq!(empty_buckets.as_slice::<i64>(), &[0, 0, 0]);
+}
+
+#[test]
+fn bucket_keys_are_range_checked() {
+    let reg = Registry::new();
+    let both = |keys: &[i64], n: i64| {
+        let h = call(&reg, "histogram", &[i64v(keys), i64_s(n)]);
+        let vals = i64v(&vec![1; keys.len()]);
+        let r = call(&reg, "reduce_into_add_i64", &[i64v(keys), vals, i64_s(n)]);
+        (h, r)
+    };
+    // With no buckets every key is out of range.
+    for (key, n) in [(3, 3), (-1, 3), (0, 0)] {
+        let (h, r) = both(&[0, key], n);
+        let first = if n == 0 { 0 } else { key };
+        let want = format!("bucket key {first} out of range for {n} buckets");
+        assert_eq!(h.unwrap_err(), want);
+        assert_eq!(r.unwrap_err(), want);
+    }
+    let (h, r) = both(&[2, 0, 2], 3);
+    assert_eq!(arr(h.unwrap()).as_slice::<i64>(), &[1, 0, 2]);
+    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[1, 0, 2]);
+    let (neg_h, neg_r) = both(&[], -1);
+    assert_eq!(neg_h.unwrap_err(), "negative bucket count -1");
+    assert_eq!(neg_r.unwrap_err(), "negative bucket count -1");
+}
+
+#[test]
+fn huge_bucket_count_is_an_error() {
+    let reg = Registry::new();
+    let hist = call(&reg, "histogram", &[i64v(&[0]), i64_s(1 << 62)]).unwrap_err();
+    assert!(hist.contains("too large"), "{hist}");
+    let reduced = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0]), i64v(&[1]), i64_s(1 << 62)],
+    )
+    .unwrap_err();
+    assert!(reduced.contains("too large"), "{reduced}");
+}
+
+#[test]
+fn reduce_into_sums_per_bucket() {
+    let sums = run_arr(
+        "reduce_into_add_i64",
+        &[i64v(&[1, 0, 1]), i64v(&[5, 7, 9]), i64_s(3)],
+    );
+    assert_eq!(sums.as_slice::<i64>(), &[7, 14, 0]);
+    // Narrow values widen as in `reduce` and `scan`.
+    let wide = run_arr(
+        "reduce_into_add_i32",
+        &[i64v(&[0, 0]), i32s(&[i32::MAX, 1]), i64_s(1)],
+    );
+    assert_eq!(wide.elem(), ScalarType::I64);
+    assert_eq!(wide.as_slice::<i64>(), &[i64::from(i32::MAX) + 1]);
+    let bits = run_arr(
+        "reduce_into_xor_bool",
+        &[i64v(&[1, 1, 0]), bools(&[true, true, true]), i64_s(2)],
+    );
+    assert_eq!(bits.elem(), ScalarType::Bool);
+    assert_eq!(bits.as_bool_bytes(), &[1, 0]);
+}
+
+#[test]
+fn reduce_into_empty_buckets_hold_identity() {
+    // Bucket 1 holds the one value and every other bucket is empty.
+    let one = |name: &str, vals: Value, n: i64| run_arr(name, &[i64v(&[1]), vals, i64_s(n)]);
+    let min_f64 = one("reduce_into_min_f64", f64s(&[2.5]), 3);
+    assert_eq!(
+        min_f64.as_slice::<f64>(),
+        &[f64::INFINITY, 2.5, f64::INFINITY]
+    );
+    let max_f32 = one(
+        "reduce_into_max_f32",
+        Value::Array(Array::from_vec(vec![2.5f32])),
+        2,
+    );
+    assert_eq!(max_f32.as_slice::<f32>(), &[f32::NEG_INFINITY, 2.5]);
+    let max_i64 = one("reduce_into_max_i64", i64v(&[4]), 2);
+    assert_eq!(max_i64.as_slice::<i64>(), &[i64::MIN, 4]);
+    let min_u64 = one("reduce_into_min_u64", u64s(&[4]), 2);
+    assert_eq!(min_u64.as_slice::<u64>(), &[u64::MAX, 4]);
+    let mul_i32 = one("reduce_into_mul_i32", i32s(&[4]), 2);
+    assert_eq!(mul_i32.as_slice::<i64>(), &[1, 4]);
+    let and_u8 = one("reduce_into_and_u8", u8s(&[4]), 2);
+    assert_eq!(and_u8.as_slice::<u8>(), &[u8::MAX, 4]);
+    let or_i32 = one("reduce_into_or_i32", i32s(&[4]), 2);
+    assert_eq!(or_i32.as_slice::<i32>(), &[0, 4]);
+    let xor_i64 = one("reduce_into_xor_i64", i64v(&[4]), 2);
+    assert_eq!(xor_i64.as_slice::<i64>(), &[0, 4]);
+    // The identity of bool `and` is true.
+    let and_bool = one("reduce_into_and_bool", bools(&[false]), 2);
+    assert_eq!(and_bool.as_bool_bytes(), &[1, 0]);
+}
+
+/// 40 pseudo-random rows of type `ty`, without NaNs and with duplicates.
+fn rows_of_type(ty: ScalarType) -> Value {
+    let raw: Vec<u64> = (0..40).map(|i| splitmix64(i) % 7).collect();
+    match ty {
+        ScalarType::I64 => i64v(&raw.iter().map(|&r| r as i64 - 3).collect::<Vec<_>>()),
+        ScalarType::U64 => u64s(&raw),
+        ScalarType::I32 => i32s(&raw.iter().map(|&r| r as i32 - 3).collect::<Vec<_>>()),
+        ScalarType::U8 => u8s(&raw.iter().map(|&r| r as u8).collect::<Vec<_>>()),
+        ScalarType::F64 => f64s(&raw.iter().map(|&r| r as f64 - 3.5).collect::<Vec<_>>()),
+        ScalarType::F32 => Value::Array(Array::from_vec(
+            raw.iter().map(|&r| r as f32 - 3.5).collect::<Vec<_>>(),
+        )),
+        ScalarType::Bool => bools(&raw.iter().map(|&r| r % 2 == 0).collect::<Vec<_>>()),
+        other => panic!("no rows for {other:?}"),
+    }
+}
+
+#[test]
+fn reduce_into_with_one_key_matches_reduce() {
+    let reg = Registry::new();
+    let mut checked = 0;
+    for (_, def) in reg.iter() {
+        let Some(suffix) = def.name.strip_prefix("reduce_into_") else {
+            continue;
+        };
+        let ValueType::Array(out) = def.output else {
+            panic!("{} must produce an array", def.name);
+        };
+        let InputSpec::Array(ty) = def.inputs[1] else {
+            panic!("{} takes an array of values", def.name);
+        };
+        let vals = rows_of_type(ty);
+        let keys = i64v(&[0; 40]);
+        let got = arr(call(&reg, &def.name, &[keys, vals.clone(), i64_s(1)]).unwrap());
+        let want = scalar(call(&reg, &format!("reduce_{suffix}"), &[vals]));
+        assert_eq!(got.elem(), out, "{}", def.name);
+        assert_eq!(got.len(), 1, "{}", def.name);
+        // `reduce` keeps `mul` in the narrow type, `reduce_into` widens it as `scan` does.
+        let want = match (want, out) {
+            (Scalar::I32(v), ScalarType::I64) => Scalar::I64(v.into()),
+            (Scalar::U8(v), ScalarType::U64) => Scalar::U64(v.into()),
+            (want, _) => want,
+        };
+        assert_eq!(got.get(0), want, "{}", def.name);
+        checked += 1;
+    }
+    // 4 integer types with 7 operators, 2 float types with 2, and 3 for bool.
+    assert_eq!(checked, 4 * 7 + 2 * 2 + 3);
+}
+
+#[test]
+fn reduce_into_checks_lengths() {
+    let reg = Registry::new();
+    let e = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0, 0]), i64v(&[1]), i64_s(1)],
+    )
+    .unwrap_err();
+    assert_eq!(e, "length mismatch: 2 keys for 1 values");
 }

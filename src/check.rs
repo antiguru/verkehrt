@@ -93,14 +93,17 @@ enum FoldKind {
     Reduce,
     Scan,
     ScanBy,
+    ReduceInto,
 }
 
 impl FoldKind {
-    /// The number of array arguments before the operation name.
+    /// The number of arguments before the operation name, the arrays and for `reduce_into`
+    /// the bucket count.
     fn arrays(self) -> usize {
         match self {
             FoldKind::Reduce | FoldKind::Scan => 1,
             FoldKind::ScanBy => 2,
+            FoldKind::ReduceInto => 3,
         }
     }
 
@@ -109,13 +112,14 @@ impl FoldKind {
             FoldKind::Reduce => Op::Reduce(r),
             FoldKind::Scan => Op::Scan(r),
             FoldKind::ScanBy => Op::ScanBy(r),
+            FoldKind::ReduceInto => Op::ReduceInto(r),
         }
     }
 }
 
 enum Builtin {
     Op(Op, usize),
-    /// `reduce`, `scan`, and `scan_by`: the arrays, then an operation name.
+    /// `reduce`, `scan`, `scan_by`, and `reduce_into`: the arguments, then an operation name.
     Fold(FoldKind),
     Map,
     ZipMap,
@@ -148,12 +152,14 @@ fn builtin(name: &str) -> Option<Builtin> {
         "fill" => (Op::Fill, 2),
         "gather" => (Op::Gather, 2),
         "slice" => (Op::Slice, 3),
+        "histogram" => (Op::Histogram, 2),
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),
         "reduce" => return Some(Builtin::Fold(FoldKind::Reduce)),
         "scan" => return Some(Builtin::Fold(FoldKind::Scan)),
         "scan_by" => return Some(Builtin::Fold(FoldKind::ScanBy)),
+        "reduce_into" => return Some(Builtin::Fold(FoldKind::ReduceInto)),
         "map" => return Some(Builtin::Map),
         "zip_map" => return Some(Builtin::ZipMap),
         "filter" => return Some(Builtin::Filter),
@@ -311,6 +317,7 @@ fn op_name(op: Op) -> String {
         Op::Reduce(r) => format!("reduce({})", reduce_name(r)),
         Op::Scan(r) => format!("scan({})", reduce_name(r)),
         Op::ScanBy(r) => format!("scan_by({})", reduce_name(r)),
+        Op::ReduceInto(r) => format!("reduce_into({})", reduce_name(r)),
         other => format!("{other:?}").to_lowercase(),
     }
 }
