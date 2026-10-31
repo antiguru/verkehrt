@@ -54,16 +54,19 @@ The new kernel class "scan" covers primitives whose output row `i` depends on in
 | `argsort(x)` | whole-array | `i64[]` permutation that sorts `x` ascending, stable. Integer element types only in plan 4. |
 | `slice(x, start, end)` | whole-array | Zero-copy view of rows `start` to `end - 1`. It requires `0 <= start <= end <= length(x)` and is otherwise a runtime error. |
 
-Kernels cover the first version's element types where the operation is defined (my call):
-* `gather`, `prev`, and `slice` move rows without arithmetic, so they cover `f64`, `f32`, `i64`, `i32`, `u8`, and `bool`.
-* `scan`, `scan_by`, and `reduce_into` cover `i64`, `i32`, and `u8` with every `reduce` operator that has an integer kernel, and `f64` and `f32` with `min` and `max` only.
-* `div_const` covers `i64`, `i32`, and `u8`.
-* `argsort` covers `i64`, `i32`, and `u8`.
+Kernels cover the first version's element types plus `u64` where the operation is defined (my call):
+* `gather`, `prev`, and `slice` move rows without arithmetic, so they cover `f64`, `f32`, `i64`, `u64`, `i32`, `u8`, and `bool`.
+* `scan`, `scan_by`, and `reduce_into` cover `i64`, `u64`, `i32`, and `u8` with every `reduce` operator that has an integer kernel, and `f64` and `f32` with `min` and `max` only.
+* `div_const` covers `i64`, `u64`, `i32`, and `u8`.
+* `argsort` covers `i64`, `u64`, `i32`, and `u8`.
 * `histogram` and the key arguments take `i64[]` only.
 
 `scan`, `scan_by`, and `reduce_into` take the same operators as `reduce`.
-`scan`, `scan_by`, and `reduce_into` with `add` or `mul` widen like `sum`, so `i32` values give `i64` results and `out[n - 1]` of a scan equals `sum(x)`. Over `u8`, `sum` widens to `u64`, but `u64[]` has no kernels to consume the result, so `add` and `mul` on `u8` are rejected for now and listed under "Deferred: surface gaps" (my call). `min`, `max`, `and`, `or`, and `xor` keep the element type.
-`div_const` wraps like the rest of integer arithmetic, so `div_const(i64::MIN, -1)` is `i64::MIN` instead of the panic that Rust `/` gives (my call).
+`scan`, `scan_by`, and `reduce_into` with `add` or `mul` widen like `sum`, so `i32` values give `i64` results and `out[n - 1]` of a scan equals `sum(x)`. Over `u8` they widen to `u64`, as `sum` does (user decision). `min`, `max`, `and`, `or`, and `xor` keep the element type.
+`div_const` wraps like the rest of integer arithmetic (user decision), see below.
+
+Plan 4 therefore adds `u64` as a kernel type, so a widened result is usable: `u64` gets every kernel family that `i64` has, including the tier 1 arithmetic, comparisons, casts, reductions, and selections, and the tier 2 primitives with the coverage of `i64`. A partial `u64` would be the next wrinkle in the surface. AVX2 has no unsigned 64-bit compare and needs the sign-bias trick, and AVX2 has no `u64` to `f64` conversion, which the catalog records like the existing `i64` cast strain case.
+`div_const(i64::MIN, -1)` is `i64::MIN` instead of the panic that Rust `/` gives, matching `abs(i64::MIN)`.
 The empty-bucket identity of `min` and `max` is the type's largest and smallest value, with `+inf` and `-inf` for floats.
 `histogram(keys, n)` is the same result as `reduce_into(keys, fill(length(keys), 1), n, add)`, and the planner may cover either form with either kernel through the usual pattern mechanism (my call).
 
@@ -165,7 +168,6 @@ The base spec's catalog lists the open gaps, so the surface's holes are visible 
 
 * **Float `add` and `mul` in `reduce_into`.** A candidate canonical order extends the 16-accumulator reduction order: row `i` goes to stripe `i mod 16` below `b = n - (n mod 16)` and to stripe 0 from `b` on, each stripe accumulates its bucket's values in index order, and the 16 stripes combine pairwise as in the reduction. With every key equal, this gives exactly the bits of `sum`. The same 16 replicated sub-histograms are a standard way to avoid scatter conflicts, so the order may cost little beyond the memory for 16 copies of the buckets.
 * **Float `add` and `mul` in `scan` and `scan_by`.** A candidate canonical order defines `out[i]` as the reduction order applied to the prefix `x[0..=i]`, so `out[n - 1]` equals `sum(x)`. A kernel can compute it by keeping the 16 stripe accumulators and combining them for each output row, which costs a pairwise tree per row and needs measurement against a sequential scan.
-* **`add` and `mul` on `u8` in `scan`, `scan_by`, and `reduce_into`.** They widen to `u64[]`, which needs array kernels before the result is usable.
 * **Float element types in `argsort`.** These need a total order that says where NaN and the two zeros sort, which tier 3 decides along with `sort`.
 * **`reverse`, `rotate`, and packed bitmasks** from the tier 2 catalog.
 
