@@ -32,6 +32,7 @@ pub(crate) fn compress_entry<T: Elem, const BOOL: bool>() -> Option<SelectionFn>
         ScalarType::F64 => Some(compress::<f64, BOOL>),
         ScalarType::F32 => Some(compress::<f32, BOOL>),
         ScalarType::I64 => Some(compress::<i64, BOOL>),
+        ScalarType::U64 => Some(compress::<u64, BOOL>),
         ScalarType::I32 => Some(compress::<i32, BOOL>),
         ScalarType::U8 => Some(compress::<u8, BOOL>),
         _ => None,
@@ -51,6 +52,7 @@ pub(crate) fn filter_entry<T: Elem, const C: usize>() -> Option<SelectionFn> {
         ScalarType::F64 => Some(filter::<f64, C>),
         ScalarType::F32 => Some(filter::<f32, C>),
         ScalarType::I64 => Some(filter::<i64, C>),
+        ScalarType::U64 => Some(filter::<u64, C>),
         ScalarType::I32 => Some(filter::<i32, C>),
         _ => None,
     }
@@ -388,6 +390,7 @@ macro_rules! lanes {
 
 lanes!(f64, 8, 2, SHUFFLE_64);
 lanes!(i64, 8, 2, SHUFFLE_64);
+lanes!(u64, 8, 2, SHUFFLE_64);
 lanes!(f32, 16, 4, SHUFFLE_32);
 lanes!(i32, 16, 4, SHUFFLE_32);
 
@@ -528,6 +531,29 @@ impl Compare for i64 {
             vcleq_s64,
             vcgtq_s64,
             vcgeq_s64
+        )
+    }
+}
+
+impl Compare for u64 {
+    // SAFETY: the caller guarantees NEON. The method reads no memory.
+    #[inline]
+    #[target_feature(enable = "neon")]
+    unsafe fn compare<const C: usize>(v: uint8x16x4_t, c: u64) -> u64 {
+        let s = vdupq_n_u64(c);
+        // The unsigned compares, and `!=` as the negation of `==`.
+        compare_quad!(
+            C,
+            v,
+            s,
+            vreinterpretq_u64_u8,
+            bits_64,
+            0xff,
+            vceqq_u64,
+            vcltq_u64,
+            vcleq_u64,
+            vcgtq_u64,
+            vcgeq_u64
         )
     }
 }

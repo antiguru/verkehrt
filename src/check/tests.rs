@@ -51,6 +51,14 @@ fn no_kernel() {
 }
 
 #[test]
+fn and_on_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0]; let y = and(x, x);",
+        "no kernel for 'and' on f64[]",
+    );
+}
+
+#[test]
 fn scalar_kernels_for_every_type() {
     assert_eq!(
         last_type("let a = 2u64; let b = a + a;"),
@@ -79,6 +87,14 @@ fn lambda_rejects_reduction() {
     type_err(
         "let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * sum(y));",
         "'sum' cannot be used inside a lambda",
+    );
+}
+
+#[test]
+fn prev_is_rejected_inside_a_lambda() {
+    type_err(
+        "let x = [1, 2]; let m = map(x, |v| prev(v, 0));",
+        "'prev' cannot be used inside a lambda",
     );
 }
 
@@ -275,4 +291,104 @@ fn duplicate_input_and_export_are_rejected() {
     assert_eq!(second_err.span, Some(Span { line: 1, col: 17 }));
     // An input and an export are different namespaces of the host interface.
     run("input a: f64; export b = a; let b = 1.0;").unwrap();
+}
+
+#[test]
+fn scan_add_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0, 2.0]; let s = scan(x, add);",
+        "no kernel for 'scan' on f64[]",
+    );
+}
+
+#[test]
+fn scan_rejects_unknown_operations() {
+    type_err(
+        "let x = [1, 2]; let s = scan(x, foo);",
+        "unknown scan operation 'foo'",
+    );
+    type_err(
+        "let x = [1, 2]; let s = scan_by(x, [true, false], foo);",
+        "unknown scan_by operation 'foo'",
+    );
+}
+
+#[test]
+fn scan_is_rejected_inside_a_lambda() {
+    type_err(
+        "let x = [1, 2]; let m = map(x, |v| scan(v, add));",
+        "'scan' cannot be used inside a lambda",
+    );
+}
+
+#[test]
+fn reduce_into_add_f64_has_no_kernel() {
+    type_err(
+        "let k = [0, 1]; let v = [1.0, 2.0]; let s = reduce_into(k, v, 2, add);",
+        "no kernel for 'reduce_into' on i64[], f64[], i64",
+    );
+}
+
+#[test]
+fn div_const_rejects_an_array_divisor() {
+    type_err(
+        "let x = [1, 2]; let y = div_const(x, x);",
+        "no kernel for 'div_const' on i64[], i64[]",
+    );
+}
+
+#[test]
+fn div_const_in_a_lambda_rejects_a_parameter_divisor() {
+    // Lifted over arrays, a parameter divisor is an array, which the kernel does not take.
+    let e = type_err(
+        "let x = [1, 2]; let m = map(x, |v| div_const(v, v));",
+        "div_const",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 49 }));
+}
+
+#[test]
+fn div_const_in_a_lambda_rejects_a_constant_dividend_with_a_parameter_divisor() {
+    let e = type_err(
+        "let x = [1, 2]; let m = map(x, |v| div_const(60, v));",
+        "div_const",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 50 }));
+}
+
+#[test]
+fn div_const_in_a_lambda_rejects_a_divisor_derived_from_a_parameter() {
+    type_err(
+        "let x = [1, 2]; let m = map(x, |v| { let d = v + 1; div_const(v, d) });",
+        "div_const",
+    );
+}
+
+#[test]
+fn div_const_in_a_lambda_accepts_a_constant_or_captured_divisor() {
+    let i64a = ValueType::Array(ScalarType::I64);
+    assert_eq!(
+        last_type("let x = [1, 2]; let m = map(x, |v| div_const(v, 60));"),
+        i64a
+    );
+    assert_eq!(
+        last_type("let x = [1, 2]; let k = 7; let m = map(x, |v| div_const(v + 1, k));"),
+        i64a
+    );
+}
+
+#[test]
+fn div_const_in_a_function_called_from_a_lambda_needs_a_constant_divisor() {
+    type_err(
+        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, 3));",
+        "div_const",
+    );
+}
+
+#[test]
+fn argsort_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0]; let y = argsort(x);",
+        "no kernel for 'argsort' on f64[]",
+    );
 }

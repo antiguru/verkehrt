@@ -1,0 +1,37 @@
+// sql: SELECT l_returnflag, l_linestatus, sum(l_quantity), sum(l_extendedprice),
+// sql:   sum(l_extendedprice * (100 - l_discount)), sum(l_extendedprice * (100 - l_discount) * (100 + l_tax)),
+// sql:   sum(l_quantity)::DOUBLE / count(*), count(*)
+// sql:   FROM lineitem WHERE l_shipdate <= 10471 GROUP BY l_returnflag, l_linestatus ORDER BY l_returnflag, l_linestatus
+// output: [s,s,u,u,u,u,f,u]
+input l_returnflag_bytes: u8[];
+input l_linestatus_bytes: u8[];
+input l_quantity: i64[];
+input l_extendedprice: i64[];
+input l_discount: i64[];
+input l_tax: i64[];
+input l_shipdate: i64[];
+
+let m = l_shipdate <= 10471;
+let qty = compress(l_quantity, m);
+let price = compress(l_extendedprice, m);
+let disc = compress(l_discount, m);
+let tax = compress(l_tax, m);
+// The two one-byte flags combine into one key, so the bucket count is the range of two u8 keys.
+let key = (cast_i64(compress(l_returnflag_bytes, m)) * 256) + cast_i64(compress(l_linestatus_bytes, m));
+let n = 65536;
+let counts = histogram(key, n);
+// Non-empty buckets in key order, which is ORDER BY l_returnflag, l_linestatus.
+let groups = where(counts > 0);
+let disc_price = price * (100 - disc);
+let charge = disc_price * (100 + tax);
+let c = gather(counts, groups);
+let sum_qty = gather(reduce_into(key, qty, n, add), groups);
+let rf = div_const(groups, 256);
+export returnflag = cast_u8(rf);
+export linestatus = cast_u8(groups - (rf * 256));
+export sum_qty = sum_qty;
+export sum_price = gather(reduce_into(key, price, n, add), groups);
+export sum_disc_price = gather(reduce_into(key, disc_price, n, add), groups);
+export sum_charge = gather(reduce_into(key, charge, n, add), groups);
+export avg_qty = cast_f64(sum_qty) / cast_f64(c);
+export count = c;

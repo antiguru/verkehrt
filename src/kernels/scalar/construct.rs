@@ -20,7 +20,7 @@ pub fn splitmix64(x: u64) -> u64 {
 const UNIT_53: f64 = 1.0 / 9_007_199_254_740_992.0;
 
 /// An `i64` scalar argument.
-fn i64_arg(v: &Value) -> Result<i64, String> {
+pub(crate) fn i64_arg(v: &Value) -> Result<i64, String> {
     match v {
         Value::Scalar(Scalar::I64(n)) => Ok(*n),
         other => Err(format!("expected i64, got {}", other.ty())),
@@ -120,7 +120,7 @@ fn run_same_len(args: &[Value], ty: ScalarType) -> Result<Value, String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn add_whole(
+pub(crate) fn add_whole(
     reg: &mut Registry,
     op: Op,
     name: String,
@@ -142,7 +142,8 @@ fn add_whole(
     });
 }
 
-fn width(ty: ScalarType) -> u64 {
+/// The width of `ty` in bytes, as the `u64` that kernel costs use.
+pub(crate) fn width(ty: ScalarType) -> u64 {
     u64::try_from(ty.width()).expect("width fits in u64")
 }
 
@@ -223,6 +224,7 @@ pub(crate) fn register(reg: &mut Registry) {
     fill!(reg, f64, ScalarType::F64);
     fill!(reg, f32, ScalarType::F32);
     fill!(reg, i64, ScalarType::I64);
+    fill!(reg, u64, ScalarType::U64);
     fill!(reg, i32, ScalarType::I32);
     fill!(reg, u8, ScalarType::U8);
     // Bool arrays are stored as `u8`.
@@ -249,17 +251,20 @@ pub(crate) fn register(reg: &mut Registry) {
     load!(reg, f64, ScalarType::F64);
     load!(reg, f32, ScalarType::F32);
     load!(reg, i64, ScalarType::I64);
+    load!(reg, u64, ScalarType::U64);
     load!(reg, i32, ScalarType::I32);
     load!(reg, u8, ScalarType::U8);
     length!(reg, ScalarType::F64);
     length!(reg, ScalarType::F32);
     length!(reg, ScalarType::I64);
+    length!(reg, ScalarType::U64);
     length!(reg, ScalarType::I32);
     length!(reg, ScalarType::U8);
     length!(reg, ScalarType::Bool);
     same_len!(reg, ScalarType::F64);
     same_len!(reg, ScalarType::F32);
     same_len!(reg, ScalarType::I64);
+    same_len!(reg, ScalarType::U64);
     same_len!(reg, ScalarType::I32);
     same_len!(reg, ScalarType::U8);
     same_len!(reg, ScalarType::Bool);

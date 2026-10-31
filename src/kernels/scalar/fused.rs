@@ -372,6 +372,7 @@ pub(crate) fn register(reg: &mut Registry) {
     register_type::<f64>(reg);
     register_type::<f32>(reg);
     register_type::<i64>(reg);
+    register_type::<u64>(reg);
     register_type::<i32>(reg);
 }
 

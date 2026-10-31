@@ -1,4 +1,5 @@
 pub mod check;
+pub mod columns;
 pub mod error;
 pub mod exec;
 pub mod interp;

@@ -347,9 +347,15 @@ fn kernel_names_are_unique_valid_identifiers() {
                 KernelClass::Reduction
             }
             Some(Op::Compress | Op::Where) => KernelClass::Selection,
+            Some(Op::Prev | Op::Scan(_) | Op::ScanBy(_)) => KernelClass::Scan,
             Some(
                 Op::Iota
                 | Op::Fill
+                | Op::Gather
+                | Op::Slice
+                | Op::Histogram
+                | Op::ArgSort
+                | Op::ReduceInto(_)
                 | Op::RandI64
                 | Op::RandF64
                 | Op::Load(_)
@@ -380,7 +386,7 @@ fn costs_count_bytes_per_element() {
 #[test]
 fn array_kernels_exist_for_v1_types_only() {
     let reg = Registry::new();
-    for t in ScalarType::V1_ARRAY {
+    for t in ScalarType::ARRAY_TYPES {
         if t != ScalarType::Bool {
             assert!(reg.by_name(&format!("add_{}", t.name())).is_some());
         }
@@ -972,6 +978,57 @@ fn iota_fill_and_negative_counts() {
 }
 
 #[test]
+fn prev_shifts_rows_and_fills_row_zero() {
+    let reg = Registry::new();
+    let i64s = |v: &[i64]| Value::Array(Array::from_vec(v.to_vec()));
+    let shifted = call(&reg, "prev_i64", &[i64s(&[1, 2, 3]), i64_s(9)]);
+    assert_eq!(arr(shifted.unwrap()).as_slice::<i64>(), &[9, 1, 2]);
+    let empty = call(&reg, "prev_i64", &[i64s(&[]), i64_s(9)]);
+    assert_eq!(arr(empty.unwrap()).len(), 0);
+    let flags = call(
+        &reg,
+        "prev_bool",
+        &[
+            bools(&[true, false, true]),
+            Value::Scalar(Scalar::Bool(true)),
+        ],
+    );
+    let flags = arr(flags.unwrap());
+    assert_eq!(flags.as_bool_bytes(), &[1, 1, 0]);
+    // A fill of the wrong type is an error, not a reinterpretation.
+    assert!(call(&reg, "prev_i64", &[i64s(&[1]), f64_s(1.0)]).is_err());
+}
+
+/// A whole body with auto entries, which no registered kernel is built from yet.
+struct Echo;
+
+impl WholeBody for Echo {
+    fn run(args: &[Value]) -> Result<Value, String> {
+        args.first().cloned().ok_or_else(|| "no argument".into())
+    }
+}
+
+#[test]
+fn whole_tables_have_scalar_and_auto_entries() {
+    let impls = KernelImpl::whole::<Echo>();
+    assert!(impls[Variant::SCALAR.index()].is_some());
+    let auto = |isa| Variant {
+        isa,
+        backend: Backend::Auto,
+    };
+    let x86 = cfg!(target_arch = "x86_64");
+    assert_eq!(impls[auto(Isa::Avx2).index()].is_some(), x86);
+    assert_eq!(impls[auto(Isa::Avx512).index()].is_some(), x86);
+    let isa = Isa::detect();
+    if let Some(KernelImpl::Whole(f)) = impls[auto(isa).index()] {
+        let args = [i64_s(5)];
+        // SAFETY: `Isa::detect` returned an ISA this CPU supports, and the body is safe Rust.
+        let got = unsafe { f(&args) };
+        assert_eq!(scalar(got), Scalar::I64(5));
+    }
+}
+
+#[test]
 fn splitmix_and_rand() {
     assert_eq!(splitmix64(0), 0xE220A8397B1DCDAF);
     let reg = Registry::new();
@@ -1072,11 +1129,586 @@ fn variant_entry_counts_are_stable() {
         }
     }
     // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
-    // recorded before the architecture layer existed.
+    // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
+    // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
+    // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`
+    // added 46 scalar and 29 auto entries per x86 ISA, and no intrinsics entries. The 70
+    // `scan_<op>_<t>` and `scan_by_<op>_<t>` kernels added 70 scalar and 70 auto entries per
+    // x86 ISA. The 7 `gather_<t>` kernels added 7 scalar and 7 auto entries per x86 ISA, and
+    // the 7 `slice_<t>` kernels added 7 scalar entries.
+    // `histogram` and the 35 `reduce_into_<op>_<t>` kernels added 36 scalar and 36 auto
+    // entries per x86 ISA.
+    // The 4 `div_const_<t>` and 4 `argsort_<t>` kernels added 12 scalar entries (the array and
+    // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
+    // `gather_i64`, `gather_u64`, and `gather_f64` added 3 intrinsics entries per x86 ISA.
+    // `scan_by_add_i64` and `scan_by_add_u64` added 2 AVX-512 intrinsics entries.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [509, 231, 29, 231, 31, 0, 0]);
-    // NEON intrinsics cover 6 compress kernels, `where`, 24 fused filters, and the 8 float
+    assert_eq!(counts, [749, 439, 39, 439, 43, 0, 0]);
+    // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [509, 0, 0, 0, 0, 0, 39]);
+    assert_eq!(counts, [749, 0, 0, 0, 0, 0, 46]);
+}
+
+fn u64s(v: &[u64]) -> Value {
+    Value::Array(Array::from_vec(v.to_vec()))
+}
+
+fn u64_s(v: u64) -> Value {
+    Value::Scalar(Scalar::U64(v))
+}
+
+#[test]
+fn u64_compares_unsigned() {
+    let reg = Registry::new();
+    // A signed compare reads `1 << 63` as negative, so it gets this wrong.
+    let r = call(&reg, "gt_u64", &[u64s(&[1 << 63, 1]), u64_s(1)]);
+    assert_eq!(arr(r.unwrap()).as_bool_bytes(), &[1, 0]);
+}
+
+#[test]
+fn u64_casts_follow_as() {
+    let reg = Registry::new();
+    let to_f64 = call(&reg, "cast_u64_f64", &[u64s(&[u64::MAX])]);
+    assert_eq!(
+        arr(to_f64.unwrap()).as_slice::<f64>(),
+        &[18446744073709551615.0]
+    );
+    let from_f64 = call(&reg, "cast_f64_u64", &[f64s(&[-1.0, 1e30, f64::NAN])]);
+    assert_eq!(arr(from_f64.unwrap()).as_slice::<u64>(), &[0, u64::MAX, 0]);
+    let to_i64 = call(&reg, "cast_u64_i64", &[u64s(&[1 << 63])]);
+    assert_eq!(arr(to_i64.unwrap()).as_slice::<i64>(), &[i64::MIN]);
+    let minus_one = Value::Array(Array::from_vec(vec![-1i64]));
+    let from_i64 = call(&reg, "cast_i64_u64", &[minus_one]);
+    assert_eq!(arr(from_i64.unwrap()).as_slice::<u64>(), &[u64::MAX]);
+}
+
+#[test]
+fn u64_sum_and_extremes() {
+    let reg = Registry::new();
+    let x = u64s(&[3, 1 << 63, 7]);
+    let sum = scalar(call(&reg, "reduce_add_u64", std::slice::from_ref(&x)));
+    assert_eq!(sum, Scalar::U64((1 << 63) + 10));
+    let min = scalar(call(&reg, "reduce_min_u64", std::slice::from_ref(&x)));
+    assert_eq!(min, Scalar::U64(3));
+    let max = scalar(call(&reg, "reduce_max_u64", std::slice::from_ref(&x)));
+    assert_eq!(max, Scalar::U64(1 << 63));
+    let argmax = scalar(call(&reg, "argmax_u64", std::slice::from_ref(&x)));
+    assert_eq!(argmax, Scalar::I64(1));
+    let argmin = scalar(call(&reg, "argmin_u64", std::slice::from_ref(&x)));
+    assert_eq!(argmin, Scalar::I64(0));
+    let mul = scalar(call(&reg, "reduce_mul_u64", &[u64s(&[1 << 63, 2])]));
+    assert_eq!(mul, Scalar::U64(0));
+}
+
+/// The `_i64` kernels with no `_u64` twin by design.
+const NO_U64_TWIN: &[&str] = &[
+    // Signed only: unsigned values have no negation or absolute value.
+    "neg_i64", "abs_i64",
+    // The generator is defined by its `i64` bits, there is no unsigned variant of it.
+    "rand_i64",
+];
+
+#[test]
+fn every_i64_kernel_has_a_u64_twin() {
+    let reg = Registry::new();
+    let mut missing = vec![];
+    for (_, def) in reg.iter() {
+        let name = &def.name;
+        let Some(stem) = name.strip_suffix("_i64") else {
+            continue;
+        };
+        if !NO_U64_TWIN.contains(&name.as_str()) && reg.by_name(&format!("{stem}_u64")).is_none() {
+            missing.push(name.clone());
+        }
+    }
+    assert!(missing.is_empty(), "no u64 twin for {missing:?}");
+}
+
+#[test]
+fn bitwise_kernels_on_integers() {
+    let reg = Registry::new();
+    let a = Value::Array(Array::from_vec(vec![12i64, 5]));
+    let b = Value::Array(Array::from_vec(vec![10i64, 3]));
+    let and = call(&reg, "and_i64", &[a.clone(), b.clone()]);
+    assert_eq!(arr(and.unwrap()).as_slice::<i64>(), &[8, 1]);
+    let or = call(&reg, "or_i64", &[a.clone(), b.clone()]);
+    assert_eq!(arr(or.unwrap()).as_slice::<i64>(), &[14, 7]);
+    let xor = call(&reg, "xor_i64", &[a.clone(), b]);
+    assert_eq!(arr(xor.unwrap()).as_slice::<i64>(), &[6, 6]);
+    let not = call(&reg, "not_i64", &[a]);
+    assert_eq!(arr(not.unwrap()).as_slice::<i64>(), &[-13, -6]);
+    let not_u8 = call(
+        &reg,
+        "not_u8",
+        &[Value::Array(Array::from_vec(vec![0u8, 255]))],
+    );
+    assert_eq!(arr(not_u8.unwrap()).as_slice::<u8>(), &[255, 0]);
+    // The unsigned twin keeps the top bit as a value bit.
+    let not_u64 = call(&reg, "not_u64", &[u64s(&[0, 1 << 63])]);
+    assert_eq!(
+        arr(not_u64.unwrap()).as_slice::<u64>(),
+        &[u64::MAX, u64::MAX >> 1]
+    );
+}
+
+#[test]
+fn bitwise_reductions_have_identities() {
+    let reg = Registry::new();
+    let x = Value::Array(Array::from_vec(vec![12i32, 10, 6]));
+    let r = |name: &str, v: &Value| scalar(call(&reg, name, std::slice::from_ref(v)));
+    assert_eq!(r("reduce_and_i32", &x), Scalar::I32(0));
+    assert_eq!(r("reduce_or_i32", &x), Scalar::I32(14));
+    assert_eq!(r("reduce_xor_i32", &x), Scalar::I32(0));
+    let empty = u64s(&[]);
+    assert_eq!(r("reduce_and_u64", &empty), Scalar::U64(u64::MAX));
+    assert_eq!(r("reduce_or_u64", &empty), Scalar::U64(0));
+    assert_eq!(r("reduce_xor_u64", &empty), Scalar::U64(0));
+}
+
+fn i64v(v: &[i64]) -> Value {
+    Value::Array(Array::from_vec(v.to_vec()))
+}
+
+/// The array a kernel produces through the scalar implementation.
+fn run_arr(name: &str, args: &[Value]) -> Array {
+    arr(call(&Registry::new(), name, args).unwrap())
+}
+
+#[test]
+fn scan_add_i64_is_a_prefix_sum() {
+    let r = run_arr("scan_add_i64", &[i64v(&[1, 2, 3, 4])]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 6, 10]);
+    let wrapped = run_arr("scan_add_i64", &[i64v(&[i64::MAX, 1])]);
+    assert_eq!(wrapped.as_slice::<i64>(), &[i64::MAX, i64::MIN]);
+}
+
+#[test]
+fn scan_add_i32_widens() {
+    let r = run_arr("scan_add_i32", &[i32s(&[i32::MAX, 1])]);
+    assert_eq!(r.as_slice::<i64>(), &[2147483647, 2147483648]);
+}
+
+#[test]
+fn scan_add_u8_widens() {
+    let r = run_arr("scan_add_u8", &[u8s(&[255, 1])]);
+    assert_eq!(r.as_slice::<u64>(), &[255, 256]);
+}
+
+#[test]
+fn scan_max_f64_propagates_nan() {
+    let nan = run_arr("scan_max_f64", &[f64s(&[1.0, f64::NAN, 3.0])]);
+    let nan = nan.as_slice::<f64>();
+    assert_eq!(nan[0], 1.0);
+    assert!(nan[1].is_nan() && nan[2].is_nan());
+    let zeros = run_arr("scan_max_f64", &[f64s(&[-0.0, 0.0])]);
+    let bits: Vec<u64> = zeros
+        .as_slice::<f64>()
+        .iter()
+        .map(|x| x.to_bits())
+        .collect();
+    assert_eq!(bits, [(-0.0f64).to_bits(), 0.0f64.to_bits()]);
+}
+
+#[test]
+fn scan_by_restarts_at_starts() {
+    let starts = bools(&[false, false, true, false, true]);
+    let r = run_arr("scan_by_add_i64", &[i64v(&[1, 2, 3, 4, 5]), starts]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 3, 7, 5]);
+    // Row 0 starts a segment whether or not `starts[0]` says so.
+    let first = run_arr("scan_by_add_i64", &[i64v(&[1, 2]), bools(&[true, false])]);
+    assert_eq!(first.as_slice::<i64>(), &[1, 3]);
+}
+
+#[test]
+fn scan_bool_and_bitwise_kernels() {
+    let xor = run_arr("scan_xor_bool", &[bools(&[true, true, true, false])]);
+    assert_eq!(xor.as_bool_bytes(), &[1, 0, 1, 1]);
+    let and = run_arr("scan_and_i32", &[i32s(&[7, 3, 1, 6])]);
+    assert_eq!(and.as_slice::<i32>(), &[7, 3, 1, 0]);
+    let mul = run_arr("scan_mul_i64", &[i64v(&[2, 3, 4])]);
+    assert_eq!(mul.as_slice::<i64>(), &[2, 6, 24]);
+    let min = run_arr("scan_min_i64", &[i64v(&[3, 1, 2])]);
+    assert_eq!(min.as_slice::<i64>(), &[3, 1, 1]);
+    let starts = bools(&[false, false, true, false]);
+    let max = run_arr("scan_by_max_u64", &[u64s(&[5, 1, 9, 2]), starts]);
+    assert_eq!(max.as_slice::<u64>(), &[5, 5, 9, 9]);
+}
+
+#[test]
+fn scan_mul_keeps_the_element_type() {
+    let i32s_out = run_arr("scan_mul_i32", &[i32s(&[65536, 65536])]);
+    assert_eq!(i32s_out.elem(), ScalarType::I32);
+    assert_eq!(i32s_out.as_slice::<i32>(), &[65536, 0]);
+    let u8s_out = run_arr("scan_mul_u8", &[u8s(&[16, 16])]);
+    assert_eq!(u8s_out.elem(), ScalarType::U8);
+    assert_eq!(u8s_out.as_slice::<u8>(), &[16, 0]);
+    let by = run_arr(
+        "scan_by_mul_u8",
+        &[u8s(&[16, 16, 3]), bools(&[false, false, true])],
+    );
+    assert_eq!(by.as_slice::<u8>(), &[16, 0, 3]);
+}
+
+#[test]
+fn scan_last_equals_sum() {
+    let reg = Registry::new();
+    let xs: Vec<i64> = (0..500)
+        .map(|i| splitmix64(u64::try_from(i).unwrap()) as i64)
+        .collect();
+    let scan64 = run_arr("scan_add_i64", &[i64v(&xs)]);
+    let sum64 = scalar(call(&reg, "reduce_add_i64", &[i64v(&xs)]));
+    assert_eq!(
+        Scalar::I64(*scan64.as_slice::<i64>().last().unwrap()),
+        sum64
+    );
+    let ys: Vec<i32> = xs.iter().map(|&x| x as i32).collect();
+    let scan32 = run_arr("scan_add_i32", &[i32s(&ys)]);
+    let sum32 = scalar(call(&reg, "reduce_add_i32", &[i32s(&ys)]));
+    assert_eq!(
+        Scalar::I64(*scan32.as_slice::<i64>().last().unwrap()),
+        sum32
+    );
+}
+
+#[test]
+fn gather_picks_rows() {
+    let picked = run_arr("gather_i64", &[i64v(&[10, 20, 30]), i64v(&[2, 0, 2])]);
+    assert_eq!(picked.as_slice::<i64>(), &[30, 10, 30]);
+    let empty = run_arr("gather_i64", &[i64v(&[10, 20, 30]), i64v(&[])]);
+    assert_eq!(empty.len(), 0);
+    let flags = run_arr(
+        "gather_bool",
+        &[bools(&[true, false, false]), i64v(&[1, 0, 1, 0])],
+    );
+    assert_eq!(flags.elem(), ScalarType::Bool);
+    assert_eq!(flags.as_bool_bytes(), &[0, 1, 0, 1]);
+    let floats = run_arr("gather_f64", &[f64s(&[1.5, 2.5]), i64v(&[1, 1, 0])]);
+    assert_eq!(floats.as_slice::<f64>(), &[2.5, 2.5, 1.5]);
+}
+
+#[test]
+fn gather_rejects_out_of_range() {
+    let reg = Registry::new();
+    let xs = i64v(&[10, 20, 30]);
+    let high = call(&reg, "gather_i64", &[xs.clone(), i64v(&[0, 3])]).unwrap_err();
+    assert!(high.contains("index 3"), "{high}");
+    let low = call(&reg, "gather_i64", &[xs.clone(), i64v(&[-1, 0])]).unwrap_err();
+    assert!(low.contains("index -1"), "{low}");
+    let last = run_arr("gather_i64", &[xs, i64v(&[2])]);
+    assert_eq!(last.as_slice::<i64>(), &[30]);
+    // Every index is out of range for an empty source.
+    let none = call(&reg, "gather_i64", &[i64v(&[]), i64v(&[0])]).unwrap_err();
+    assert!(none.contains("index 0"), "{none}");
+}
+
+#[test]
+fn slice_is_a_view() {
+    let reg = Registry::new();
+    let x = arr(call(&reg, "iota", &[i64_s(10)]).unwrap());
+    let xv = Value::Array(x.clone());
+    let mid = run_arr("slice_i64", &[xv.clone(), i64_s(2), i64_s(8)]);
+    assert_eq!(mid.as_slice::<i64>(), &[2, 3, 4, 5, 6, 7]);
+    // A view shares the operand's rows.
+    assert_eq!(
+        mid.as_slice::<i64>().as_ptr(),
+        x.as_slice::<i64>()[2..].as_ptr()
+    );
+    let inner = run_arr("slice_i64", &[Value::Array(mid), i64_s(1), i64_s(3)]);
+    assert_eq!(inner.as_slice::<i64>(), &[3, 4]);
+    for at in [0, 10] {
+        let none = run_arr("slice_i64", &[xv.clone(), i64_s(at), i64_s(at)]);
+        assert_eq!(none.len(), 0);
+    }
+}
+
+#[test]
+fn slice_rejects_bad_bounds() {
+    let reg = Registry::new();
+    let xv = i64v(&[1, 2, 3]);
+    for (start, end) in [(2, 1), (0, 4), (-1, 2), (4, 4)] {
+        let e = call(&reg, "slice_i64", &[xv.clone(), i64_s(start), i64_s(end)]).unwrap_err();
+        assert!(e.contains(&format!("{start}..{end}")), "{e}");
+    }
+}
+
+#[test]
+fn histogram_counts_keys() {
+    let h = run_arr("histogram", &[i64v(&[0, 2, 2, 3]), i64_s(5)]);
+    assert_eq!(h.as_slice::<i64>(), &[1, 0, 2, 1, 0]);
+    let none = run_arr("histogram", &[i64v(&[]), i64_s(0)]);
+    assert_eq!(none.len(), 0);
+    let empty_buckets = run_arr("histogram", &[i64v(&[]), i64_s(3)]);
+    assert_eq!(empty_buckets.as_slice::<i64>(), &[0, 0, 0]);
+}
+
+#[test]
+fn bucket_keys_are_range_checked() {
+    let reg = Registry::new();
+    let both = |keys: &[i64], n: i64| {
+        let h = call(&reg, "histogram", &[i64v(keys), i64_s(n)]);
+        let vals = i64v(&vec![1; keys.len()]);
+        let r = call(&reg, "reduce_into_add_i64", &[i64v(keys), vals, i64_s(n)]);
+        (h, r)
+    };
+    // With no buckets every key is out of range.
+    for (key, n) in [(3, 3), (-1, 3), (0, 0)] {
+        let (h, r) = both(&[0, key], n);
+        let first = if n == 0 { 0 } else { key };
+        let want = format!("bucket key {first} out of range for {n} buckets");
+        assert_eq!(h.unwrap_err(), want);
+        assert_eq!(r.unwrap_err(), want);
+    }
+    let (h, r) = both(&[2, 0, 2], 3);
+    assert_eq!(arr(h.unwrap()).as_slice::<i64>(), &[1, 0, 2]);
+    assert_eq!(arr(r.unwrap()).as_slice::<i64>(), &[1, 0, 2]);
+    let (neg_h, neg_r) = both(&[], -1);
+    assert_eq!(neg_h.unwrap_err(), "negative bucket count -1");
+    assert_eq!(neg_r.unwrap_err(), "negative bucket count -1");
+}
+
+#[test]
+fn huge_bucket_count_is_an_error() {
+    let reg = Registry::new();
+    let hist = call(&reg, "histogram", &[i64v(&[0]), i64_s(1 << 62)]).unwrap_err();
+    assert!(hist.contains("too large"), "{hist}");
+    // Under the `isize::MAX` byte cap but 8 PiB, so only the allocator can refuse it.
+    let big = call(&reg, "histogram", &[i64v(&[0]), i64_s(1 << 50)]).unwrap_err();
+    assert!(big.contains("cannot allocate"), "{big}");
+    let big_reduce = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0]), i64v(&[1]), i64_s(1 << 50)],
+    )
+    .unwrap_err();
+    assert!(big_reduce.contains("cannot allocate"), "{big_reduce}");
+    let reduced = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0]), i64v(&[1]), i64_s(1 << 62)],
+    )
+    .unwrap_err();
+    assert!(reduced.contains("too large"), "{reduced}");
+}
+
+#[test]
+fn reduce_into_sums_per_bucket() {
+    let sums = run_arr(
+        "reduce_into_add_i64",
+        &[i64v(&[1, 0, 1]), i64v(&[5, 7, 9]), i64_s(3)],
+    );
+    assert_eq!(sums.as_slice::<i64>(), &[7, 14, 0]);
+    // Only `add` widens narrow values, as in `reduce` and `scan`.
+    let wide = run_arr(
+        "reduce_into_add_i32",
+        &[i64v(&[0, 0]), i32s(&[i32::MAX, 1]), i64_s(1)],
+    );
+    assert_eq!(wide.elem(), ScalarType::I64);
+    assert_eq!(wide.as_slice::<i64>(), &[i64::from(i32::MAX) + 1]);
+    let bits = run_arr(
+        "reduce_into_xor_bool",
+        &[i64v(&[1, 1, 0]), bools(&[true, true, true]), i64_s(2)],
+    );
+    assert_eq!(bits.elem(), ScalarType::Bool);
+    assert_eq!(bits.as_bool_bytes(), &[1, 0]);
+}
+
+#[test]
+fn reduce_into_empty_buckets_hold_identity() {
+    // Bucket 1 holds the one value and every other bucket is empty.
+    let one = |name: &str, vals: Value, n: i64| run_arr(name, &[i64v(&[1]), vals, i64_s(n)]);
+    let min_f64 = one("reduce_into_min_f64", f64s(&[2.5]), 3);
+    assert_eq!(
+        min_f64.as_slice::<f64>(),
+        &[f64::INFINITY, 2.5, f64::INFINITY]
+    );
+    let max_f32 = one(
+        "reduce_into_max_f32",
+        Value::Array(Array::from_vec(vec![2.5f32])),
+        2,
+    );
+    assert_eq!(max_f32.as_slice::<f32>(), &[f32::NEG_INFINITY, 2.5]);
+    let max_i64 = one("reduce_into_max_i64", i64v(&[4]), 2);
+    assert_eq!(max_i64.as_slice::<i64>(), &[i64::MIN, 4]);
+    let min_u64 = one("reduce_into_min_u64", u64s(&[4]), 2);
+    assert_eq!(min_u64.as_slice::<u64>(), &[u64::MAX, 4]);
+    let mul_i32 = one("reduce_into_mul_i32", i32s(&[4]), 2);
+    assert_eq!(mul_i32.elem(), ScalarType::I32);
+    assert_eq!(mul_i32.as_slice::<i32>(), &[1, 4]);
+    let and_u8 = one("reduce_into_and_u8", u8s(&[4]), 2);
+    assert_eq!(and_u8.as_slice::<u8>(), &[u8::MAX, 4]);
+    let or_i32 = one("reduce_into_or_i32", i32s(&[4]), 2);
+    assert_eq!(or_i32.as_slice::<i32>(), &[0, 4]);
+    let xor_i64 = one("reduce_into_xor_i64", i64v(&[4]), 2);
+    assert_eq!(xor_i64.as_slice::<i64>(), &[0, 4]);
+    // The identity of bool `and` is true.
+    let and_bool = one("reduce_into_and_bool", bools(&[false]), 2);
+    assert_eq!(and_bool.as_bool_bytes(), &[1, 0]);
+}
+
+/// 40 pseudo-random rows of type `ty`, without NaNs and with duplicates.
+fn rows_of_type(ty: ScalarType) -> Value {
+    let raw: Vec<u64> = (0..40).map(|i| splitmix64(i) % 7).collect();
+    match ty {
+        ScalarType::I64 => i64v(&raw.iter().map(|&r| r as i64 - 3).collect::<Vec<_>>()),
+        ScalarType::U64 => u64s(&raw),
+        ScalarType::I32 => i32s(&raw.iter().map(|&r| r as i32 - 3).collect::<Vec<_>>()),
+        ScalarType::U8 => u8s(&raw.iter().map(|&r| r as u8).collect::<Vec<_>>()),
+        ScalarType::F64 => f64s(&raw.iter().map(|&r| r as f64 - 3.5).collect::<Vec<_>>()),
+        ScalarType::F32 => Value::Array(Array::from_vec(
+            raw.iter().map(|&r| r as f32 - 3.5).collect::<Vec<_>>(),
+        )),
+        ScalarType::Bool => bools(&raw.iter().map(|&r| r % 2 == 0).collect::<Vec<_>>()),
+        other => panic!("no rows for {other:?}"),
+    }
+}
+
+#[test]
+fn reduce_into_with_one_key_matches_reduce() {
+    let reg = Registry::new();
+    let mut checked = 0;
+    for (_, def) in reg.iter() {
+        let Some(suffix) = def.name.strip_prefix("reduce_into_") else {
+            continue;
+        };
+        let ValueType::Array(out) = def.output else {
+            panic!("{} must produce an array", def.name);
+        };
+        let InputSpec::Array(ty) = def.inputs[1] else {
+            panic!("{} takes an array of values", def.name);
+        };
+        let vals = rows_of_type(ty);
+        let keys = i64v(&[0; 40]);
+        let got = arr(call(&reg, &def.name, &[keys, vals.clone(), i64_s(1)]).unwrap());
+        let want = scalar(call(&reg, &format!("reduce_{suffix}"), &[vals]));
+        assert_eq!(got.elem(), out, "{}", def.name);
+        assert_eq!(got.len(), 1, "{}", def.name);
+        assert_eq!(got.get(0), want, "{}", def.name);
+        checked += 1;
+    }
+    // 4 integer types with 7 operators, 2 float types with 2, and 3 for bool.
+    assert_eq!(checked, 4 * 7 + 2 * 2 + 3);
+}
+
+#[test]
+fn reduce_into_checks_lengths() {
+    let reg = Registry::new();
+    let e = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0, 0]), i64v(&[1]), i64_s(1)],
+    )
+    .unwrap_err();
+    assert_eq!(e, "length mismatch: 2 keys for 1 values");
+}
+
+fn i32_s(v: i32) -> Value {
+    Value::Scalar(Scalar::I32(v))
+}
+
+fn u8_s(v: u8) -> Value {
+    Value::Scalar(Scalar::U8(v))
+}
+
+#[test]
+fn div_const_truncates_toward_zero() {
+    let by = |d: i64| run_arr("div_const_i64", &[i64v(&[7, -7, 0]), i64_s(d)]);
+    assert_eq!(by(2).as_slice::<i64>(), &[3, -3, 0]);
+    assert_eq!(by(-2).as_slice::<i64>(), &[-3, 3, 0]);
+}
+
+#[test]
+fn div_const_wraps_at_min() {
+    let r64 = run_arr("div_const_i64", &[i64v(&[i64::MIN]), i64_s(-1)]);
+    assert_eq!(r64.as_slice::<i64>(), &[i64::MIN]);
+    let r32 = run_arr("div_const_i32", &[i32s(&[i32::MIN]), i32_s(-1)]);
+    assert_eq!(r32.as_slice::<i32>(), &[i32::MIN]);
+}
+
+/// Dividends for the property test: boundary values, their neighbours, and random words.
+fn dividends<T: Copy>(edges: &[u64], word: impl Fn(u64) -> T, seed: u64) -> Vec<T> {
+    let mut v: Vec<T> = Vec::new();
+    for &e in edges {
+        for k in 0..4u64 {
+            v.push(word(e.wrapping_add(k)));
+            v.push(word(e.wrapping_sub(k)));
+        }
+    }
+    v.extend((0..512).map(|i| word(splitmix64(seed ^ i))));
+    v
+}
+
+#[test]
+fn div_const_matches_rust_division() {
+    let reg = Registry::new();
+    // i64 and i32, every divisor in -300..=300 but 0, plus the extremes and neighbours.
+    let mut d64: Vec<i64> = (-300..=300).filter(|&d| d != 0).collect();
+    for k in 0..4 {
+        d64.extend([i64::MIN + k, i64::MAX - k]);
+    }
+    let xs = dividends(&[0, 1 << 63, 1 << 62, 1 << 32], |w| w.cast_signed(), 1);
+    for &d in &d64 {
+        let r = call(&reg, "div_const_i64", &[i64v(&xs), i64_s(d)]);
+        let want: Vec<i64> = xs.iter().map(|x| x.wrapping_div(d)).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<i64>(), want, "i64 / {d}");
+    }
+    let mut d32: Vec<i32> = (-300..=300).filter(|&d| d != 0).collect();
+    for k in 0..4 {
+        d32.extend([i32::MIN + k, i32::MAX - k]);
+    }
+    let xs32 = dividends(
+        &[0, 1 << 31, 1 << 30],
+        |w| u32::try_from(w & 0xFFFF_FFFF).unwrap().cast_signed(),
+        2,
+    );
+    for &d in &d32 {
+        let r = call(&reg, "div_const_i32", &[i32s(&xs32), i32_s(d)]);
+        let want: Vec<i32> = xs32.iter().map(|x| x.wrapping_div(d)).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<i32>(), want, "i32 / {d}");
+    }
+    let mut du: Vec<u64> = (1..=300).collect();
+    du.extend([
+        u64::MAX,
+        u64::MAX - 1,
+        1 << 63,
+        (1 << 63) + 1,
+        (1 << 63) - 1,
+    ]);
+    let xsu = dividends(&[0, 1 << 63, 1 << 32], |w| w, 3);
+    for &d in &du {
+        let r = call(&reg, "div_const_u64", &[u64s(&xsu), u64_s(d)]);
+        let want: Vec<u64> = xsu.iter().map(|x| x / d).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<u64>(), want, "u64 / {d}");
+    }
+    // Every u8 dividend against every u8 divisor.
+    let xs8: Vec<u8> = (0..=255).collect();
+    for d in 1..=255u8 {
+        let r = call(&reg, "div_const_u8", &[u8s(&xs8), u8_s(d)]);
+        let want: Vec<u8> = xs8.iter().map(|x| x / d).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<u8>(), want, "u8 / {d}");
+    }
+}
+
+#[test]
+fn div_const_by_zero_is_an_error() {
+    let reg = Registry::new();
+    let signed = call(&reg, "div_const_i64", &[i64v(&[1]), i64_s(0)]).unwrap_err();
+    assert!(signed.contains("division by zero"), "{signed}");
+    let unsigned = call(&reg, "div_const_u8", &[u8s(&[]), u8_s(0)]).unwrap_err();
+    assert!(unsigned.contains("division by zero"), "{unsigned}");
+}
+
+#[test]
+fn argsort_is_stable() {
+    let r = run_arr("argsort_i64", &[i64v(&[3, 1, 3, 1])]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 0, 2]);
+    let none = run_arr("argsort_i64", &[i64v(&[])]);
+    assert_eq!(none.len(), 0);
+    // Signed order, and unsigned order above the sign bit.
+    let r32 = run_arr("argsort_i32", &[i32s(&[0, -1, i32::MIN, i32::MAX])]);
+    assert_eq!(r32.as_slice::<i64>(), &[2, 1, 0, 3]);
+    let r64 = run_arr("argsort_u64", &[u64s(&[1 << 63, 1, 1 << 63, 0])]);
+    assert_eq!(r64.as_slice::<i64>(), &[3, 1, 0, 2]);
+    let r8 = run_arr("argsort_u8", &[u8s(&[200, 5, 200, 5, 0])]);
+    assert_eq!(r8.as_slice::<i64>(), &[4, 1, 3, 0, 2]);
 }

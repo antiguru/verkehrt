@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::check::{Globals, TExpr, TExprKind, TLambda, TProgram, TStmt, VarId};
 use crate::error::{Error, Span};
-use crate::kernels::Registry;
+use crate::kernels::{InputSpec, Registry};
 use crate::ops::Op;
 use crate::value::{Array, Scalar, ScalarType, Value, ValueType};
 
@@ -93,6 +93,10 @@ pub struct Lowered {
 pub fn op_name(op: Op) -> String {
     match op {
         Op::Reduce(r) => format!("reduce_{}", format!("{r:?}").to_lowercase()),
+        Op::Scan(r) => format!("scan_{}", format!("{r:?}").to_lowercase()),
+        Op::ScanBy(r) => format!("scan_by_{}", format!("{r:?}").to_lowercase()),
+        Op::ReduceInto(r) => format!("reduce_into_{}", format!("{r:?}").to_lowercase()),
+        Op::DivConst => "div_const".into(),
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         other => format!("{other:?}").to_lowercase(),
@@ -249,24 +253,40 @@ impl Lowerer<'_> {
         }
     }
 
-    /// Builds an operation over lowered operands. Scalars next to an array operand are
-    /// broadcast, then the kernel lookup on the lifted types decides the result type.
+    /// Builds an operation over lowered operands. The kernel lookup on the operands as given
+    /// decides which scalars next to an array operand are broadcast: those at `Either`
+    /// positions, while a `Scalar` input keeps its scalar. When no kernel accepts the operands
+    /// as given, every scalar next to an array is broadcast and the lookup runs on the lifted
+    /// types, unless the op has a kernel with a `Scalar` input. Then the error reports the
+    /// operands as given, because the lifted types would not be the ones the user wrote.
     fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let lift = args.iter().any(|a| is_array(a.ty));
-        let args: Vec<Term> = args
-            .into_iter()
-            .map(|a| match (lift, a.ty) {
-                (true, ValueType::Scalar(t)) => {
-                    let operand_span = a.span;
-                    Term {
-                        kind: TermKind::Bcast(Box::new(a)),
-                        ty: ValueType::Array(t),
-                        span: operand_span,
-                    }
+        if !args.iter().any(|a| is_array(a.ty)) {
+            return self.op_exact(op, args, span);
+        }
+        let bcast = |a: Term| match a.ty {
+            ValueType::Scalar(t) => {
+                let operand_span = a.span;
+                Term {
+                    kind: TermKind::Bcast(Box::new(a)),
+                    ty: ValueType::Array(t),
+                    span: operand_span,
                 }
-                _ => a,
-            })
-            .collect();
+            }
+            _ => a,
+        };
+        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+        let args: Vec<Term> = match self.reg.lookup(op, &tys) {
+            Some(id) => args
+                .into_iter()
+                .zip(&self.reg.get(id).inputs)
+                .map(|(a, spec)| match spec {
+                    InputSpec::Either(_) => bcast(a),
+                    _ => a,
+                })
+                .collect(),
+            None if self.reg.has_scalar_input(op) => args,
+            None => args.into_iter().map(bcast).collect(),
+        };
         self.op_exact(op, args, span)
     }
 

@@ -3,5 +3,7 @@
 pub mod construct;
 pub mod elementwise;
 pub mod fused;
+pub mod index;
 pub mod reduce;
+pub mod scan;
 pub mod select;

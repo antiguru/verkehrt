@@ -1,16 +1,20 @@
 //! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro to compile
-//! the portable bodies for AVX2 and AVX-512, and `compress` holds the hand-written intrinsics
-//! entries of the selections.
+//! the portable bodies for AVX2 and AVX-512, `compress` holds the hand-written intrinsics
+//! entries of the selections, `gather` those of `gather` on 64-bit rows, and `scan` the
+//! AVX-512 entries of `scan_by_add` on 64-bit integers.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
 
 use crate::kernels::{
-    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, SelectionBody, Variant,
+    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, ScanBody, SelectionBody, Variant,
+    WholeBody,
 };
 use crate::value::Elem;
 
 mod compress;
+mod gather;
+mod scan;
 
 /// The auto entries of the x86-64 ISAs, see `crate::kernels::auto`.
 mod auto {
@@ -58,6 +62,18 @@ pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) 
     impls[AVX512_AUTO.index()] = Some(KernelImpl::Selection(auto::avx512::selection::<S>));
 }
 
+/// Adds the AVX2 and AVX-512 auto entries of a scan body to its table.
+pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
+    impls[AVX2_AUTO.index()] = Some(KernelImpl::Scan(auto::avx2::scanner::<S>));
+    impls[AVX512_AUTO.index()] = Some(KernelImpl::Scan(auto::avx512::scanner::<S>));
+}
+
+/// Adds the AVX2 and AVX-512 auto entries of a whole body to its table.
+pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
+    impls[AVX2_AUTO.index()] = Some(KernelImpl::Whole(auto::avx2::whole::<W>));
+    impls[AVX512_AUTO.index()] = Some(KernelImpl::Whole(auto::avx512::whole::<W>));
+}
+
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic type
 /// is `tag::<T, BOOL>()`. AVX2 has none for `u8` and bool.
 pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
@@ -79,4 +95,18 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl
     let (avx2, avx512) = compress::filter_entries::<T, C>();
     impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
     impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+}
+
+/// Adds the intrinsics entries of `gather` on rows of storage type `T`, whose semantic type is
+/// `tag::<T, BOOL>()`. Only 64-bit rows have them.
+pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
+    let (avx2, avx512) = gather::gather_entries::<T, BOOL>();
+    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Whole);
+    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Whole);
+}
+
+/// Adds the intrinsics entries of `scan_by_add` on rows of storage type `T`, whose sum keeps
+/// the element type. Only `i64` and `u64` have one, and only on AVX-512.
+pub(crate) fn add_scan_by_add<T: Elem>(impls: &mut [Option<KernelImpl>]) {
+    impls[AVX512_INTRINSICS.index()] = scan::scan_by_add_entry::<T>().map(KernelImpl::Scan);
 }

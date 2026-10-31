@@ -11,8 +11,11 @@ macro_rules! auto_backend {
     ($isa:ident, $name:literal, $features:literal) => {
         #[doc = concat!("Auto entries compiled for ", $name, ".")]
         pub(crate) mod $isa {
-            use crate::kernels::{ElementwiseBody, Reducer, ReductionBody, SelectionBody};
-            use crate::value::{Arg, ArrayBuilder, Scalar};
+            use crate::kernels::{
+                ElementwiseBody, Reducer, ReductionBody, ScanBody, Scanner, SelectionBody,
+                WholeBody,
+            };
+            use crate::value::{Arg, ArrayBuilder, Scalar, Value};
 
             /// The elementwise entry of body `B`.
             // SAFETY: the caller guarantees that the CPU supports the features above, which
@@ -37,6 +40,46 @@ macro_rules! auto_backend {
                 out: &mut ArrayBuilder,
             ) -> Result<(), String> {
                 S::run(args, base, out)
+            }
+
+            /// The whole entry of body `W`.
+            // SAFETY: as for `elementwise`, the caller guarantees the CPU features and the
+            // body is safe Rust.
+            #[target_feature(enable = $features)]
+            pub(crate) unsafe fn whole<W: WholeBody>(args: &[Value]) -> Result<Value, String> {
+                W::run(args)
+            }
+
+            /// One update of scan body `S`, compiled for the ISA.
+            // SAFETY: as for `elementwise`, the caller guarantees the CPU features and the
+            // body is safe Rust.
+            #[target_feature(enable = $features)]
+            unsafe fn scan_update<S: ScanBody>(
+                s: &mut S,
+                args: &[Arg],
+                out: &mut [u8],
+            ) -> Result<(), String> {
+                s.update(args, out)
+            }
+
+            /// A scanner whose updates run compiled for the ISA, see `OnIsa`.
+            struct ScanOnIsa<S>(S);
+
+            impl<S: ScanBody> Scanner for ScanOnIsa<S> {
+                fn update(&mut self, args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+                    // SAFETY: a `ScanOnIsa` is only obtained through the unsafe `scanner`,
+                    // whose caller guarantees the CPU features (`Dispatch` calls it only
+                    // after `resolve` checked `is_available`). `update` makes no pointer or
+                    // alignment assumptions.
+                    unsafe { scan_update(&mut self.0, args, out) }
+                }
+            }
+
+            /// The scanner constructor of body `S`.
+            // SAFETY: the caller guarantees that the CPU supports the features above, and
+            // the returned scanner relies on that for every `update`.
+            pub(crate) unsafe fn scanner<S: ScanBody>() -> Box<dyn Scanner> {
+                Box::new(ScanOnIsa(S::new()))
             }
 
             /// One update of reduction body `R`, compiled for the ISA.

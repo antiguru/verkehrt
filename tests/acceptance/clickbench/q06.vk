@@ -1,0 +1,6 @@
+// sql: SELECT MIN(EventDate), MAX(EventDate) FROM hits
+// output: u,u
+input EventDate: i64[];
+
+export lo = reduce(EventDate, min);
+export hi = reduce(EventDate, max);

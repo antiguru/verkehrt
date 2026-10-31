@@ -127,6 +127,19 @@ fn filter_compresses_by_lifted_predicate() {
 }
 
 #[test]
+fn prev_keeps_its_scalar_operand() {
+    assert_eq!(
+        run_dump("let x = [1, 2]; print(prev(x, 0));"),
+        ["bind x = L_c", "print prev(L_x, L_c)"]
+    );
+    // Elementwise kernels still broadcast their scalar operands.
+    assert_eq!(
+        run_dump("let x = [1, 2]; print(x + 1);"),
+        ["bind x = L_c", "print add(L_x, bcast(L_c))"]
+    );
+}
+
+#[test]
 fn constant_body_is_filled() {
     assert_eq!(
         run_dump("let x = [1.0]; print(map(x, |v| 1.0));"),
@@ -482,4 +495,37 @@ fn single_use_let_inlines_into_branch() {
             "print if(L_c, reduce_add(add(L_x, L_x)), L_c)"
         ]
     );
+}
+
+#[test]
+fn div_const_lifts_in_a_lambda() {
+    // The divisor stays a scalar, only the dividend is an array operand.
+    assert_eq!(
+        run_dump("let x = [100, 200]; print(map(x, |v| div_const(v, 60)));"),
+        ["bind x = L_c", "print div_const(L_x, L_c)"]
+    );
+}
+
+#[test]
+fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
+    // `div_const` has a `Scalar` input, so a scalar next to an array is not broadcast to
+    // find a kernel and the message must show `f64`, not the lifted `f64[]`.
+    let g = Globals::new();
+    let reg = Registry::new();
+    let mut lw = Lowerer {
+        g: &g,
+        reg: &reg,
+        leaves: Leaves(Vec::new()),
+        env: HashMap::new(),
+        lambda_depth: 0,
+    };
+    let span = Span { line: 1, col: 1 };
+    let xs = lw.leaf(Leaf::Var(VarId(0)), ValueType::Array(ScalarType::I64), span);
+    let d = lw.leaf(
+        Leaf::Var(VarId(1)),
+        ValueType::Scalar(ScalarType::F64),
+        span,
+    );
+    let e = lw.op(Op::DivConst, vec![xs, d], span).unwrap_err();
+    assert_eq!(e.message, "no kernel for 'div_const' on i64[], f64");
 }

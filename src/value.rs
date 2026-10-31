@@ -19,13 +19,14 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-    /// Element types that array kernels exist for in v1.
-    pub const V1_ARRAY: [ScalarType; 6] = [
+    /// The element types that array kernels exist for.
+    pub const ARRAY_TYPES: [ScalarType; 7] = [
         ScalarType::F64,
         ScalarType::F32,
         ScalarType::I64,
         ScalarType::I32,
         ScalarType::U8,
+        ScalarType::U64,
         ScalarType::Bool,
     ];
 
@@ -287,10 +288,22 @@ impl Array {
             .ok_or_else(|| format!("array of {len} elements is too large"))
     }
 
-    /// Panics when the size exceeds `isize::MAX` bytes, see `byte_size`.
+    /// Panics when the size exceeds `isize::MAX` bytes or cannot be allocated, see
+    /// `try_zeroed`.
     fn zeroed(len: usize, elem: ScalarType) -> Vec<Block> {
-        let bytes = Array::byte_size(len, elem).unwrap_or_else(|e| panic!("{e}"));
-        vec![Block([0; 64]); bytes.div_ceil(64)]
+        Array::try_zeroed(len, elem).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// A zeroed buffer for `len` elements of `elem`. Fails when the size exceeds `isize::MAX`
+    /// bytes, see `byte_size`, or when the allocator cannot provide it. `Vec::try_reserve_exact`
+    /// reports the failure where `vec!` would abort the process.
+    fn try_zeroed(len: usize, elem: ScalarType) -> Result<Vec<Block>, String> {
+        let blocks = Array::byte_size(len, elem)?.div_ceil(64);
+        let mut buf: Vec<Block> = Vec::new();
+        buf.try_reserve_exact(blocks)
+            .map_err(|_| format!("cannot allocate an array of {len} elements"))?;
+        buf.resize(blocks, Block([0; 64]));
+        Ok(buf)
     }
 
     pub fn from_vec<T: Elem>(v: Vec<T>) -> Array {
@@ -306,26 +319,28 @@ impl Array {
     }
 
     /// Like `build`, but fails instead of panicking when `len` elements exceed `isize::MAX`
-    /// bytes. For lengths that come from program values.
+    /// bytes or the allocation fails. For lengths that come from program values.
+    // Inlined so that `f` compiles in the caller's context: a kernel body that fills its
+    // output here inside a `#[target_feature]` entry is then vectorized for that entry's ISA.
+    #[inline(always)]
     pub fn try_build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Result<Array, String> {
-        Array::byte_size(len, T::TYPE)?;
-        Ok(Array::build(len, f))
-    }
-
-    /// Allocates a zeroed aligned buffer of `len` elements and lets `f` fill it. Panics
-    /// when `len` elements exceed `isize::MAX` bytes.
-    pub fn build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Array {
-        let mut blocks = Array::zeroed(len, T::TYPE);
+        let mut blocks = Array::try_zeroed(len, T::TYPE)?;
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
         f(bytemuck::cast_slice_mut(
             &mut bytes[..len * T::TYPE.width()],
         ));
-        Array {
+        Ok(Array {
             buf: Arc::new(blocks),
             offset: 0,
             len,
             elem: T::TYPE,
-        }
+        })
+    }
+
+    /// Allocates a zeroed aligned buffer of `len` elements and lets `f` fill it. Panics
+    /// when `len` elements exceed `isize::MAX` bytes or cannot be allocated.
+    pub fn build<T: Elem>(len: usize, f: impl FnOnce(&mut [T])) -> Array {
+        Array::try_build(len, f).unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// Like `build` for `Bool`. The caller must write only 0 or 1.
@@ -343,14 +358,16 @@ impl Array {
 
     /// Like `build`, but `f` fills the raw bytes of the `len` elements of `elem` and may fail.
     /// The buffer is zeroed and 64-byte aligned. Fails instead of panicking when the size
-    /// exceeds `isize::MAX` bytes. For `Bool`, `f` must write only 0 or 1.
+    /// exceeds `isize::MAX` bytes or the allocation fails. For `Bool`, `f` must write only 0 or 1.
+    // Inlined for the reason given at `try_build`.
+    #[inline(always)]
     pub fn build_bytes(
         len: usize,
         elem: ScalarType,
         f: impl FnOnce(&mut [u8]) -> Result<(), String>,
     ) -> Result<Array, String> {
         let size = Array::byte_size(len, elem)?;
-        let mut blocks = Array::zeroed(len, elem);
+        let mut blocks = Array::try_zeroed(len, elem)?;
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
         f(&mut bytes[..size])?;
         Ok(Array {

@@ -454,3 +454,48 @@ fn scalar_condition_if_evaluates_only_the_taken_branch() {
         "{line}"
     );
 }
+
+/// Runs `src` and returns its output.
+fn output_of(src: &str) -> String {
+    let (r, out, _) = run_with(Options::default(), src);
+    r.unwrap_or_else(|e| panic!("{src}: {e}"));
+    out
+}
+
+#[test]
+fn bitwise_on_integers() {
+    let src = "print(and(12, 10));\nprint(or(12, 10));\nprint(xor(12, 10));\n\
+               print(not(0u8));\nprint(not(0));\n\
+               let a = [12, 5];\nlet b = [10, 3];\n\
+               print(and(a, b));\nprint(or(a, b));\nprint(xor(a, b));\nprint(not(a));\n\
+               print(not([0u8, 255u8]));\n\
+               print(and([12u64, 5u64], 10u64));\nprint(xor([12i32], [10i32]));\n";
+    assert_eq!(
+        output_of(src),
+        "8\n14\n6\n255\n-1\n[8, 1]\n[14, 7]\n[6, 6]\n[-13, -6]\n[255, 0]\n[8, 0]\n[6]\n"
+    );
+}
+
+#[test]
+fn xor_on_bool() {
+    let src = "export r = xor([true, true, false], [true, false, false]);\nprint(r);\n";
+    let mut interp = Interpreter::new(Options::default()).unwrap();
+    let (mut out, mut diag) = (Vec::new(), Vec::new());
+    interp.run(src, &mut out, &mut diag).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "[false, true, false]\n");
+    let Some(Value::Array(a)) = interp.get("r") else {
+        panic!("expected an array");
+    };
+    assert_eq!(a.as_bool_bytes(), &[0, 1, 0]);
+}
+
+#[test]
+fn reduce_bitwise_on_integers() {
+    let src = "let x = [12, 10, 6];\n\
+               print(reduce(x, and));\nprint(reduce(x, or));\nprint(reduce(x, xor));\n\
+               let e = filter(x, |v| v > 100);\n\
+               print(reduce(e, and));\nprint(reduce(e, or));\nprint(reduce(e, xor));\n\
+               let u = filter([1u8], |v| v > 100u8);\n\
+               print(reduce(u, and));\n";
+    assert_eq!(output_of(src), "0\n14\n0\n-1\n0\n0\n255\n");
+}
