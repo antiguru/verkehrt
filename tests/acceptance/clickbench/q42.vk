@@ -1,0 +1,21 @@
+// sql: SELECT EventTime // 60 * 60 AS M, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= 15900
+// sql:   AND EventDate <= 15901 AND IsRefresh = 0 AND DontCountHits = 0 GROUP BY M ORDER BY M LIMIT 10 OFFSET 1000
+// output: [u,u]
+input CounterID: i64[];
+input EventDate: i64[];
+input IsRefresh: i64[];
+input DontCountHits: i64[];
+input EventTime: i64[];
+
+let m = and(and(CounterID == 62, and(EventDate >= 15900, EventDate <= 15901)), and(IsRefresh == 0, DontCountHits == 0));
+let minute = div_const(compress(EventTime, m), 60);
+// The bucket count comes from the filtered minutes, and an empty filter has no groups.
+let nb = if length(minute) > 0 { reduce(minute, max) + 1 } else { 0 };
+let counts = histogram(minute, nb);
+let groups = where(counts > 0);
+// OFFSET 1000 LIMIT 10, clamped to the number of groups.
+let g = length(groups);
+let lo = min(g, 1000);
+let hi = min(g, 1010);
+export M = slice(groups, lo, hi) * 60;
+export PageViews = slice(gather(counts, groups), lo, hi);

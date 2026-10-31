@@ -1,0 +1,14 @@
+// sql: SELECT AdvEngineID, COUNT(*) AS c FROM hits WHERE AdvEngineID <> 0 GROUP BY AdvEngineID ORDER BY c DESC, AdvEngineID
+// output: [u,u]
+input AdvEngineID: i64[];
+
+let k = compress(AdvEngineID, AdvEngineID != 0);
+// The bucket count comes from the filtered keys, and an empty filter has no groups.
+let nb = if length(k) > 0 { reduce(k, max) + 1 } else { 0 };
+let counts = histogram(k, nb);
+// `where` lists the keys in ascending order, so a stable sort on descending counts breaks ties by key.
+let keys = where(counts > 0);
+let c = gather(counts, keys);
+let order = argsort(0 - c);
+export AdvEngineID = gather(keys, order);
+export c = gather(c, order);

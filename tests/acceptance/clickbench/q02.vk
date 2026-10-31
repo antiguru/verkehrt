@@ -1,0 +1,8 @@
+// sql: SELECT SUM(AdvEngineID), COUNT(*), AVG(ResolutionWidth) FROM hits
+// output: u,u,f
+input AdvEngineID: i64[];
+input ResolutionWidth: i64[];
+
+export s = sum(AdvEngineID);
+export c = length(AdvEngineID);
+export a = cast_f64(sum(ResolutionWidth)) / cast_f64(length(ResolutionWidth));

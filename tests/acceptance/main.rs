@@ -161,3 +161,30 @@ fn clickbench_matches_duckdb() {
 fn tpch_matches_duckdb() {
     run_suite("VERKEHRT_TPCH", "tpch");
 }
+
+/// Prints the plan of every query program, for the measurement report. Run with
+/// `-- --ignored --nocapture`.
+#[test]
+#[ignore = "prints plans for the measurement report"]
+fn acceptance_plans() {
+    let interp = verkehrt::Interpreter::new(verkehrt::Options {
+        show_plan: true,
+        ..Default::default()
+    })
+    .unwrap();
+    for suite in ["tpch", "clickbench"] {
+        let mut entries: Vec<PathBuf> = fs::read_dir(PathBuf::from("tests/acceptance").join(suite))
+            .unwrap()
+            .map(|d| d.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "vk"))
+            .collect();
+        entries.sort();
+        for path in entries {
+            let program = fs::read_to_string(&path).unwrap();
+            println!("== {suite}/{}", path.file_stem().unwrap().to_string_lossy());
+            let mut plan = Vec::new();
+            interp.prepare_to(&program, &mut plan).unwrap();
+            print!("{}", String::from_utf8(plan).unwrap());
+        }
+    }
+}

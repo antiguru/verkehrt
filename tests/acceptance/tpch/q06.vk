@@ -1,0 +1,10 @@
+// sql: SELECT sum(l_extendedprice * l_discount) FROM lineitem WHERE l_shipdate >= 8766 AND l_shipdate < 9131
+// sql:   AND l_discount BETWEEN 5 AND 7 AND l_quantity < 24
+// output: u
+input l_extendedprice: i64[];
+input l_discount: i64[];
+input l_quantity: i64[];
+input l_shipdate: i64[];
+
+let m = and(and(l_shipdate >= 8766, l_shipdate < 9131), and(and(l_discount >= 5, l_discount <= 7), l_quantity < 24));
+export revenue = sum(compress(l_extendedprice, m) * compress(l_discount, m));
