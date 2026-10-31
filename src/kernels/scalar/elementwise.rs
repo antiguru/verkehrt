@@ -519,6 +519,27 @@ op!(binary AndOp, T: [BoolStorage], u8, |a, b| a.byte() & b.byte());
 op!(binary OrOp, T: [BoolStorage], u8, |a, b| a.byte() | b.byte());
 // Bool storage is 0 or 1.
 op!(unary NotOp, T: [BoolStorage], u8, |a| a.byte() ^ 1);
+op!(binary XorOp, T: [BoolStorage], u8, |a, b| a.byte() ^ b.byte());
+// Integers combine bit by bit.
+op!(binary BitAndOp, T: [Bits], T, |a, b| a & b);
+op!(binary BitOrOp, T: [Bits], T, |a, b| a | b);
+op!(binary BitXorOp, T: [Bits], T, |a, b| a ^ b);
+op!(unary BitNotOp, T: [Bits], T, |a| !a);
+
+/// Integer element types with bitwise operations.
+trait Bits:
+    Elem
+    + std::ops::BitAnd<Output = Self>
+    + std::ops::BitOr<Output = Self>
+    + std::ops::BitXor<Output = Self>
+    + std::ops::Not<Output = Self>
+{
+}
+
+impl Bits for i32 {}
+impl Bits for i64 {}
+impl Bits for u8 {}
+impl Bits for u64 {}
 
 /// The storage type of bool, `u8`.
 trait BoolStorage: Elem {
@@ -621,11 +642,22 @@ fn register_any<T: Elem + PartialEq, const BOOL: bool>(reg: &mut Registry) {
     );
 }
 
+/// Bitwise `and`, `or`, `xor`, and `not` on an integer type.
+fn register_bits<T: Bits>(reg: &mut Registry) {
+    let n = T::TYPE.name();
+    let t = T::TYPE;
+    binary::<T, T, BitAndOp, false>(reg, Op::And, format!("and_{n}"), true, t);
+    binary::<T, T, BitOrOp, false>(reg, Op::Or, format!("or_{n}"), true, t);
+    binary::<T, T, BitXorOp, false>(reg, Op::Xor, format!("xor_{n}"), true, t);
+    unary::<T, T, BitNotOp, false>(reg, Op::Not, format!("not_{n}"), t);
+}
+
 fn register_bool(reg: &mut Registry) {
     register_any::<u8, true>(reg);
     let b = ScalarType::Bool;
     binary::<u8, u8, AndOp, true>(reg, Op::And, "and_bool".into(), true, b);
     binary::<u8, u8, OrOp, true>(reg, Op::Or, "or_bool".into(), true, b);
+    binary::<u8, u8, XorOp, true>(reg, Op::Xor, "xor_bool".into(), true, b);
     // Bool storage is 0 or 1.
     unary::<u8, u8, NotOp, true>(reg, Op::Not, "not_bool".into(), b);
 }
@@ -707,6 +739,10 @@ pub(crate) fn register(reg: &mut Registry) {
     register_any::<u64, false>(reg);
     register_any::<f32, false>(reg);
     register_any::<f64, false>(reg);
+    register_bits::<i32>(reg);
+    register_bits::<i64>(reg);
+    register_bits::<u8>(reg);
+    register_bits::<u64>(reg);
     register_bool(reg);
     register_casts(reg);
 }

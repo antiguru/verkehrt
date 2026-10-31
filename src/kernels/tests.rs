@@ -1126,13 +1126,14 @@ fn variant_entry_counts_are_stable() {
     // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
     // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
     // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
-    // six `filter_<cmp>_u64`).
+    // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`
+    // added 46 scalar and 29 auto entries per x86 ISA, and no intrinsics entries.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [571, 289, 36, 289, 38, 0, 0]);
+    assert_eq!(counts, [617, 318, 36, 318, 38, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [571, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [617, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {
@@ -1208,4 +1209,45 @@ fn every_i64_kernel_has_a_u64_twin() {
         }
     }
     assert!(missing.is_empty(), "no u64 twin for {missing:?}");
+}
+
+#[test]
+fn bitwise_kernels_on_integers() {
+    let reg = Registry::new();
+    let a = Value::Array(Array::from_vec(vec![12i64, 5]));
+    let b = Value::Array(Array::from_vec(vec![10i64, 3]));
+    let and = call(&reg, "and_i64", &[a.clone(), b.clone()]);
+    assert_eq!(arr(and.unwrap()).as_slice::<i64>(), &[8, 1]);
+    let or = call(&reg, "or_i64", &[a.clone(), b.clone()]);
+    assert_eq!(arr(or.unwrap()).as_slice::<i64>(), &[14, 7]);
+    let xor = call(&reg, "xor_i64", &[a.clone(), b]);
+    assert_eq!(arr(xor.unwrap()).as_slice::<i64>(), &[6, 6]);
+    let not = call(&reg, "not_i64", &[a]);
+    assert_eq!(arr(not.unwrap()).as_slice::<i64>(), &[-13, -6]);
+    let not_u8 = call(
+        &reg,
+        "not_u8",
+        &[Value::Array(Array::from_vec(vec![0u8, 255]))],
+    );
+    assert_eq!(arr(not_u8.unwrap()).as_slice::<u8>(), &[255, 0]);
+    // The unsigned twin keeps the top bit as a value bit.
+    let not_u64 = call(&reg, "not_u64", &[u64s(&[0, 1 << 63])]);
+    assert_eq!(
+        arr(not_u64.unwrap()).as_slice::<u64>(),
+        &[u64::MAX, u64::MAX >> 1]
+    );
+}
+
+#[test]
+fn bitwise_reductions_have_identities() {
+    let reg = Registry::new();
+    let x = Value::Array(Array::from_vec(vec![12i32, 10, 6]));
+    let r = |name: &str, v: &Value| scalar(call(&reg, name, std::slice::from_ref(v)));
+    assert_eq!(r("reduce_and_i32", &x), Scalar::I32(0));
+    assert_eq!(r("reduce_or_i32", &x), Scalar::I32(14));
+    assert_eq!(r("reduce_xor_i32", &x), Scalar::I32(0));
+    let empty = u64s(&[]);
+    assert_eq!(r("reduce_and_u64", &empty), Scalar::U64(u64::MAX));
+    assert_eq!(r("reduce_or_u64", &empty), Scalar::U64(0));
+    assert_eq!(r("reduce_xor_u64", &empty), Scalar::U64(0));
 }

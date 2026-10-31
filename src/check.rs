@@ -106,6 +106,7 @@ fn builtin(name: &str) -> Option<Builtin> {
         "sqrt" => (Op::Sqrt, 1),
         "and" => (Op::And, 2),
         "or" => (Op::Or, 2),
+        "xor" => (Op::Xor, 2),
         "not" => (Op::Not, 1),
         "select" => (Op::Select, 3),
         "sum" => (Op::Reduce(ReduceOp::Add), 1),
@@ -199,6 +200,7 @@ fn is_elementwise(op: Op) -> bool {
             | Op::Ge
             | Op::And
             | Op::Or
+            | Op::Xor
             | Op::Not
             | Op::Select
             | Op::Cast(_)

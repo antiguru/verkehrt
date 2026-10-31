@@ -1,0 +1,5 @@
+let x = [12, 10, 6];
+let y = [10, 3, 5];
+print(map(x, |v| and(v, 10)));
+print(zip_map(x, y, |a, b| xor(or(a, b), and(a, b))));
+print(map(x, |v| not(v)));

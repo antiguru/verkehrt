@@ -51,6 +51,14 @@ fn no_kernel() {
 }
 
 #[test]
+fn and_on_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0]; let y = and(x, x);",
+        "no kernel for 'and' on f64[]",
+    );
+}
+
+#[test]
 fn scalar_kernels_for_every_type() {
     assert_eq!(
         last_type("let a = 2u64; let b = a + a;"),

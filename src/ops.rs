@@ -32,6 +32,7 @@ pub enum Op {
     Ge,
     And,
     Or,
+    Xor,
     Not,
     Select,
     /// Cast to the given scalar type.
