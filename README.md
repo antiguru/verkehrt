@@ -106,6 +106,12 @@ The clock moved between 2.0 and 3.0 GHz under load, so absolute throughput is be
 The `auto` and baseline medians drifted by up to 1.36x between builds of unchanged code, and the cause was not measured.
 Read [docs/measurements/2026-10-30-x86-kernels.md](docs/measurements/2026-10-30-x86-kernels.md) for the full tables, the setup, and the caveats before quoting any number.
 
+On an Apple M5 Max, the baseline build, which the compiler vectorizes for NEON, runs `sum`, `sum(x * y)`, and `count(x > 0.5)` within 1.02x of the native loop.
+The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from 2.77x to 3.39x down to 0.93x, and `filter` reaches 1.10x to 1.39x, only 6 to 11% faster than the scalar entry.
+The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 for `x * y`, and 2^12 for `min`.
+These are single runs on AC power in high power mode, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
+Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
+
 ## Building and testing
 
 Verkehrt is a Rust crate with edition 2024 and a minimum supported Rust version of 1.95.
@@ -136,6 +142,8 @@ CARGO_INCREMENTAL=0 cargo bench --locked --bench corgi
 * [Core interpreter plan](docs/superpowers/plans/2026-10-30-verkehrt-core.md): parser, type checker, lowering, egglog planning, and scalar kernels.
 * [x86 kernels plan](docs/superpowers/plans/2026-10-30-verkehrt-kernels-x86.md): AVX2 and AVX-512 kernels in both backends, benchmarks, and crossover measurements.
 * [x86 measurements](docs/measurements/2026-10-30-x86-kernels.md): results, setup, and caveats.
+* [NEON kernels plan](docs/superpowers/plans/2026-10-31-verkehrt-kernels-neon.md): NEON intrinsics for the selections and float extremes, benchmarks, and crossover measurements.
+* [aarch64 measurements](docs/measurements/2026-10-31-aarch64-kernels.md): results, setup, and caveats.
 
 ## Prior art
 
