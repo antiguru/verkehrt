@@ -242,14 +242,6 @@ fn inner_term_also_used_elsewhere_is_hoisted_separately() {
 }
 
 #[test]
-fn map_over_i8_has_no_array_kernel() {
-    let e = lowered_with("let x = [1i8]; print(map(x, |v| v * v));", Mode::Run).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Type);
-    assert!(e.message.contains("no kernel"), "{}", e.message);
-    assert_eq!(e.span, Some(Span { line: 1, col: 35 }));
-}
-
-#[test]
 fn input_and_export() {
     let (l, g) = lowered("input x: f64[]; export d = sum(x * x);", Mode::Run);
     assert_eq!(dump(&l, &g), ["bind d = reduce_add(mul(L_x, L_x))"]);
@@ -504,6 +496,148 @@ fn div_const_lifts_in_a_lambda() {
         run_dump("let x = [100, 200]; print(map(x, |v| div_const(v, 60)));"),
         ["bind x = L_c", "print div_const(L_x, L_c)"]
     );
+}
+
+#[test]
+fn div_const_with_a_captured_divisor_lifts_in_a_lambda() {
+    assert_eq!(
+        run_dump("let x = [100, 200]; let c = 60; print(map(x, |v| div_const(v, c)));"),
+        ["bind x = L_c", "bind c = L_c", "print div_const(L_x, L_c)"]
+    );
+}
+
+#[test]
+fn div_const_through_functions_lifts_in_a_lambda() {
+    assert_eq!(
+        run_dump(
+            "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } \
+             let x = [100, 200]; print(map(x, |v| f(v, 3)));"
+        ),
+        ["bind x = L_c", "print div_const(L_x, L_c)"]
+    );
+    assert_eq!(
+        run_dump(
+            "fn g(a: i64, b: i64) -> i64 { div_const(a, b) } \
+             fn f(a: i64, b: i64) -> i64 { g(a + 1, b * 2) } \
+             let x = [100, 200]; print(map(x, |v| f(v, 3)));"
+        ),
+        [
+            "bind x = L_c",
+            "print div_const(add(L_x, bcast(L_c)), mul(L_c, L_c))"
+        ]
+    );
+}
+
+/// Every lambda body over the elementwise ops that the checker accepts must also lower, so
+/// the checker and lowering cannot disagree. Bodies combine operands that read the parameter
+/// (`v`, `v + 1`, `w` from a block let) with operands that do not (a literal, a captured
+/// scalar, a uniform expression), directly and through a user function.
+#[test]
+fn checked_lambda_bodies_lower() {
+    struct Ty {
+        name: &'static str,
+        lit: &'static str,
+    }
+    let types = [
+        Ty {
+            name: "i64",
+            lit: "3",
+        },
+        Ty {
+            name: "f64",
+            lit: "3.0",
+        },
+        Ty {
+            name: "i8",
+            lit: "3i8",
+        },
+        Ty {
+            name: "u64",
+            lit: "3u64",
+        },
+        Ty {
+            name: "i32",
+            lit: "3i32",
+        },
+    ];
+    let binary = [
+        "{a} + {b}",
+        "{a} - {b}",
+        "{a} * {b}",
+        "{a} / {b}",
+        "cast_i64({a} < {b})",
+        "cast_i64({a} == {b})",
+        "min({a}, {b})",
+        "max({a}, {b})",
+        "and({a}, {b})",
+        "xor({a}, {b})",
+        "div_const({a}, {b})",
+        "f({a}, {b})",
+        "h({a}, {b})",
+        "if {a} > {b} {{ {a} }} else {{ {b} }}",
+        "select({a} > {b}, {a}, {b})",
+    ];
+    let unary = ["neg({a})", "abs({a})", "sqrt({a})", "not({a})"];
+    let reg = Registry::new();
+    let mut accepted = 0;
+    let mut rejected = 0;
+    for t in &types {
+        let (ty, lit) = (t.name, t.lit);
+        let one = lit.replacen('3', "1", 1);
+        let atoms = [
+            "v".to_string(),
+            format!("(v + {one})"),
+            "w".to_string(),
+            lit.to_string(),
+            "c".to_string(),
+            format!("(c * {lit})"),
+            "u".to_string(),
+        ];
+        // The functions are defined only where used, since `div_const` lacks some types.
+        let fns = format!(
+            "fn f(a: {ty}, b: {ty}) -> {ty} {{ div_const(a, b) }} \
+             fn h(a: {ty}, b: {ty}) -> {ty} {{ f(a, b) + a }}"
+        );
+        let mut bodies = Vec::new();
+        for shape in binary {
+            for a in &atoms {
+                for b in &atoms {
+                    bodies.push(shape.replace("{a}", a).replace("{b}", b));
+                }
+            }
+        }
+        for shape in unary {
+            for a in &atoms {
+                bodies.push(shape.replace("{a}", a));
+            }
+        }
+        for body in bodies {
+            let prelude = if body.contains("f(") || body.contains("h(") {
+                fns.as_str()
+            } else {
+                ""
+            };
+            let src = format!(
+                "{prelude} let x = [{lit}, {one}]; let c = {lit}; \
+                 print(map(x, |v| {{ let w = v * {lit}; let u = c + {one}; {body} }}));"
+            );
+            let mut g = Globals::new();
+            let typed = match check(&parse(&src).unwrap(), &reg, &mut g) {
+                Ok(typed) => typed,
+                Err(_) => {
+                    rejected += 1;
+                    continue;
+                }
+            };
+            accepted += 1;
+            if let Err(e) = lower(&typed, &mut g, &reg, Mode::Run) {
+                panic!("checked but failed to lower: {src}: {e}");
+            }
+        }
+    }
+    // Both outcomes occur, so the property is not vacuous.
+    assert!(accepted > 500, "{accepted} accepted");
+    assert!(rejected > 500, "{rejected} rejected");
 }
 
 #[test]

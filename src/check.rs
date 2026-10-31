@@ -1,6 +1,7 @@
 //! The type checker. It turns the AST into a typed AST and enforces the language's typing
-//! rules: kernel lookup through the registry, the lambda liftability rules, and the ban on
-//! recursion. Lambdas, calls, and `if` stay intact because lowering handles them next.
+//! rules: kernel lookup through the registry, the lambda liftability rules including kernel
+//! lookup on the lifted types of lambda bodies, and the ban on recursion. Lambdas, calls,
+//! and `if` stay intact because lowering handles them next.
 
 use std::collections::{HashMap, HashSet};
 
@@ -10,8 +11,11 @@ use crate::ops::{Op, ReduceOp};
 use crate::syntax::ast::{self, BinOp, ExprKind};
 use crate::value::{ScalarType, ValueType};
 
+mod lifting;
 mod typed;
 pub use typed::*;
+
+use lifting::Lifting;
 
 #[cfg(test)]
 mod tests;
@@ -284,10 +288,6 @@ fn lift_violation(g: &Globals, e: &TExpr) -> Option<String> {
         TExprKind::Lit(_) | TExprKind::Var(_) => None,
         TExprKind::Str(_) => Some("a string literal".into()),
         TExprKind::ArrayLit(_) => Some("an array literal".into()),
-        TExprKind::Prim(Op::DivConst, args) if has_var(&args[1]) => Some(
-            "a 'div_const' whose divisor is not a constant, since the lambda may pass an array"
-                .into(),
-        ),
         TExprKind::Prim(op, args) => {
             if is_elementwise(*op) {
                 all(args)
@@ -304,21 +304,6 @@ fn lift_violation(g: &Globals, e: &TExpr) -> Option<String> {
             .iter()
             .find_map(|(_, x)| lift_violation(g, x))
             .or_else(|| lift_violation(g, r)),
-    }
-}
-
-/// Whether `e` reads any variable.
-fn has_var(e: &TExpr) -> bool {
-    match &e.kind {
-        TExprKind::Lit(_) | TExprKind::Str(_) => false,
-        TExprKind::Var(_) => true,
-        TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) | TExprKind::Call(_, es) => {
-            es.iter().any(has_var)
-        }
-        TExprKind::Map(x, _) | TExprKind::Filter(x, _) => has_var(x),
-        TExprKind::ZipMap(x, y, _) => has_var(x) || has_var(y),
-        TExprKind::If(c, t, f) => [c, t, f].into_iter().any(|x| has_var(x)),
-        TExprKind::Block(lets, r) => lets.iter().any(|(_, x)| has_var(x)) || has_var(r),
     }
 }
 
@@ -357,12 +342,13 @@ struct Checker<'a> {
     in_lambda: bool,
     /// Parameters of the lambda being checked, the only variables it may use besides scalars.
     lambda_vars: Vec<VarId>,
-    /// Block-local lets inside the lambda whose value depends on a parameter.
-    derived_vars: Vec<VarId>,
     /// Functions called from the body being checked.
     calls: Vec<FnId>,
     /// Functions called from lambdas, whose bodies must satisfy the lambda rules.
     deferred: Vec<(FnId, Span)>,
+    /// Lambdas with the element types they map over and the span of the higher-order call,
+    /// checked on their lifted types once every function body is known.
+    lifts: Vec<(TLambda, Vec<ScalarType>, Span)>,
 }
 
 impl<'a> Checker<'a> {
@@ -374,9 +360,9 @@ impl<'a> Checker<'a> {
             local_only: false,
             in_lambda: false,
             lambda_vars: Vec::new(),
-            derived_vars: Vec::new(),
             calls: Vec::new(),
             deferred: Vec::new(),
+            lifts: Vec::new(),
         }
     }
 
@@ -418,6 +404,12 @@ impl<'a> Checker<'a> {
                     span,
                 ));
             }
+        }
+        // A lambda body may call functions declared later or in the body of a function
+        // checked later, so this runs last.
+        let mut lifting = Lifting::new(self.reg, self.g);
+        for (lam, elems, span) in &self.lifts {
+            lifting.lambda(lam, elems, *span)?;
         }
         Ok(stmts)
     }
@@ -624,9 +616,6 @@ impl<'a> Checker<'a> {
         for l in &b.lets {
             let value = self.check_let_value(l)?;
             let var = self.g.fresh_var(&l.name);
-            if self.in_lambda && self.varies(&value) {
-                self.derived_vars.push(var);
-            }
             self.scopes
                 .last_mut()
                 .expect("a block scope is open")
@@ -757,20 +746,6 @@ impl<'a> Checker<'a> {
         })
     }
 
-    /// Whether the value of `e` can differ per element of the lambda being checked.
-    fn varies(&self, e: &TExpr) -> bool {
-        let any = |es: &[TExpr]| es.iter().any(|x| self.varies(x));
-        match &e.kind {
-            TExprKind::Lit(_) | TExprKind::Str(_) => false,
-            TExprKind::Var(v) => self.lambda_vars.contains(v) || self.derived_vars.contains(v),
-            TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) | TExprKind::Call(_, es) => any(es),
-            TExprKind::Map(x, _) | TExprKind::Filter(x, _) => self.varies(x),
-            TExprKind::ZipMap(x, y, _) => self.varies(x) || self.varies(y),
-            TExprKind::If(c, t, f) => [c, t, f].into_iter().any(|x| self.varies(x)),
-            TExprKind::Block(lets, r) => lets.iter().any(|(_, x)| self.varies(x)) || self.varies(r),
-        }
-    }
-
     /// Resolves an op on typed arguments through the registry.
     fn prim(
         &self,
@@ -844,14 +819,6 @@ impl<'a> Checker<'a> {
                 } else {
                     self.check_args(args)?
                 };
-                // The lifted kernel takes a scalar divisor, so a divisor that varies per
-                // element has no kernel once the lambda body is lifted over arrays.
-                if self.in_lambda && op == Op::DivConst && self.varies(&targs[1]) {
-                    return Err(Error::ty(
-                        "the divisor of 'div_const' cannot depend on a lambda parameter",
-                        args[1].span,
-                    ));
-                }
                 self.prim(op, name, targs, span, false)
             }
             Some(Builtin::Fold(kind)) => {
@@ -970,6 +937,7 @@ impl<'a> Checker<'a> {
             xs.push(x);
         }
         let lambda = self.check_lambda_arg(&args[arrays], &elems)?;
+        self.lifts.push((lambda.clone(), elems, span));
         let ValueType::Scalar(ret) = lambda.body.ty else {
             return Err(Error::ty(
                 format!("'{name}' function must return a scalar"),
@@ -1037,7 +1005,6 @@ impl<'a> Checker<'a> {
                 let body = self.check_expr(body);
                 self.in_lambda = saved.0;
                 self.lambda_vars.truncate(saved.1);
-                self.derived_vars.clear();
                 self.scopes.pop();
                 Ok(TLambda {
                     params: vars,

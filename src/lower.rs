@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::check::{Globals, TExpr, TExprKind, TLambda, TProgram, TStmt, VarId};
 use crate::error::{Error, Span};
-use crate::kernels::{InputSpec, Registry};
+use crate::kernels::Registry;
 use crate::ops::Op;
 use crate::value::{Array, Scalar, ScalarType, Value, ValueType};
 
@@ -157,6 +157,14 @@ fn same_const(a: &Value, b: &Value) -> bool {
     }
 }
 
+fn no_kernel(op: Op, tys: &[ValueType], span: Span) -> Error {
+    let shown: Vec<String> = tys.iter().map(ToString::to_string).collect();
+    Error::ty(
+        format!("no kernel for '{}' on {}", op_name(op), shown.join(", ")),
+        span,
+    )
+}
+
 fn is_array(ty: ValueType) -> bool {
     matches!(ty, ValueType::Array(_))
 }
@@ -259,46 +267,40 @@ impl Lowerer<'_> {
     /// as given, every scalar next to an array is broadcast and the lookup runs on the lifted
     /// types, unless the op has a kernel with a `Scalar` input. Then the error reports the
     /// operands as given, because the lifted types would not be the ones the user wrote.
+    /// The rule is `Registry::lookup_lifted`, which the checker applies to lambda bodies too.
     fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        if !args.iter().any(|a| is_array(a.ty)) {
-            return self.op_exact(op, args, span);
-        }
-        let bcast = |a: Term| match a.ty {
-            ValueType::Scalar(t) => {
-                let operand_span = a.span;
-                Term {
-                    kind: TermKind::Bcast(Box::new(a)),
-                    ty: ValueType::Array(t),
-                    span: operand_span,
-                }
-            }
-            _ => a,
-        };
         let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
-        let args: Vec<Term> = match self.reg.lookup(op, &tys) {
-            Some(id) => args
-                .into_iter()
-                .zip(&self.reg.get(id).inputs)
-                .map(|(a, spec)| match spec {
-                    InputSpec::Either(_) => bcast(a),
-                    _ => a,
-                })
-                .collect(),
-            None if self.reg.has_scalar_input(op) => args,
-            None => args.into_iter().map(bcast).collect(),
-        };
-        self.op_exact(op, args, span)
+        let lifted = self
+            .reg
+            .lookup_lifted(op, &tys)
+            .map_err(|tys| no_kernel(op, &tys, span))?;
+        let args = args
+            .into_iter()
+            .zip(lifted.bcast)
+            .map(|(a, bcast)| match a.ty {
+                ValueType::Scalar(t) if bcast => {
+                    let operand_span = a.span;
+                    Term {
+                        kind: TermKind::Bcast(Box::new(a)),
+                        ty: ValueType::Array(t),
+                        span: operand_span,
+                    }
+                }
+                _ => a,
+            })
+            .collect();
+        Ok(Term {
+            kind: TermKind::Op(op, args),
+            ty: self.reg.get(lifted.kernel).output,
+            span,
+        })
     }
 
     /// Builds an operation over operands exactly as given, without broadcasting.
     fn op_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
         let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
         let Some(id) = self.reg.lookup(op, &tys) else {
-            let shown: Vec<String> = tys.iter().map(ToString::to_string).collect();
-            return Err(Error::ty(
-                format!("no kernel for '{}' on {}", op_name(op), shown.join(", ")),
-                span,
-            ));
+            return Err(no_kernel(op, &tys, span));
         };
         Ok(Term {
             kind: TermKind::Op(op, args),

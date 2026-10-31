@@ -358,6 +358,14 @@ impl KernelDef {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct KernelId(pub u32);
 
+/// How lowering applies an op to its operands, see `Registry::lookup_lifted`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lifted {
+    pub kernel: KernelId,
+    /// Per operand, whether it is a scalar broadcast to an array.
+    pub bcast: Vec<bool>,
+}
+
 pub struct Registry {
     /// Identifies this registry by pointer, so that a `Dispatch` can tell which registry it was
     /// resolved from.
@@ -426,6 +434,50 @@ impl Registry {
             .iter()
             .copied()
             .find(|id| self.get(*id).accepts(args))
+    }
+
+    /// Resolves `op` on operands of types `args` the way lowering builds the operation. With
+    /// no array operand this is `lookup`. With one, the kernel that `lookup` finds on `args`
+    /// decides which scalars are broadcast: those at its `Either` positions, while a scalar at
+    /// a `Scalar` position stays. When no kernel accepts `args`, every scalar is broadcast,
+    /// unless `op` has a kernel with a `Scalar` input. The kernel is then looked up on the
+    /// broadcast types. On failure, returns the operand types that the error reports.
+    pub fn lookup_lifted(&self, op: Op, args: &[ValueType]) -> Result<Lifted, Vec<ValueType>> {
+        let none = || vec![false; args.len()];
+        let bcast: Vec<bool> = if !args.iter().any(|t| matches!(t, ValueType::Array(_))) {
+            none()
+        } else {
+            match self.lookup(op, args) {
+                Some(id) => self
+                    .get(id)
+                    .inputs
+                    .iter()
+                    .zip(args)
+                    .map(|(spec, t)| {
+                        matches!(spec, InputSpec::Either(_)) && matches!(t, ValueType::Scalar(_))
+                    })
+                    .collect(),
+                // Broadcasting would hide the operand types the user wrote, so the error
+                // reports them as given.
+                None if self.has_scalar_input(op) => none(),
+                None => args
+                    .iter()
+                    .map(|t| matches!(t, ValueType::Scalar(_)))
+                    .collect(),
+            }
+        };
+        let tys: Vec<ValueType> = args
+            .iter()
+            .zip(&bcast)
+            .map(|(t, b)| match (t, b) {
+                (ValueType::Scalar(s), true) => ValueType::Array(*s),
+                _ => *t,
+            })
+            .collect();
+        match self.lookup(op, &tys) {
+            Some(kernel) => Ok(Lifted { kernel, bcast }),
+            None => Err(tys),
+        }
     }
 
     /// Whether some kernel of `op` takes a scalar that must stay a scalar.

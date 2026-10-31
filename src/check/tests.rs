@@ -342,26 +342,32 @@ fn div_const_in_a_lambda_rejects_a_parameter_divisor() {
     // Lifted over arrays, a parameter divisor is an array, which the kernel does not take.
     let e = type_err(
         "let x = [1, 2]; let m = map(x, |v| div_const(v, v));",
-        "div_const",
+        "no kernel for 'div_const' on i64[], i64[]",
     );
-    assert_eq!(e.span, Some(Span { line: 1, col: 49 }));
+    assert_eq!(e.span, Some(Span { line: 1, col: 36 }));
 }
 
 #[test]
 fn div_const_in_a_lambda_rejects_a_constant_dividend_with_a_parameter_divisor() {
     let e = type_err(
         "let x = [1, 2]; let m = map(x, |v| div_const(60, v));",
-        "div_const",
+        "no kernel for 'div_const' on i64, i64[]",
     );
-    assert_eq!(e.span, Some(Span { line: 1, col: 50 }));
+    assert_eq!(e.span, Some(Span { line: 1, col: 36 }));
 }
 
 #[test]
 fn div_const_in_a_lambda_rejects_a_divisor_derived_from_a_parameter() {
-    type_err(
+    let e = type_err(
         "let x = [1, 2]; let m = map(x, |v| { let d = v + 1; div_const(v, d) });",
-        "div_const",
+        "no kernel for 'div_const' on i64[], i64[]",
     );
+    assert_eq!(e.span, Some(Span { line: 1, col: 53 }));
+    let inline = type_err(
+        "let x = [1, 2]; let m = map(x, |v| div_const(v, v + 1));",
+        "no kernel for 'div_const' on i64[], i64[]",
+    );
+    assert_eq!(inline.span, Some(Span { line: 1, col: 36 }));
 }
 
 #[test]
@@ -375,13 +381,108 @@ fn div_const_in_a_lambda_accepts_a_constant_or_captured_divisor() {
         last_type("let x = [1, 2]; let k = 7; let m = map(x, |v| div_const(v + 1, k));"),
         i64a
     );
+    // A block let that does not read the parameter stays uniform.
+    assert_eq!(
+        last_type("let x = [1, 2]; let m = map(x, |v| { let d = 3 + 4; div_const(v, d) });"),
+        i64a
+    );
 }
 
 #[test]
-fn div_const_in_a_function_called_from_a_lambda_needs_a_constant_divisor() {
+fn div_const_in_a_function_called_from_a_lambda_with_a_constant_divisor() {
+    assert_eq!(
+        last_type(
+            "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, 3));"
+        ),
+        ValueType::Array(ScalarType::I64)
+    );
+}
+
+#[test]
+fn div_const_in_a_function_called_from_a_lambda_with_a_parameter_divisor() {
+    let e = type_err(
+        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, v));",
+        "no kernel for 'div_const' on i64[], i64[] (in 'f' at 1:31)",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 73 }));
     type_err(
-        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, 3));",
-        "div_const",
+        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(3, v));",
+        "no kernel for 'div_const' on i64, i64[] (in 'f' at 1:31)",
+    );
+}
+
+#[test]
+fn function_is_checked_per_uniformity_pattern() {
+    // The same function is fine with a constant divisor and rejected with a varying one.
+    type_err(
+        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } \
+         let m = map([1, 2], |v| f(v, 3) + f(v, v));",
+        "(in 'f' at 1:31)",
+    );
+    // Outside a lambda the function is checked as before.
+    assert_eq!(
+        last_type("fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let r = f(7, 7);"),
+        ValueType::Scalar(ScalarType::I64)
+    );
+}
+
+#[test]
+fn div_const_through_a_function_chain() {
+    let src = "fn g(a: i64, b: i64) -> i64 { div_const(a, b) } \
+               fn f(a: i64, b: i64) -> i64 { g(a + 1, b) } ";
+    assert_eq!(
+        last_type(&format!("{src} let m = map([1, 2], |v| f(v, 3));")),
+        ValueType::Array(ScalarType::I64)
+    );
+    assert_eq!(
+        last_type(&format!(
+            "{src} let c = 5; let m = map([1, 2], |v| f(v, c * 2));"
+        )),
+        ValueType::Array(ScalarType::I64)
+    );
+    let e = type_err(
+        &format!("{src} let m = map([1, 2], |v| f(v, v));"),
+        "no kernel for 'div_const' on i64[], i64[] (in 'g' at 1:31) (in 'f' at 1:79)",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 118 }));
+}
+
+#[test]
+fn function_name_as_lambda_is_checked_with_a_varying_parameter() {
+    assert_eq!(
+        last_type("fn f(a: i64) -> i64 { div_const(a, 60) } let m = map([1, 2], f);"),
+        ValueType::Array(ScalarType::I64)
+    );
+    type_err(
+        "fn f(a: i64) -> i64 { div_const(60, a) } let m = map([1, 2], f);",
+        "no kernel for 'div_const' on i64, i64[] (in 'f' at 1:23)",
+    );
+}
+
+#[test]
+fn lambda_inside_a_function_body_is_checked_lifted() {
+    type_err(
+        "fn f(x: i64[]) -> i64[] { map(x, |v| div_const(60, v)) } let r = f([1, 2]);",
+        "no kernel for 'div_const' on i64, i64[]",
+    );
+}
+
+#[test]
+fn map_over_i8_has_no_array_kernel() {
+    // The scalar kernel exists, but lifting multiplies arrays, which has no i8 kernel.
+    let e = type_err(
+        "let x = [1i8]; print(map(x, |v| v * v));",
+        "no kernel for '*' on i8[], i8[]",
+    );
+    assert_eq!(e.span, Some(Span { line: 1, col: 35 }));
+    // A uniform body stays scalar and is filled to the array's length, which i8 lacks.
+    type_err(
+        "let x = [1i8]; let c = 2i8; let m = map(x, |v| c * c);",
+        "no kernel for 'length' on i8[]",
+    );
+    assert_eq!(
+        last_type("let x = [1]; let c = 2; let m = map(x, |v| c * c);"),
+        ValueType::Array(ScalarType::I64)
     );
 }
 
