@@ -6,10 +6,6 @@ use std::path::Path;
 use crate::interp::Prepared;
 use crate::value::{Array, ScalarType, Value, ValueType};
 
-// The files hold little-endian words and are copied into the arrays as bytes.
-#[cfg(not(target_endian = "little"))]
-compile_error!("column files are little-endian and are loaded without conversion");
-
 /// Loads one value per declared input of `prepared` from the column files in `dir`, in
 /// declaration order.
 ///
@@ -25,8 +21,9 @@ pub fn load_inputs(dir: &Path, prepared: &Prepared) -> Result<Vec<(String, Value
             ValueType::Array(elem @ (ScalarType::U64 | ScalarType::I64)) => {
                 load_words(&dir.join(format!("{name}.u64")), elem)?
             }
+            // Strip the suffix once, so `x_bytes_bytes` names the column `x_bytes`.
             ValueType::Array(ScalarType::U8) if name.ends_with("_bytes") => {
-                load_single_bytes(dir, name.trim_end_matches("_bytes"))?
+                load_single_bytes(dir, name.strip_suffix("_bytes").unwrap_or(name))?
             }
             _ => {
                 return Err(format!(
@@ -49,8 +46,17 @@ fn load_words(path: &Path, elem: ScalarType) -> Result<Array, String> {
             bytes.len()
         ));
     }
+    // Decode each word from little-endian and store it in the target's byte order, so the
+    // load is correct on any endianness. Both `u64` and `i64` use the same bit pattern.
     Array::build_bytes(bytes.len() / 8, elem, |out| {
-        out.copy_from_slice(&bytes);
+        for (dst, src) in out
+            .as_chunks_mut::<8>()
+            .0
+            .iter_mut()
+            .zip(bytes.as_chunks::<8>().0)
+        {
+            *dst = u64::from_le_bytes(*src).to_ne_bytes();
+        }
         Ok(())
     })
 }
@@ -131,6 +137,22 @@ mod tests {
         );
         assert_eq!(got[1].1, Value::Array(Array::from_vec(vec![-1i64, 7, 0])));
         assert_eq!(got[2].1, Value::Array(Array::from_vec(b"xyz".to_vec())));
+    }
+
+    #[test]
+    fn load_inputs_strips_the_bytes_suffix_once() {
+        let dir = scratch("bytes-suffix");
+        fs::write(dir.join("x_bytes.ends"), words(&[1, 2])).unwrap();
+        fs::write(dir.join("x_bytes.bytes"), b"ab").unwrap();
+        // A column named `x` must not be read for the input `x_bytes_bytes`.
+        fs::write(dir.join("x.ends"), words(&[1])).unwrap();
+        fs::write(dir.join("x.bytes"), b"z").unwrap();
+        let interp = Interpreter::new(Options::default()).unwrap();
+        let p = interp
+            .prepare("input x_bytes_bytes: u8[]; export n = length(x_bytes_bytes);")
+            .unwrap();
+        let got = load_inputs(&dir, &p).unwrap();
+        assert_eq!(got[0].1, Value::Array(Array::from_vec(b"ab".to_vec())));
     }
 
     #[test]
