@@ -8,6 +8,7 @@
 use std::marker::PhantomData;
 
 use crate::kernels::arch;
+use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
     InputSpec, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
@@ -645,7 +646,7 @@ fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
         op: Some(op),
         inputs: vec![InputSpec::Array(A::IN_TYPE)],
         output: ValueType::Scalar(A::OUT_TYPE),
-        cost: u64::try_from(A::IN_TYPE.width()).expect("width fits in u64"),
+        cost: width(A::IN_TYPE),
         commutative: false,
         pattern: None,
         impls,
