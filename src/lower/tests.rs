@@ -496,3 +496,12 @@ fn single_use_let_inlines_into_branch() {
         ]
     );
 }
+
+#[test]
+fn div_const_lifts_in_a_lambda() {
+    // The divisor stays a scalar, only the dividend is an array operand.
+    assert_eq!(
+        run_dump("let x = [100, 200]; print(map(x, |v| div_const(v, 60)));"),
+        ["bind x = L_c", "print div_const(L_x, L_c)"]
+    );
+}

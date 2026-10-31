@@ -354,6 +354,7 @@ fn kernel_names_are_unique_valid_identifiers() {
                 | Op::Gather
                 | Op::Slice
                 | Op::Histogram
+                | Op::ArgSort
                 | Op::ReduceInto(_)
                 | Op::RandI64
                 | Op::RandF64
@@ -1137,12 +1138,14 @@ fn variant_entry_counts_are_stable() {
     // the 7 `slice_<t>` kernels added 7 scalar entries.
     // `histogram` and the 35 `reduce_into_<op>_<t>` kernels added 36 scalar and 36 auto
     // entries per x86 ISA.
+    // The 4 `div_const_<t>` and 4 `argsort_<t>` kernels added 12 scalar entries (the array and
+    // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [737, 431, 36, 431, 38, 0, 0]);
+    assert_eq!(counts, [749, 439, 36, 439, 38, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [737, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [749, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {
@@ -1595,4 +1598,115 @@ fn reduce_into_checks_lengths() {
     )
     .unwrap_err();
     assert_eq!(e, "length mismatch: 2 keys for 1 values");
+}
+
+fn i32_s(v: i32) -> Value {
+    Value::Scalar(Scalar::I32(v))
+}
+
+fn u8_s(v: u8) -> Value {
+    Value::Scalar(Scalar::U8(v))
+}
+
+#[test]
+fn div_const_truncates_toward_zero() {
+    let by = |d: i64| run_arr("div_const_i64", &[i64v(&[7, -7, 0]), i64_s(d)]);
+    assert_eq!(by(2).as_slice::<i64>(), &[3, -3, 0]);
+    assert_eq!(by(-2).as_slice::<i64>(), &[-3, 3, 0]);
+}
+
+#[test]
+fn div_const_wraps_at_min() {
+    let r64 = run_arr("div_const_i64", &[i64v(&[i64::MIN]), i64_s(-1)]);
+    assert_eq!(r64.as_slice::<i64>(), &[i64::MIN]);
+    let r32 = run_arr("div_const_i32", &[i32s(&[i32::MIN]), i32_s(-1)]);
+    assert_eq!(r32.as_slice::<i32>(), &[i32::MIN]);
+}
+
+/// Dividends for the property test: boundary values, their neighbours, and random words.
+fn dividends<T: Copy>(edges: &[u64], word: impl Fn(u64) -> T, seed: u64) -> Vec<T> {
+    let mut v: Vec<T> = Vec::new();
+    for &e in edges {
+        for k in 0..4u64 {
+            v.push(word(e.wrapping_add(k)));
+            v.push(word(e.wrapping_sub(k)));
+        }
+    }
+    v.extend((0..512).map(|i| word(splitmix64(seed ^ i))));
+    v
+}
+
+#[test]
+fn div_const_matches_rust_division() {
+    let reg = Registry::new();
+    // i64 and i32, every divisor in -300..=300 but 0, plus the extremes and neighbours.
+    let mut d64: Vec<i64> = (-300..=300).filter(|&d| d != 0).collect();
+    for k in 0..4 {
+        d64.extend([i64::MIN + k, i64::MAX - k]);
+    }
+    let xs = dividends(&[0, 1 << 63, 1 << 62, 1 << 32], |w| w.cast_signed(), 1);
+    for &d in &d64 {
+        let r = call(&reg, "div_const_i64", &[i64v(&xs), i64_s(d)]);
+        let want: Vec<i64> = xs.iter().map(|x| x.wrapping_div(d)).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<i64>(), want, "i64 / {d}");
+    }
+    let mut d32: Vec<i32> = (-300..=300).filter(|&d| d != 0).collect();
+    for k in 0..4 {
+        d32.extend([i32::MIN + k, i32::MAX - k]);
+    }
+    let xs32 = dividends(
+        &[0, 1 << 31, 1 << 30],
+        |w| u32::try_from(w & 0xFFFF_FFFF).unwrap().cast_signed(),
+        2,
+    );
+    for &d in &d32 {
+        let r = call(&reg, "div_const_i32", &[i32s(&xs32), i32_s(d)]);
+        let want: Vec<i32> = xs32.iter().map(|x| x.wrapping_div(d)).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<i32>(), want, "i32 / {d}");
+    }
+    let mut du: Vec<u64> = (1..=300).collect();
+    du.extend([
+        u64::MAX,
+        u64::MAX - 1,
+        1 << 63,
+        (1 << 63) + 1,
+        (1 << 63) - 1,
+    ]);
+    let xsu = dividends(&[0, 1 << 63, 1 << 32], |w| w, 3);
+    for &d in &du {
+        let r = call(&reg, "div_const_u64", &[u64s(&xsu), u64_s(d)]);
+        let want: Vec<u64> = xsu.iter().map(|x| x / d).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<u64>(), want, "u64 / {d}");
+    }
+    // Every u8 dividend against every u8 divisor.
+    let xs8: Vec<u8> = (0..=255).collect();
+    for d in 1..=255u8 {
+        let r = call(&reg, "div_const_u8", &[u8s(&xs8), u8_s(d)]);
+        let want: Vec<u8> = xs8.iter().map(|x| x / d).collect();
+        assert_eq!(arr(r.unwrap()).as_slice::<u8>(), want, "u8 / {d}");
+    }
+}
+
+#[test]
+fn div_const_by_zero_is_an_error() {
+    let reg = Registry::new();
+    let signed = call(&reg, "div_const_i64", &[i64v(&[1]), i64_s(0)]).unwrap_err();
+    assert!(signed.contains("division by zero"), "{signed}");
+    let unsigned = call(&reg, "div_const_u8", &[u8s(&[]), u8_s(0)]).unwrap_err();
+    assert!(unsigned.contains("division by zero"), "{unsigned}");
+}
+
+#[test]
+fn argsort_is_stable() {
+    let r = run_arr("argsort_i64", &[i64v(&[3, 1, 3, 1])]);
+    assert_eq!(r.as_slice::<i64>(), &[1, 3, 0, 2]);
+    let none = run_arr("argsort_i64", &[i64v(&[])]);
+    assert_eq!(none.len(), 0);
+    // Signed order, and unsigned order above the sign bit.
+    let r32 = run_arr("argsort_i32", &[i32s(&[0, -1, i32::MIN, i32::MAX])]);
+    assert_eq!(r32.as_slice::<i64>(), &[2, 1, 0, 3]);
+    let r64 = run_arr("argsort_u64", &[u64s(&[1 << 63, 1, 1 << 63, 0])]);
+    assert_eq!(r64.as_slice::<i64>(), &[3, 1, 0, 2]);
+    let r8 = run_arr("argsort_u8", &[u8s(&[200, 5, 200, 5, 0])]);
+    assert_eq!(r8.as_slice::<i64>(), &[4, 1, 3, 0, 2]);
 }

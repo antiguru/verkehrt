@@ -153,6 +153,8 @@ fn builtin(name: &str) -> Option<Builtin> {
         "gather" => (Op::Gather, 2),
         "slice" => (Op::Slice, 3),
         "histogram" => (Op::Histogram, 2),
+        "div_const" => (Op::DivConst, 2),
+        "argsort" => (Op::ArgSort, 1),
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),
@@ -223,6 +225,7 @@ fn is_elementwise(op: Op) -> bool {
             | Op::Sub
             | Op::Mul
             | Op::Div
+            | Op::DivConst
             | Op::Neg
             | Op::Abs
             | Op::Min
@@ -306,6 +309,7 @@ fn op_name(op: Op) -> String {
         Op::Sub => "-".into(),
         Op::Mul => "*".into(),
         Op::Div => "/".into(),
+        Op::DivConst => "div_const".into(),
         Op::Eq => "==".into(),
         Op::Ne => "!=".into(),
         Op::Lt => "<".into(),

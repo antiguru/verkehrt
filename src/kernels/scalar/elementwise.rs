@@ -249,6 +249,21 @@ fn add_entry<B: ElementwiseBody>(
     out: ScalarType,
     commutative: bool,
 ) {
+    let specs: Vec<InputSpec> = inputs.iter().map(|t| InputSpec::Either(*t)).collect();
+    add_entry_with::<B>(reg, op, name, inputs, specs, out, commutative);
+}
+
+/// `add_entry` with explicit input specs for the array kernel, for operands that must be
+/// scalars. The `_s` kernel takes scalars throughout.
+fn add_entry_with<B: ElementwiseBody>(
+    reg: &mut Registry,
+    op: Op,
+    name: String,
+    inputs: &[ScalarType],
+    array_specs: Vec<InputSpec>,
+    out: ScalarType,
+    commutative: bool,
+) {
     let row_bytes: usize = inputs.iter().map(|t| t.width()).sum::<usize>() + out.width();
     let v1 = inputs
         .iter()
@@ -267,11 +282,10 @@ fn add_entry<B: ElementwiseBody>(
     };
     if v1 {
         let cost = u64::try_from(row_bytes).expect("row width fits in u64");
-        let inputs = inputs.iter().map(|t| InputSpec::Either(*t)).collect();
         let impls = KernelImpl::elementwise::<B>();
         reg.add(def(
             name.clone(),
-            inputs,
+            array_specs,
             ValueType::Array(out),
             cost,
             impls,
@@ -591,6 +605,146 @@ impl<T: CastTo<U> + 'static, U> UnaryOp<T, U> for CastOp {
     }
 }
 
+/// Integer element types that `div_const` divides by a scalar. The divider holds the constants
+/// derived from the divisor once, so the per-row work is a multiply-high, shifts, and a sign
+/// fix instead of a hardware division.
+pub(crate) trait DivConst: Elem {
+    type Divider: Copy + 'static;
+
+    /// The divider for `d`, or `None` when `d` is zero.
+    fn divider(d: Self) -> Option<Self::Divider>;
+
+    /// Truncating division of `x` by the divisor of `div`. Wraps like `wrapping_div`.
+    fn divide(x: Self, div: Self::Divider) -> Self;
+}
+
+/// Defines the divider of the unsigned type `$u` and the `DivConst` impl of `$u`. `$w` is a
+/// type with twice the bits of `$u`.
+macro_rules! impl_div_const {
+    ($divider:ident, $u:ty, $w:ty) => {
+        /// Round-up multiply-high constants of Granlund and Montgomery for an unsigned divisor:
+        /// `t = mulhi(m, n)` and `q = (t + ((n - t) >> sh1)) >> sh2`.
+        #[derive(Clone, Copy)]
+        pub(crate) struct $divider {
+            m: $u,
+            sh1: u32,
+            sh2: u32,
+        }
+
+        impl $divider {
+            fn new(d: $u) -> Option<Self> {
+                if d == 0 {
+                    return None;
+                }
+                // `l` is ceil(log2(d)): `d - 1` has `BITS - l` leading zeros, so `l` is 0 for
+                // a divisor of 1.
+                let l = <$u>::BITS - (d - 1).leading_zeros();
+                let one = <$w>::from(1u8);
+                let wd = <$w>::from(d);
+                // `m = floor(2^BITS * (2^l - d) / d) + 1` is below `2^BITS` because
+                // `(2^l - d) / d < 1`, and the product fits in the wide type because
+                // `2^l - d < 2^BITS`.
+                let m = ((one << <$u>::BITS) * ((one << l) - wd)) / wd + one;
+                Some($divider {
+                    m: m as $u,
+                    sh1: l.min(1),
+                    sh2: l.saturating_sub(1),
+                })
+            }
+
+            #[inline(always)]
+            fn divide(self, n: $u) -> $u {
+                // The wide product's high half always fits in `$u`.
+                let t = ((<$w>::from(self.m) * <$w>::from(n)) >> <$u>::BITS) as $u;
+                // `t <= n`, so the subtraction never wraps.
+                (t + ((n - t) >> self.sh1)) >> self.sh2
+            }
+        }
+
+        impl DivConst for $u {
+            type Divider = $divider;
+
+            #[inline(always)]
+            fn divider(d: $u) -> Option<$divider> {
+                $divider::new(d)
+            }
+
+            #[inline(always)]
+            fn divide(x: $u, div: $divider) -> $u {
+                div.divide(x)
+            }
+        }
+    };
+}
+
+/// The `DivConst` impl of the signed type `$s` over the divider of its unsigned twin `$u`.
+macro_rules! impl_div_const_signed {
+    ($divider:ident, $u:ty, $s:ty) => {
+        impl DivConst for $s {
+            /// The unsigned divider of `|d|` and the sign of `d` as an all-ones or zero mask.
+            type Divider = ($divider, $u);
+
+            #[inline(always)]
+            fn divider(d: $s) -> Option<($divider, $u)> {
+                let neg = (d >> (<$s>::BITS - 1)).cast_unsigned();
+                $divider::new(d.unsigned_abs()).map(|div| (div, neg))
+            }
+
+            /// Divides the magnitudes and negates the quotient when the signs differ. The
+            /// magnitude of `MIN` is `2^(BITS - 1)`, so `MIN / -1` produces `2^(BITS - 1)`,
+            /// which reads back as `MIN`.
+            #[inline(always)]
+            fn divide(x: $s, (div, dneg): ($divider, $u)) -> $s {
+                let xneg = (x >> (<$s>::BITS - 1)).cast_unsigned();
+                let q = div.divide(x.unsigned_abs());
+                let mask = xneg ^ dneg;
+                ((q ^ mask).wrapping_sub(mask)).cast_signed()
+            }
+        }
+    };
+}
+
+impl_div_const!(Divider64, u64, u128);
+impl_div_const!(Divider32, u32, u64);
+impl_div_const!(Divider8, u8, u32);
+impl_div_const_signed!(Divider64, u64, i64);
+impl_div_const_signed!(Divider32, u32, i32);
+
+/// The body of `div_const`: rows of `T` divided by the scalar second operand. The divider is
+/// built once per call, so a tiled executor builds it once per tile.
+pub(crate) struct DivConstBody<T>(PhantomData<fn() -> T>);
+
+impl<T: DivConst> ElementwiseBody for DivConstBody<T> {
+    #[inline(always)]
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+        let [a, d] = args else {
+            return Err(arity_error(2, args.len()));
+        };
+        let d = splat_arg::<T>(d, T::TYPE)?;
+        let Some(div) = T::divider(d) else {
+            return Err("div_const: division by zero".to_string());
+        };
+        unary_into(operand::<T>(a, T::TYPE)?, out_rows::<T>(out)?, |x| {
+            T::divide(x, div)
+        });
+        Ok(())
+    }
+}
+
+/// `div_const` on `T`. The divisor is a scalar operand, only the dividend broadcasts.
+fn register_div_const<T: DivConst>(reg: &mut Registry) {
+    let t = T::TYPE;
+    add_entry_with::<DivConstBody<T>>(
+        reg,
+        Op::DivConst,
+        format!("div_const_{}", t.name()),
+        &[t, t],
+        vec![InputSpec::Either(t), InputSpec::Scalar(t)],
+        t,
+        false,
+    );
+}
+
 // The kernel bodies are types, so element types and operations are type arguments, and every
 // ISA variant instantiates the same body as the scalar entry.
 
@@ -729,6 +883,10 @@ pub(crate) fn register(reg: &mut Registry) {
     register_signed::<f64>(reg);
     register_float::<f32>(reg);
     register_float::<f64>(reg);
+    register_div_const::<i64>(reg);
+    register_div_const::<u64>(reg);
+    register_div_const::<i32>(reg);
+    register_div_const::<u8>(reg);
     register_any::<i8, false>(reg);
     register_any::<i16, false>(reg);
     register_any::<i32, false>(reg);

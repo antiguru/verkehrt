@@ -328,3 +328,19 @@ fn reduce_into_add_f64_has_no_kernel() {
         "no kernel for 'reduce_into' on i64[], f64[], i64",
     );
 }
+
+#[test]
+fn div_const_rejects_an_array_divisor() {
+    type_err(
+        "let x = [1, 2]; let y = div_const(x, x);",
+        "no kernel for 'div_const' on i64[], i64[]",
+    );
+}
+
+#[test]
+fn argsort_f64_has_no_kernel() {
+    type_err(
+        "let x = [1.0]; let y = argsort(x);",
+        "no kernel for 'argsort' on f64[]",
+    );
+}

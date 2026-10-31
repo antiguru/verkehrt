@@ -96,6 +96,7 @@ pub fn op_name(op: Op) -> String {
         Op::Scan(r) => format!("scan_{}", format!("{r:?}").to_lowercase()),
         Op::ScanBy(r) => format!("scan_by_{}", format!("{r:?}").to_lowercase()),
         Op::ReduceInto(r) => format!("reduce_into_{}", format!("{r:?}").to_lowercase()),
+        Op::DivConst => "div_const".into(),
         Op::Cast(t) => format!("cast_{}", t.name()),
         Op::Load(t) => format!("load_{}", t.name()),
         other => format!("{other:?}").to_lowercase(),

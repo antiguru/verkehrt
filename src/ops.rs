@@ -60,6 +60,11 @@ pub enum Op {
     Slice,
     /// The number of occurrences of each key in `0..n`, with the `i64` scalar operand `n`.
     Histogram,
+    /// Truncating division of the first operand by the scalar second operand, which is never
+    /// zero. It wraps, so `MIN / -1` is `MIN`.
+    DivConst,
+    /// The positions of the rows of the operand in stable ascending order, as `i64`.
+    ArgSort,
     /// The fold of the values per key in `0..n`, an empty bucket holding the identity of the
     /// fold. The operands are the keys, the values, and the `i64` scalar `n`.
     ReduceInto(ReduceOp),
