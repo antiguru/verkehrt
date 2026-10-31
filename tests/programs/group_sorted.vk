@@ -1,0 +1,8 @@
+let k = [1, 1, 2, 2, 2, 5];
+let v = [1, 2, 3, 4, 5, 6];
+let n = length(k);
+let s = or(k != prev(k, 0), iota(n) == 0);
+let e = or(k != gather(k, min(iota(n) + 1, n - 1)), iota(n) == (n - 1));
+print(compress(scan_by(v, s, add), e));
+print(reduce_into(scan(cast_i64(s), add) - 1, v, count(s), add));
+print(compress(k, s));
