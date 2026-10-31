@@ -32,7 +32,7 @@ enum Command {
 
 #[derive(Args)]
 struct Flags {
-    /// Instruction set to run kernels with (scalar, avx2, avx512, neon)
+    /// Instruction set to run kernels with (scalar, x86-64-v3, x86-64-v4, neon)
     #[arg(long, value_parser = parse_isa)]
     isa: Option<Isa>,
     /// How kernels are written: auto (compiler vectorized) or intrinsics (hand written, with

@@ -250,12 +250,12 @@ impl Variant {
     };
 
     /// Position in a `KernelDef::impls` table: scalar, then auto and intrinsics for each of
-    /// AVX2, AVX-512, and NEON.
+    /// `x86-64-v3`, `x86-64-v4`, and NEON.
     pub fn index(self) -> usize {
         let base = match self.isa {
             Isa::Scalar => return 0,
-            Isa::Avx2 => 1,
-            Isa::Avx512 => 3,
+            Isa::X86_64V3 => 1,
+            Isa::X86_64V4 => 3,
             Isa::Neon => 5,
         };
         base + match self.backend {
@@ -266,7 +266,7 @@ impl Variant {
 }
 
 impl std::fmt::Display for Variant {
-    /// `isa=scalar`, or `isa=avx2 backend=auto`.
+    /// `isa=scalar`, or `isa=x86-64-v3 backend=auto`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "isa={}", self.isa.name())?;
         if self.isa != Isa::Scalar {

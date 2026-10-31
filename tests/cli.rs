@@ -50,6 +50,18 @@ fn unknown_isa_is_usage_error() {
 }
 
 #[test]
+fn old_isa_names_are_rejected() {
+    for name in ["avx512", "avx2"] {
+        let a = verkehrt()
+            .args(["run", "--isa", name, "x.vk"])
+            .assert()
+            .failure();
+        let expected = format!("unknown instruction set '{name}'");
+        assert!(stderr_of(&a).contains(&expected), "{}", stderr_of(&a));
+    }
+}
+
+#[test]
 fn unknown_backend_is_usage_error() {
     verkehrt()
         .args(["run", "--backend", "bogus", "x.vk"])

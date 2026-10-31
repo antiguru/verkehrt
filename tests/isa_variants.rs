@@ -480,7 +480,7 @@ fn check_variant(reg: &Registry, variant: Variant) -> usize {
 /// Whether the ISA has auto entries. NEON does not: on aarch64 the auto backend is the
 /// baseline build, so the `neon/auto` slot is empty and resolves to scalar.
 fn has_auto_entries(isa: Isa) -> bool {
-    matches!(isa, Isa::Avx2 | Isa::Avx512)
+    matches!(isa, Isa::X86_64V3 | Isa::X86_64V4)
 }
 
 /// The ISAs under test that this CPU can run, printing a message for each skipped one.
@@ -590,7 +590,7 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             }
         }
         // AVX2 has no byte compress, so `u8` and bool fall back to auto there.
-        let bytes = if isa == Isa::Avx2 { auto } else { intrinsics };
+        let bytes = if isa == Isa::X86_64V3 { auto } else { intrinsics };
         let expected = selections
             .iter()
             .map(|n| (n.as_str(), intrinsics))

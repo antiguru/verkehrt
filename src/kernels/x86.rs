@@ -20,93 +20,93 @@ mod scan;
 mod auto {
     use crate::kernels::auto::auto_backend;
 
-    auto_backend!(avx2, "AVX2", "avx2");
-    auto_backend!(avx512, "AVX-512", "avx512f,avx512bw,avx512vl,avx512vbmi2");
+    auto_backend!(x86_64_v3, "x86-64-v3", "avx2");
+    auto_backend!(x86_64_v4, "x86-64-v4", "avx512f,avx512bw,avx512vl,avx512vbmi2");
 }
 
-const AVX2_AUTO: Variant = Variant {
-    isa: Isa::Avx2,
+const V3_AUTO: Variant = Variant {
+    isa: Isa::X86_64V3,
     backend: Backend::Auto,
 };
 
-const AVX512_AUTO: Variant = Variant {
-    isa: Isa::Avx512,
+const V4_AUTO: Variant = Variant {
+    isa: Isa::X86_64V4,
     backend: Backend::Auto,
 };
 
-const AVX2_INTRINSICS: Variant = Variant {
-    isa: Isa::Avx2,
+const V3_INTRINSICS: Variant = Variant {
+    isa: Isa::X86_64V3,
     backend: Backend::Intrinsics,
 };
 
-const AVX512_INTRINSICS: Variant = Variant {
-    isa: Isa::Avx512,
+const V4_INTRINSICS: Variant = Variant {
+    isa: Isa::X86_64V4,
     backend: Backend::Intrinsics,
 };
 
 /// Adds the AVX2 and AVX-512 auto entries of an elementwise body to its table.
 pub(crate) fn add_elementwise<B: ElementwiseBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Elementwise(auto::avx2::elementwise::<B>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Elementwise(auto::avx512::elementwise::<B>));
+    impls[V3_AUTO.index()] = Some(KernelImpl::Elementwise(auto::x86_64_v3::elementwise::<B>));
+    impls[V4_AUTO.index()] = Some(KernelImpl::Elementwise(auto::x86_64_v4::elementwise::<B>));
 }
 
 /// Adds the AVX2 and AVX-512 auto entries of a reduction body to its table.
 pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Reduction(auto::avx2::reducer::<R>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Reduction(auto::avx512::reducer::<R>));
+    impls[V3_AUTO.index()] = Some(KernelImpl::Reduction(auto::x86_64_v3::reducer::<R>));
+    impls[V4_AUTO.index()] = Some(KernelImpl::Reduction(auto::x86_64_v4::reducer::<R>));
 }
 
 /// Adds the AVX2 and AVX-512 auto entries of a selection body to its table.
 pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Selection(auto::avx2::selection::<S>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Selection(auto::avx512::selection::<S>));
+    impls[V3_AUTO.index()] = Some(KernelImpl::Selection(auto::x86_64_v3::selection::<S>));
+    impls[V4_AUTO.index()] = Some(KernelImpl::Selection(auto::x86_64_v4::selection::<S>));
 }
 
 /// Adds the AVX2 and AVX-512 auto entries of a scan body to its table.
 pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Scan(auto::avx2::scanner::<S>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Scan(auto::avx512::scanner::<S>));
+    impls[V3_AUTO.index()] = Some(KernelImpl::Scan(auto::x86_64_v3::scanner::<S>));
+    impls[V4_AUTO.index()] = Some(KernelImpl::Scan(auto::x86_64_v4::scanner::<S>));
 }
 
 /// Adds the AVX2 and AVX-512 auto entries of a whole body to its table.
 pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Whole(auto::avx2::whole::<W>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Whole(auto::avx512::whole::<W>));
+    impls[V3_AUTO.index()] = Some(KernelImpl::Whole(auto::x86_64_v3::whole::<W>));
+    impls[V4_AUTO.index()] = Some(KernelImpl::Whole(auto::x86_64_v4::whole::<W>));
 }
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic type
 /// is `tag::<T, BOOL>()`. AVX2 has none for `u8` and bool.
 pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
     let (avx2, avx512) = compress::compress_entries::<T, BOOL>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+    impls[V3_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
+    impls[V4_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
 }
 
 /// Adds the intrinsics entries of `where`.
 pub(crate) fn add_where(impls: &mut [Option<KernelImpl>]) {
     let (avx2, avx512) = compress::where_entries();
-    impls[AVX2_INTRINSICS.index()] = Some(KernelImpl::Selection(avx2));
-    impls[AVX512_INTRINSICS.index()] = Some(KernelImpl::Selection(avx512));
+    impls[V3_INTRINSICS.index()] = Some(KernelImpl::Selection(avx2));
+    impls[V4_INTRINSICS.index()] = Some(KernelImpl::Selection(avx512));
 }
 
 /// Adds the intrinsics entries of `filter_<cmp>` on rows of type `T`, for comparison number
 /// `C` of `CMPS`.
 pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl>]) {
     let (avx2, avx512) = compress::filter_entries::<T, C>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+    impls[V3_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
+    impls[V4_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
 }
 
 /// Adds the intrinsics entries of `gather` on rows of storage type `T`, whose semantic type is
 /// `tag::<T, BOOL>()`. Only 64-bit rows have them.
 pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
     let (avx2, avx512) = gather::gather_entries::<T, BOOL>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Whole);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Whole);
+    impls[V3_INTRINSICS.index()] = avx2.map(KernelImpl::Whole);
+    impls[V4_INTRINSICS.index()] = avx512.map(KernelImpl::Whole);
 }
 
 /// Adds the intrinsics entries of `scan_by_add` on rows of storage type `T`, whose sum keeps
 /// the element type. Only `i64` and `u64` have one, and only on AVX-512.
 pub(crate) fn add_scan_by_add<T: Elem>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX512_INTRINSICS.index()] = scan::scan_by_add_entry::<T>().map(KernelImpl::Scan);
+    impls[V4_INTRINSICS.index()] = scan::scan_by_add_entry::<T>().map(KernelImpl::Scan);
 }

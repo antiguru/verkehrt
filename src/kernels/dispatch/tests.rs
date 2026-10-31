@@ -169,7 +169,7 @@ fn resolve_falls_back_to_scalar() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64_s").unwrap();
     // A `_s` kernel has no ISA variants, so every request lands on scalar.
-    let dispatch = reg.resolve(Isa::Avx2, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::X86_64V3, Backend::Intrinsics);
     assert_eq!(dispatch.variant_used(id), Variant::SCALAR);
 }
 

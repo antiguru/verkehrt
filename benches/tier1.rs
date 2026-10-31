@@ -25,9 +25,9 @@ enum Native {
     /// Baseline target, comparable with the scalar kernels.
     Base,
     #[cfg(target_arch = "x86_64")]
-    Avx2,
+    X86_64V3,
     #[cfg(target_arch = "x86_64")]
-    Avx512,
+    X86_64V4,
 }
 
 impl Native {
@@ -35,9 +35,9 @@ impl Native {
         match self {
             Native::Base => "native-base",
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => "native-avx2",
+            Native::X86_64V3 => "native-x86-64-v3",
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => "native-avx512",
+            Native::X86_64V4 => "native-x86-64-v4",
         }
     }
 
@@ -45,9 +45,9 @@ impl Native {
         match self {
             Native::Base => true,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => Isa::Avx2.is_available(),
+            Native::X86_64V3 => Isa::X86_64V3.is_available(),
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => Isa::Avx512.is_available(),
+            Native::X86_64V4 => Isa::X86_64V4.is_available(),
         }
     }
 
@@ -56,9 +56,9 @@ impl Native {
         vec![
             Native::Base,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2,
+            Native::X86_64V3,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512,
+            Native::X86_64V4,
         ]
     }
 }
@@ -252,12 +252,12 @@ macro_rules! call_native {
             // `available` detected avx2. The arguments are ordinary safe references, so only
             // the CPU feature is required.
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => unsafe { $m::avx2($($arg),*) },
+            Native::X86_64V3 => unsafe { $m::avx2($($arg),*) },
             // SAFETY: as above, `Native::check` returned the `Checked` because `available`
             // detected avx512f, avx512bw, avx512vl, and avx512vbmi2. The arguments are
             // ordinary safe references.
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => unsafe { $m::avx512($($arg),*) },
+            Native::X86_64V4 => unsafe { $m::avx512($($arg),*) },
         }
     }};
 }
@@ -285,7 +285,7 @@ fn interpreters() -> Vec<Interp> {
         .unwrap(),
         intrinsics: false,
     }];
-    for (isa, name) in [(Isa::Avx2, "avx2"), (Isa::Avx512, "avx512")] {
+    for (isa, name) in [(Isa::X86_64V3, "x86-64-v3"), (Isa::X86_64V4, "x86-64-v4")] {
         if !isa.is_available() {
             continue;
         }
@@ -824,7 +824,7 @@ fn tier2(c: &mut Criterion) {
     let all: Vec<&Interp> = all_interps.iter().collect();
     let scan_by: Vec<&Interp> = all_interps
         .iter()
-        .filter(|it| !it.intrinsics || it.label == "avx512-intrinsics")
+        .filter(|it| !it.intrinsics || it.label == "x86-64-v4-intrinsics")
         .collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<i64>()).unwrap();
@@ -1077,10 +1077,10 @@ fn crossover(_c: &mut Criterion) {
 /// with. On x86-64 that is the best of AVX-512 and AVX2 with the `auto` backend.
 #[cfg(target_arch = "x86_64")]
 fn crossover_target() -> (Isa, Backend, Checked) {
-    let (best, nat) = if Isa::Avx512.is_available() {
-        (Isa::Avx512, Native::Avx512)
+    let (best, nat) = if Isa::X86_64V4.is_available() {
+        (Isa::X86_64V4, Native::X86_64V4)
     } else {
-        (Isa::Avx2, Native::Avx2)
+        (Isa::X86_64V3, Native::X86_64V3)
     };
     assert!(best.is_available(), "the benchmark needs avx2");
     let nat = nat.check().expect("the benchmark needs avx2");

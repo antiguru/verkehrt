@@ -123,7 +123,7 @@ fn stats_total_per_kernel() {
 
 // An ISA of another architecture is never available on the host.
 #[cfg(target_arch = "aarch64")]
-const FOREIGN_ISA: Isa = Isa::Avx2;
+const FOREIGN_ISA: Isa = Isa::X86_64V3;
 #[cfg(not(target_arch = "aarch64"))]
 const FOREIGN_ISA: Isa = Isa::Neon;
 

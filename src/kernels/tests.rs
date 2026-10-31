@@ -530,11 +530,11 @@ fn variant_index_and_display() {
     indexes.sort_unstable();
     assert_eq!(indexes, (0..Variant::COUNT).collect::<Vec<_>>());
     assert_eq!(Variant::SCALAR.to_string(), "isa=scalar");
-    let avx2 = Variant {
-        isa: Isa::Avx2,
+    let v3 = Variant {
+        isa: Isa::X86_64V3,
         backend: Backend::Auto,
     };
-    assert_eq!(avx2.to_string(), "isa=avx2 backend=auto");
+    assert_eq!(v3.to_string(), "isa=x86-64-v3 backend=auto");
     assert_eq!(Backend::default(), Backend::Intrinsics);
 }
 
@@ -556,6 +556,12 @@ fn add_rejects_entries_of_another_class() {
         pattern: None,
         impls: KernelImpl::Elementwise(entry).scalar_only(),
     });
+}
+
+#[test]
+fn new_isa_names_parse() {
+    assert_eq!(Isa::from_name("x86-64-v3"), Some(Isa::X86_64V3));
+    assert_eq!(Isa::from_name("x86-64-v4"), Some(Isa::X86_64V4));
 }
 
 #[test]
@@ -1020,7 +1026,7 @@ fn selections_with_a_dense_prefix_and_an_empty_suffix() {
     let mask: Vec<bool> = (0..n).map(|i| i < prefix).collect();
     let idx: Vec<i64> = (0..prefix).map(|i| i64::try_from(i).unwrap()).collect();
     let mut checked = 0;
-    for isa in [Isa::Scalar, Isa::Avx2, Isa::Avx512] {
+    for isa in [Isa::Scalar, Isa::X86_64V3, Isa::X86_64V4] {
         if !isa.is_available() {
             continue;
         }
@@ -1116,8 +1122,8 @@ fn whole_tables_have_scalar_and_auto_entries() {
         backend: Backend::Auto,
     };
     let x86 = cfg!(target_arch = "x86_64");
-    assert_eq!(impls[auto(Isa::Avx2).index()].is_some(), x86);
-    assert_eq!(impls[auto(Isa::Avx512).index()].is_some(), x86);
+    assert_eq!(impls[auto(Isa::X86_64V3).index()].is_some(), x86);
+    assert_eq!(impls[auto(Isa::X86_64V4).index()].is_some(), x86);
     let isa = Isa::detect();
     if let Some(KernelImpl::Whole(f)) = impls[auto(isa).index()] {
         let args = [i64_s(5)];

@@ -82,17 +82,17 @@ pub enum Op {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Isa {
     Scalar,
-    Avx2,
-    Avx512,
+    X86_64V3,
+    X86_64V4,
     Neon,
 }
 
 impl Isa {
-    pub const ALL: [Isa; 4] = [Isa::Scalar, Isa::Avx2, Isa::Avx512, Isa::Neon];
+    pub const ALL: [Isa; 4] = [Isa::Scalar, Isa::X86_64V3, Isa::X86_64V4, Isa::Neon];
 
     /// The best instruction set this CPU supports.
     pub fn detect() -> Isa {
-        [Isa::Avx512, Isa::Avx2, Isa::Neon]
+        [Isa::X86_64V4, Isa::X86_64V3, Isa::Neon]
             .into_iter()
             .find(|isa| isa.is_available())
             .unwrap_or(Isa::Scalar)
@@ -103,9 +103,9 @@ impl Isa {
         match self {
             Isa::Scalar => true,
             #[cfg(target_arch = "x86_64")]
-            Isa::Avx2 => std::arch::is_x86_feature_detected!("avx2"),
+            Isa::X86_64V3 => std::arch::is_x86_feature_detected!("avx2"),
             #[cfg(target_arch = "x86_64")]
-            Isa::Avx512 => {
+            Isa::X86_64V4 => {
                 std::arch::is_x86_feature_detected!("avx512f")
                     && std::arch::is_x86_feature_detected!("avx512bw")
                     && std::arch::is_x86_feature_detected!("avx512vl")
@@ -126,8 +126,8 @@ impl Isa {
     pub fn name(self) -> &'static str {
         match self {
             Isa::Scalar => "scalar",
-            Isa::Avx2 => "avx2",
-            Isa::Avx512 => "avx512",
+            Isa::X86_64V3 => "x86-64-v3",
+            Isa::X86_64V4 => "x86-64-v4",
             Isa::Neon => "neon",
         }
     }

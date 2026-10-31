@@ -12,7 +12,7 @@ use crate::value::Elem;
 /// A row type that AVX-512 selects `LANES` rows at a time.
 ///
 /// The methods are `unsafe` because they read and write through raw pointers and need the
-/// CPU features of `Isa::Avx512`. Each states the memory its pointers must cover.
+/// CPU features of `Isa::X86_64V4`. Each states the memory its pointers must cover.
 pub(super) trait Lanes: Elem {
     const LANES: usize;
     /// A vector of `LANES` rows.
@@ -40,7 +40,7 @@ pub(super) trait Compare: Lanes + PartialOrd {
 }
 
 // SAFETY (all `Lanes` and `Compare` methods below): each method is compiled for, and needs,
-// the AVX-512 features of `Isa::Avx512`, which its callers in this file have because they
+// the AVX-512 features of `Isa::X86_64V4`, which its callers in this file have because they
 // are compiled for the same features. Pointer requirements are the trait's, and the unsafe
 // blocks rely on exactly those.
 macro_rules! lanes_64 {
@@ -49,7 +49,7 @@ macro_rules! lanes_64 {
             const LANES: usize = 8;
             type Vector = __m512i;
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -60,7 +60,7 @@ macro_rules! lanes_64 {
                 u64::from(_mm_test_epi8_mask(v, v))
             }
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -70,7 +70,7 @@ macro_rules! lanes_64 {
                 unsafe { _mm512_loadu_si512(src.cast()) }
             }
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -94,7 +94,7 @@ macro_rules! lanes_32 {
             const LANES: usize = 16;
             type Vector = __m512i;
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -105,7 +105,7 @@ macro_rules! lanes_32 {
                 u64::from(_mm_test_epi8_mask(v, v))
             }
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -115,7 +115,7 @@ macro_rules! lanes_32 {
                 unsafe { _mm512_loadu_si512(src.cast()) }
             }
 
-            // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+            // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
             // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
             #[inline]
             #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -143,7 +143,7 @@ impl Lanes for u8 {
     const LANES: usize = 64;
     type Vector = __m512i;
 
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Lanes::keep` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -154,7 +154,7 @@ impl Lanes for u8 {
         _mm512_test_epi8_mask(v, v)
     }
 
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Lanes::load` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -164,7 +164,7 @@ impl Lanes for u8 {
         unsafe { _mm512_loadu_si512(src.cast()) }
     }
 
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Lanes::compress` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -180,7 +180,7 @@ impl Lanes for u8 {
 }
 
 impl Compare for f64 {
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -201,7 +201,7 @@ impl Compare for f64 {
 }
 
 impl Compare for f32 {
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -221,7 +221,7 @@ impl Compare for f32 {
 }
 
 impl Compare for i64 {
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -241,7 +241,7 @@ impl Compare for i64 {
 }
 
 impl Compare for u64 {
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
@@ -261,7 +261,7 @@ impl Compare for u64 {
 }
 
 impl Compare for i32 {
-    // SAFETY: the caller guarantees the features of `Isa::Avx512` and the pointer
+    // SAFETY: the caller guarantees the features of `Isa::X86_64V4` and the pointer
     // ranges that `Compare::compare` states. Nothing assumes more than element alignment.
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
