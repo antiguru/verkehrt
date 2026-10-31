@@ -116,7 +116,7 @@ Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10
 On the tier 2 workloads, all seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
 ClickBench q42 first measured 21.59 ms because of a program bug, an unshifted bucket key, and subtracting the key's minimum took it to 2.60 ms.
 Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop on AVX2, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
-The bucket loops of `histogram` and `reduce_into`, 64-bit `div_const`, integer `scan`, and `argsort` stay scalar loops on x86, and the measurement document records why for each.
+On x86, the bucket loops of `histogram` and `reduce_into`, the multiply-high of 64-bit `div_const` (the rest of its loop is vectorized), `scan` on integers and on float `min` and `max`, `scan_by` on AVX2 (and every fold but `add` on both ISAs), `argsort`, `gather` on 32-bit, `u8`, and bool rows, and the `i64` to `f64`, `f64` to `i64`, and `f64` to `u64` casts stay scalar loops, and the measurement document records the evidence for each.
 Benching the tier 2 kernels found that the `auto` entries of whole kernels called the scalar build of their bodies, which was fixed, and no test guards against it recurring.
 These are single runs on the same host with other work running and load averages between 1.6 and 18, and the aarch64 numbers are pending.
 Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.md) for the tables, the data, the strain cases, and the known limit that empty inputs give 0 or an error where SQL gives NULL.
@@ -125,7 +125,7 @@ Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.
 
 Tier 2 adds scans (`scan`, `scan_by`, `prev`), `gather`, grouping (`histogram`, `reduce_into`), `div_const`, `slice`, and `argsort`, plus bitwise `and`, `or`, `xor`, and `not` on the integer types and `u64` kernels throughout.
 Group-by on a few distinct keys is `histogram` or `reduce_into` over a key column, and group-by on sorted keys is `scan_by` over run starts found with `prev`.
-Float `add` and `mul` in `scan`, `scan_by`, and `reduce_into`, float `argsort`, `reverse`, `rotate`, and packed bitmasks are not available yet, and the base spec lists them under "Surface gaps".
+Float `add` and `mul` in `scan`, `scan_by`, and `reduce_into`, float and `bool` `argsort`, `reverse`, `rotate`, and packed bitmasks are not available yet, and the base spec lists them under "Surface gaps".
 Seven queries from corgi's ClickBench and TPC-H suites run as Verkehrt programs in `tests/acceptance/`, and the test suite checks their output against DuckDB's answers when the data is prepared (`scripts/prepare-acceptance.sh`).
 The data is not in the repository.
 

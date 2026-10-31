@@ -171,6 +171,7 @@ The base spec's catalog lists the open gaps, so the surface's holes are visible 
 * **Float `add` and `mul` in `reduce_into`.** A candidate canonical order extends the 16-accumulator reduction order: row `i` goes to stripe `i mod 16` below `b = n - (n mod 16)` and to stripe 0 from `b` on, each stripe accumulates its bucket's values in index order, and the 16 stripes combine pairwise as in the reduction. With every key equal, this gives exactly the bits of `sum`. The same 16 replicated sub-histograms are a standard way to avoid scatter conflicts, so the order may cost little beyond the memory for 16 copies of the buckets.
 * **Float `add` and `mul` in `scan` and `scan_by`.** A candidate canonical order defines `out[i]` as the reduction order applied to the prefix `x[0..=i]`, so `out[n - 1]` equals `sum(x)`. A kernel can compute it by keeping the 16 stripe accumulators and combining them for each output row, which costs a pairwise tree per row and needs measurement against a sequential scan.
 * **Float element types in `argsort`.** These need a total order that says where NaN and the two zeros sort, which tier 3 decides along with `sort`.
+* **The `bool` element type in `argsort`.** `false` sorts before `true`, so a total order is already defined, and plan 4 leaves the type out for scope.
 * **`reverse`, `rotate`, and packed bitmasks** from the tier 2 catalog.
 
 ## Success for plan 4
