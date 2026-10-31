@@ -443,28 +443,33 @@ impl Registry {
     /// unless `op` has a kernel with a `Scalar` input. The kernel is then looked up on the
     /// broadcast types. On failure, returns the operand types that the error reports.
     pub fn lookup_lifted(&self, op: Op, args: &[ValueType]) -> Result<Lifted, Vec<ValueType>> {
-        let none = || vec![false; args.len()];
-        let bcast: Vec<bool> = if !args.iter().any(|t| matches!(t, ValueType::Array(_))) {
-            none()
-        } else {
-            match self.lookup(op, args) {
-                Some(id) => self
-                    .get(id)
-                    .inputs
-                    .iter()
-                    .zip(args)
-                    .map(|(spec, t)| {
-                        matches!(spec, InputSpec::Either(_)) && matches!(t, ValueType::Scalar(_))
-                    })
-                    .collect(),
-                // Broadcasting would hide the operand types the user wrote, so the error
-                // reports them as given.
-                None if self.has_scalar_input(op) => none(),
-                None => args
-                    .iter()
-                    .map(|t| matches!(t, ValueType::Scalar(_)))
-                    .collect(),
-            }
+        if !args.iter().any(|t| matches!(t, ValueType::Array(_))) {
+            return match self.lookup(op, args) {
+                Some(kernel) => Ok(Lifted {
+                    kernel,
+                    bcast: vec![false; args.len()],
+                }),
+                None => Err(args.to_vec()),
+            };
+        }
+        let bcast: Vec<bool> = match self.lookup(op, args) {
+            Some(id) => self
+                .get(id)
+                .inputs
+                .iter()
+                .zip(args)
+                .map(|(spec, t)| {
+                    matches!(spec, InputSpec::Either(_)) && matches!(t, ValueType::Scalar(_))
+                })
+                .collect(),
+            // Broadcasting would hide the operand types the user wrote, so the error
+            // reports them as given. `lookup` on `args` already failed, so no second
+            // lookup is needed.
+            None if self.has_scalar_input(op) => return Err(args.to_vec()),
+            None => args
+                .iter()
+                .map(|t| matches!(t, ValueType::Scalar(_)))
+                .collect(),
         };
         let tys: Vec<ValueType> = args
             .iter()

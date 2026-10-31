@@ -101,6 +101,105 @@ fn lookup_resolves_array_and_scalar_kernels() {
     assert_eq!(name(Op::Cast(F64), &[arr_ty(I8)]), None);
 }
 
+/// The selection rule `lookup_lifted` replaced, which looked the kernel up a second time
+/// when no operand is an array.
+fn lookup_lifted_reference(
+    reg: &Registry,
+    op: Op,
+    args: &[ValueType],
+) -> Result<Lifted, Vec<ValueType>> {
+    let none = || vec![false; args.len()];
+    let bcast: Vec<bool> = if !args.iter().any(|t| matches!(t, ValueType::Array(_))) {
+        none()
+    } else {
+        match reg.lookup(op, args) {
+            Some(id) => reg
+                .get(id)
+                .inputs
+                .iter()
+                .zip(args)
+                .map(|(spec, t)| {
+                    matches!(spec, InputSpec::Either(_)) && matches!(t, ValueType::Scalar(_))
+                })
+                .collect(),
+            None if reg.has_scalar_input(op) => none(),
+            None => args
+                .iter()
+                .map(|t| matches!(t, ValueType::Scalar(_)))
+                .collect(),
+        }
+    };
+    let tys: Vec<ValueType> = args
+        .iter()
+        .zip(&bcast)
+        .map(|(t, b)| match (t, b) {
+            (ValueType::Scalar(s), true) => ValueType::Array(*s),
+            _ => *t,
+        })
+        .collect();
+    match reg.lookup(op, &tys) {
+        Some(kernel) => Ok(Lifted { kernel, bcast }),
+        None => Err(tys),
+    }
+}
+
+#[test]
+fn lookup_lifted_matches_the_reference_selection() {
+    use ScalarType::*;
+    let reg = Registry::new();
+    let types = [
+        sc_ty(F64),
+        sc_ty(I64),
+        sc_ty(Bool),
+        arr_ty(F64),
+        arr_ty(I64),
+        arr_ty(Bool),
+    ];
+    let ops = [
+        Op::Add,
+        Op::Div,
+        Op::Gt,
+        Op::Neg,
+        Op::Not,
+        Op::Cast(F64),
+        Op::Fill,
+        Op::Iota,
+        Op::Compress,
+        Op::Gather,
+        Op::Reduce(crate::ops::ReduceOp::Add),
+        Op::Length,
+    ];
+    let mut checked = 0;
+    for op in ops {
+        for a in types {
+            assert_eq!(
+                reg.lookup_lifted(op, &[a]),
+                lookup_lifted_reference(&reg, op, &[a]),
+                "{op:?} {a:?}"
+            );
+            for b in types {
+                assert_eq!(
+                    reg.lookup_lifted(op, &[a, b]),
+                    lookup_lifted_reference(&reg, op, &[a, b]),
+                    "{op:?} {a:?} {b:?}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0);
+    // Spot checks on the three paths: all scalar, a broadcast scalar, a scalar that stays.
+    let all_scalar = reg
+        .lookup_lifted(Op::Add, &[sc_ty(F64), sc_ty(F64)])
+        .unwrap();
+    assert_eq!(all_scalar.bcast, [false, false]);
+    let mixed = reg
+        .lookup_lifted(Op::Add, &[arr_ty(F64), sc_ty(F64)])
+        .unwrap();
+    assert_eq!(mixed.bcast, [false, true]);
+    assert!(reg.lookup_lifted(Op::Iota, &[arr_ty(I64)]).is_err());
+}
+
 #[test]
 fn lookup_is_exact_for_non_elementwise_kernels() {
     use ScalarType::*;
