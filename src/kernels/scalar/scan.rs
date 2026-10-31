@@ -121,8 +121,8 @@ impl_extremes!(
 /// Wrapping sum in the widened type `W`, as `IntSum` in the reductions.
 pub struct ScanSum<W>(PhantomData<fn() -> W>);
 
-/// Wrapping product in the widened type `W`.
-pub struct ScanProduct<W>(PhantomData<fn() -> W>);
+/// Wrapping product in the element type, as `reduce(x, mul)`.
+pub struct ScanProduct;
 
 /// `min` (`MAX` false) or `max` (`MAX` true), with the IEEE semantics of `reduce_min` and
 /// `reduce_max` on floats.
@@ -158,24 +158,24 @@ impl<T: Elem + Into<W>, W: Num> ScanOp<T> for ScanSum<W> {
     }
 }
 
-impl<T: Elem + Into<W>, W: Num + From<u8>> ScanOp<T> for ScanProduct<W> {
-    type Out = W;
+impl<T: Num + From<u8>> ScanOp<T> for ScanProduct {
+    type Out = T;
     const IN_TYPE: ScalarType = T::TYPE;
-    const OUT_TYPE: ScalarType = W::TYPE;
+    const OUT_TYPE: ScalarType = T::TYPE;
 
     #[inline(always)]
-    fn lift(x: T) -> W {
-        x.into()
+    fn lift(x: T) -> T {
+        x
     }
 
     #[inline(always)]
-    fn step(acc: W, x: T) -> W {
-        Num::mul(acc, x.into())
+    fn step(acc: T, x: T) -> T {
+        Num::mul(acc, x)
     }
 
     #[inline(always)]
-    fn identity() -> W {
-        W::from(1)
+    fn identity() -> T {
+        T::from(1)
     }
 }
 
@@ -311,8 +311,8 @@ impl<T: Elem, O: ScanOp<T>, const BY: bool> ScanBody for Scan<T, O, BY> {
     }
 }
 
-/// Registers `scan_<op>_<t>`, `scan_by_<op>_<t>`, and `reduce_into_<op>_<t>` for the fold `O` over rows of storage
-/// type `T`.
+/// Registers `scan_<op>_<t>`, `scan_by_<op>_<t>`, and `reduce_into_<op>_<t>` for the fold `O`
+/// over rows of storage type `T`.
 fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
     let op = format!("{r:?}").to_lowercase();
     let n = O::IN_TYPE.name();
@@ -362,7 +362,7 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
     });
 }
 
-/// The scans of an integer type `T` whose sums and products widen to `W`.
+/// The scans of an integer type `T` whose sums widen to `W`, as `reduce(x, add)`.
 fn register_int<
     T: Extremes
         + Into<W>
@@ -376,7 +376,7 @@ fn register_int<
     reg: &mut Registry,
 ) {
     register_scan::<T, ScanSum<W>>(reg, ReduceOp::Add);
-    register_scan::<T, ScanProduct<W>>(reg, ReduceOp::Mul);
+    register_scan::<T, ScanProduct>(reg, ReduceOp::Mul);
     register_scan::<T, ScanExtreme<false>>(reg, ReduceOp::Min);
     register_scan::<T, ScanExtreme<true>>(reg, ReduceOp::Max);
     register_scan::<T, ScanAnd<false>>(reg, ReduceOp::And);

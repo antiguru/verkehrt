@@ -1331,6 +1331,21 @@ fn scan_bool_and_bitwise_kernels() {
 }
 
 #[test]
+fn scan_mul_keeps_the_element_type() {
+    let i32s_out = run_arr("scan_mul_i32", &[i32s(&[65536, 65536])]);
+    assert_eq!(i32s_out.elem(), ScalarType::I32);
+    assert_eq!(i32s_out.as_slice::<i32>(), &[65536, 0]);
+    let u8s_out = run_arr("scan_mul_u8", &[u8s(&[16, 16])]);
+    assert_eq!(u8s_out.elem(), ScalarType::U8);
+    assert_eq!(u8s_out.as_slice::<u8>(), &[16, 0]);
+    let by = run_arr(
+        "scan_by_mul_u8",
+        &[u8s(&[16, 16, 3]), bools(&[false, false, true])],
+    );
+    assert_eq!(by.as_slice::<u8>(), &[16, 0, 3]);
+}
+
+#[test]
 fn scan_last_equals_sum() {
     let reg = Registry::new();
     let xs: Vec<i64> = (0..500)
@@ -1452,6 +1467,16 @@ fn huge_bucket_count_is_an_error() {
     let reg = Registry::new();
     let hist = call(&reg, "histogram", &[i64v(&[0]), i64_s(1 << 62)]).unwrap_err();
     assert!(hist.contains("too large"), "{hist}");
+    // Under the `isize::MAX` byte cap but 8 PiB, so only the allocator can refuse it.
+    let big = call(&reg, "histogram", &[i64v(&[0]), i64_s(1 << 50)]).unwrap_err();
+    assert!(big.contains("cannot allocate"), "{big}");
+    let big_reduce = call(
+        &reg,
+        "reduce_into_add_i64",
+        &[i64v(&[0]), i64v(&[1]), i64_s(1 << 50)],
+    )
+    .unwrap_err();
+    assert!(big_reduce.contains("cannot allocate"), "{big_reduce}");
     let reduced = call(
         &reg,
         "reduce_into_add_i64",
@@ -1468,7 +1493,7 @@ fn reduce_into_sums_per_bucket() {
         &[i64v(&[1, 0, 1]), i64v(&[5, 7, 9]), i64_s(3)],
     );
     assert_eq!(sums.as_slice::<i64>(), &[7, 14, 0]);
-    // Narrow values widen as in `reduce` and `scan`.
+    // Only `add` widens narrow values, as in `reduce` and `scan`.
     let wide = run_arr(
         "reduce_into_add_i32",
         &[i64v(&[0, 0]), i32s(&[i32::MAX, 1]), i64_s(1)],
@@ -1503,7 +1528,8 @@ fn reduce_into_empty_buckets_hold_identity() {
     let min_u64 = one("reduce_into_min_u64", u64s(&[4]), 2);
     assert_eq!(min_u64.as_slice::<u64>(), &[u64::MAX, 4]);
     let mul_i32 = one("reduce_into_mul_i32", i32s(&[4]), 2);
-    assert_eq!(mul_i32.as_slice::<i64>(), &[1, 4]);
+    assert_eq!(mul_i32.elem(), ScalarType::I32);
+    assert_eq!(mul_i32.as_slice::<i32>(), &[1, 4]);
     let and_u8 = one("reduce_into_and_u8", u8s(&[4]), 2);
     assert_eq!(and_u8.as_slice::<u8>(), &[u8::MAX, 4]);
     let or_i32 = one("reduce_into_or_i32", i32s(&[4]), 2);
@@ -1552,12 +1578,6 @@ fn reduce_into_with_one_key_matches_reduce() {
         let want = scalar(call(&reg, &format!("reduce_{suffix}"), &[vals]));
         assert_eq!(got.elem(), out, "{}", def.name);
         assert_eq!(got.len(), 1, "{}", def.name);
-        // `reduce` keeps `mul` in the narrow type, `reduce_into` widens it as `scan` does.
-        let want = match (want, out) {
-            (Scalar::I32(v), ScalarType::I64) => Scalar::I64(v.into()),
-            (Scalar::U8(v), ScalarType::U64) => Scalar::U64(v.into()),
-            (want, _) => want,
-        };
         assert_eq!(got.get(0), want, "{}", def.name);
         checked += 1;
     }
