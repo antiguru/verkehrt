@@ -5,7 +5,8 @@
 //! `verkehrt run --isa` takes it. The columns load as the acceptance bench loads them and are
 //! bound as interpreter globals, so `Interpreter::run` collects the statistics that
 //! `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
-//! with the least total kernel time prints, so the numbers come from a warm run.
+//! with the least total kernel time prints. The times still differ from the criterion
+//! time of the same query, most for the short ones.
 
 use std::io::sink;
 use std::path::Path;
