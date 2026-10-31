@@ -1,0 +1,172 @@
+# Tier 2 kernel and acceptance results (x86)
+
+Extract of the measurement results behind docs/measurements/2026-10-31-tier2.md. All numbers come from the x86 host on 2026-10-31 at commit 428afc9 unless a section names another commit. The commits 0cbd06d and 1132325, which an earlier amend step replaced, ran the same kernels. `git diff 1132325 428afc9` changes one comment and the visibility of one constant in src/kernels/scalar/index.rs, and `git diff 0cbd06d 1132325` changes only src/kernels/tests.rs. Fix round 1 added 11405a6 (AVX-512 `scan_by_add` intrinsics), which changes only `scan_by_add_i64` and `scan_by_add_u64`. No acceptance query uses `scan_by`, so the acceptance numbers stand. The raw logs and the disassembly listings are not part of the repository.
+
+## Host and method
+
+* AMD Ryzen AI MAX+ 395 (Zen 5), AVX2 and AVX-512 F/BW/VL/VBMI2. Boost off, powersave, 3.0 GHz under load (user-reported). Other work shared the host, so each run records its load average.
+* Criterion, sample size 10, 0.5 s warm-up, 3 s measurement. Tables give the criterion mean.
+* Throughput is input bytes read: 8 bytes per row per array input, 1 byte per bool row. GB/s uses the best auto mean.
+* Reference streaming kernel: `tier2/add-i64` best auto (avx2-auto) 9.174 ms for 160 MB, **17.44 GB/s**. Native `add` takes 7.08 ms. The gap between the two is interpreter overhead, mostly the zeroed output buffer (`Array::try_zeroed` writes the 80 MB before the kernel writes it again).
+
+## Runs
+
+| Run | Start | End | Load at start | Load at end | Notes |
+|---|---|---|---|---|---|
+| run1 tier2 main | 13:59:10 | 14:04:10 | 13.69 | 8.38 | Commit 9bb5e11, before the inline fix |
+| run1 tier2 others | 14:04:36 | 14:06:27 | 8.94 | 5.63 | Commit 9bb5e11 |
+| run1 acceptance | 14:06:33 | 14:11:09 | 5.26 | 3.67 | Commit 9bb5e11 |
+| run1 corgi | 14:11:20 | 14:11:32 | 3.57 | 4.14 | corgi rev 2751e04 |
+| run2 tier2 | 14:16:16 | 14:19:28 | 3.02 | 4.38 | Commit 2ffb751, after the inline fix |
+| run3 gather | 14:32:53 | 14:36:13 | 4.49 | 5.03 | Gather intrinsics, uncommitted, same kernels as 428afc9 |
+| final tier2 main | 14:36:30 | 14:39:35 | 4.09 | 4.53 | Commit 0cbd06d (same kernels as 428afc9) |
+| final others (argsort only used) | 14:39:39 | 14:41:33 | 4.25 | 10.36 | Load spike, all groups except argsort rerun below |
+| final others rerun | 14:43:11 | 14:44:35 | 4.47 | 4.52 | |
+| final acceptance (discarded) | 14:44:40 | 14:49:48 | 7.12 | 17.73 | Load spike, q42 and tpch q01 2x to 3x slow |
+| final corgi (discarded) | 14:49:48 | 14:49:52 | 17.73 | 18.07 | Same spike |
+| final acceptance | 15:07:41 | 15:10:20 | 4.71 | 3.90 | Commit 1132325 (same kernels as 428afc9) |
+| final corgi | 15:10:20 | 15:10:24 | 3.90 | 3.74 | corgi rev 2751e04 |
+| prototypes | 14:20:48 | 14:23:30 | 1.98 | 3.97 | Standalone crate, best-of timing |
+| fix 1 scan_by prototype | 15:22:33 | 15:23:10 | 7.01 | n/a | Standalone, best-of |
+| fix 1 scan and scan_by | 15:37:35 | 15:40:46 | 9.05 | 6.77 | scan_by intrinsics, same code as 11405a6. High load, ratios within the run only |
+
+## Finding: whole kernels' auto entries were the scalar entry
+
+At commit 9bb5e11 every `auto` entry of a whole kernel (`gather_<t>`, `histogram`, `reduce_into_<op>_<t>`, `argsort_<t>`) was a 14-byte stub: `push rbx; call <Body as WholeBody>::run; pop; ret`. The callee is the baseline build of the body, so these entries ran the scalar code on every ISA. Run1's auto over scalar ratios near 1.0 for these kernels show that, not a failure of the body to vectorize. Commit 2ffb751 ("Inline the whole kernel bodies into their auto entries") marks the four `run` impls, `checked_keys`, `bucket`, `rows_of`, `Array::try_build`, and `Array::build_bytes` `#[inline(always)]`. After it, the entries are 1.5 to 2.2 KB and contain the ISA's vector code (see the assembly column). `argsort` still calls the out-of-line `ipnsort` from `sort_unstable_by_key`, so its sort stays the baseline build. Only the index initialization loop is compiled for the ISA.
+
+## Per-kernel results at 10M rows
+
+Final runs. Ratios below 1.0 mean faster than the denominator.
+
+| Kernel | Scalar ms | avx2-auto ms | avx512-auto ms | Best auto / scalar | GB/s | / add_i64 | Best native ms | Best auto / native | Intrinsics ms | Intr / scalar | Intr / native |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| add_i64 (reference) | 10.05 | 9.17 | 9.21 | 0.91 | 17.44 | 1.00 | 7.08 | 1.30 | - | - | - |
+| scan_add_i64 | 7.37 | 7.45 | 7.64 | 1.01 | 10.74 | 0.62 | 6.69 | 1.11 | - | - | - |
+| scan_by_add_i64 | 10.80 | 10.78 | 11.43 | 1.00 | 8.35 | 0.48 | - | - | 8.38 (avx512, fix 1 run) | 0.81 (fix 1 run, scalar 10.34) | - |
+| prev_i64 | 6.65 | 5.93 | 5.92 | 0.89 | 13.51 | 0.77 | - | - | - | - | - |
+| gather_i64 | 49.02 | 48.69 | 49.01 | 0.99 | 3.29 | 0.19 | 39.09 | 1.25 | 39.34 (avx2), 40.57 (avx512) | 0.80 | 1.01 |
+| histogram | 8.49 | 7.19 | 6.73 | 0.79 | 11.89 | 0.68 | 3.90 | 1.72 | - | - | - |
+| reduce_into_add_i64 | 10.51 | 9.09 | 8.96 | 0.85 | 17.85 | 1.02 | 4.62 | 1.94 | - | - | - |
+| div_const_i64 (divisor 60) | 13.51 | 9.05 | 8.78 | 0.65 | 9.11 | 0.52 | 10.29 | 0.85 | - | - | - |
+| div_const_u64 (divisor 60) | 8.89 | 9.44 | 9.79 | 1.06 | 8.48 | 0.49 | - | - | - | - | - |
+| and_i64 | 9.67 | 9.25 | 9.41 | 0.96 | 17.29 | 0.99 | - | - | - | - | - |
+| xor_i64 | 9.45 | 9.40 | 9.12 | 0.97 | 17.54 | 1.01 | - | - | - | - | - |
+| not_i64 | 8.12 | 6.89 | 7.08 | 0.85 | 11.61 | 0.67 | - | - | - | - | - |
+| argsort_i64 | 793.43 | 786.05 | 790.34 | 0.99 | 0.10 | 0.01 | - | - | - | - | - |
+
+Data: splitmix64 values. `x`, `y` full-range i64, histogram and reduce_into keys uniform in `0..1024`, gather indices uniform in `0..10M`, scan_by starts true with probability 1/16. `or_i64` was not benched, its body is the same `Binary` shape as `and` and `xor`.
+
+Before the inline fix (run1, same data): histogram scalar 8.41, avx2-auto 8.45, avx512-auto 8.39 ms; reduce_into scalar 8.90, auto 8.89 and 9.30 ms; gather scalar 48.34, auto 47.85 and 47.98 ms; argsort 752.7, 746.7, 744.0 ms.
+
+## Assembly verdicts
+
+From `objdump -d` of the tier1 bench binary, auto entries `verkehrt::kernels::x86::auto::{avx2,avx512}::{whole,elementwise,scan_update}::<Body>` and the intrinsics entries `verkehrt::kernels::x86::gather::{avx2,avx512}::<T>`.
+
+| Kernel | AVX2 hot loop | AVX-512 hot loop | Verdict |
+|---|---|---|---|
+| scan_add_i64 | scalar `add`, 4 rows per iteration (unrolled), no vector registers | same | Scalar loop on both ISAs |
+| scan_by_add_i64 auto | branch-free scalar loop, 1 row per iteration: `cmp byte [starts]`, `cmovne` (reset to zero), `add`, `mov`, no vector registers | same | Scalar loop, one `cmov` plus `add` dependency per row |
+| scan_by_add_i64 intrinsics | none | `zmm`, 8 rows per iteration: `vptestmb` on the start bytes, three `valignq` plus masked `vpaddq` steps, a masked carry add, `vpermq` broadcast of lane 7 | Vectorized |
+| prev_i64 | `copy_from_slice`, a call to libc `memcpy` | same | Vectorized by libc, not by the entry |
+| gather_i64 auto | bounds pass `ymm`, 16 indices per iteration. Row loop scalar, 1 row per iteration with clamp and bounds check | bounds pass `zmm` `vpcmpleuq`, 32 indices per iteration. Row loop scalar, 1 row | Bounds pass vectorized, gather scalar |
+| gather_i64 intrinsics | bounds pass as auto. Row loop `vpgatherqq ymm`, 8 rows per iteration (2 gathers) | row loop `vpgatherqq zmm`, 16 rows per iteration (2 gathers) | Vectorized |
+| histogram | bounds pass `ymm`, 16 keys per iteration. Bucket loop scalar `inc QWORD PTR [base+k*8]`, 1 key per iteration | bounds pass `zmm`, 32 keys per iteration. Bucket loop scalar, 1 key | Bounds pass vectorized, bucket loop scalar |
+| reduce_into_add_i64 | as histogram, bucket loop scalar `add`, 1 row | as histogram | Bounds pass vectorized, bucket loop scalar |
+| div_const_i64 | 4 rows per iteration: `ymm` abs, shifts, and sign fix, 4 scalar `mul` for the multiply-high with extract and insert | 8 rows per iteration: `vpabsq`, `vpsrlvq`, `vpsraq` on `zmm`, 8 scalar `mul` | Partially vectorized, multiply-high scalar |
+| div_const_u64 | 4 rows, `ymm` shifts plus 4 scalar `mul` | 8 rows, `zmm` shifts plus 8 scalar `mul` | Partially vectorized, multiply-high scalar |
+| and, xor, not, add (i64) | `ymm`, 16 rows per iteration | `zmm`, 32 rows per iteration | Vectorized. The baseline build is SSE2-vectorized too, so timing cannot tell, and all are memory-bound |
+| argsort_i64 | index init `ymm`, the sort calls baseline `ipnsort` | index init `zmm` 32 per iteration, sort baseline | Scalar sort |
+
+### Casts and `mul` on i64 and u64: which entries emit the AVX-512DQ instructions
+
+The crate's AVX-512 feature string is `avx512f,avx512bw,avx512vl,avx512vbmi2` (src/kernels/x86.rs), without `avx512dq`. `vcvtqq2pd`, `vcvtuqq2pd`, `vcvttpd2qq`, `vcvttpd2uqq`, and `vpmullq` need AVX-512DQ, so the `auto` entries cannot emit them. The check ran on commit 3a60e54 (the head before the fix commits, with no kernel change since 428afc9): `cargo bench --no-run --bench tier1`, then `objdump -d --no-show-raw-insn -C` of the bench binary, and a search of the symbols `verkehrt::kernels::x86::auto::{avx2,avx512}::elementwise::<Unary<S, D, CastOp, false>>` and `<Binary<i64, i64, MulOp, false>>`. No entry contains `vcvtqq2pd`, `vcvtuqq2pd`, `vcvttpd2qq`, `vcvttpd2uqq`, or `vpmullq`.
+
+| Kernel | AVX2 hot loop | AVX-512 hot loop | Verdict |
+|---|---|---|---|
+| cast_i64_f64 | 8 scalar `vcvtsi2sdq` per iteration, packed with `vunpcklpd` and `vinsertf128`, stored as `ymm` | 8 scalar `vcvtsi2sdq` per iteration, packed with `vinsertf128` and `vinsertf64x4`, stored as `zmm` | Scalar conversions on both ISAs, only the stores are vector. Strain case |
+| cast_f64_i64 | scalar `vcvttsd2si` per row plus `vucomisd` compares for the saturation and NaN fixups, assembled into `ymm` stores | scalar `vcvttsd2si` per row plus `vucomisd`, assembled into `zmm` stores | Scalar on both ISAs. Strain case |
+| cast_f64_u64 | scalar `vcvttsd2si` with `vsubsd` for the top half, `vucomisd` fixups | scalar `vcvttsd2usi` (AVX-512F, scalar form) per row plus `vucomisd` fixups | Scalar on both ISAs. Strain case |
+| cast_u64_f64 | `ymm`, 16 rows per iteration: `vpblendd` and `vpor` with magic constants, `vpsrlq`, `vsubpd`, `vaddpd` | `zmm`, 32 rows per iteration: `vpternlogq`, `vpsrlq`, `vporq`, `vsubpd`, `vaddpd` | Vectorized on both ISAs by the magic-constant split, no DQ instruction |
+| mul_i64 | `ymm` `vpmuludq` emulation: three `vpmuludq` plus `vpsllq`, `vpsrlq`, `vpaddq` per vector | `zmm` `vpmuludq` emulation of the same shape | Vectorized on both ISAs, by the emulation, not by `vpmullq` |
+
+The `imul` and scalar conversion instructions that also appear in the `cast_u64_f64` and `mul_i64` symbols sit outside the vector loops, in the scalar paths for short inputs and leftover rows. The casts were not timed.
+
+Timing and assembly disagree in two places, and the assembly decides. First, histogram and reduce_into time at 0.79 and 0.85 of scalar, but the hot bucket loop is scalar: the gain is the bounds pass moving from SSE2 to `ymm`/`zmm`. Second, div_const_u64 times at 1.06 of scalar although its auto loop is partially vectorized: the baseline build already uses SSE2 `psrlq` for the uniform shifts and scalar `mul` for the multiply-high, so both builds are the same shape.
+
+## Intrinsics decisions
+
+Priority by acceptance queries: histogram, reduce_into, div_const, then gather and scan.
+
+### histogram and reduce_into: not committed, strain case
+
+The bucket loop did not vectorize. The spec names `vpconflictq` or replicated sub-histograms on AVX-512. Both were prototyped in a standalone crate with the kernel's clamp and bounds semantics, best-of timing, at 14:20 to 14:23, load 1.6 to 4.0. Variants: A the current two-pass shape (bounds pass, then scalar loop), B one fused pass (clamp and accumulate the bad flag), C fused with 4 scalar sub-histograms, D AVX-512 `vpconflictq` (vectors without duplicates do gather, add, scatter, others fall back to scalar), E AVX-512 gather and scatter on 8 replicated sub-histograms, lane `j` owning copy `j`.
+
+| Case | A base | A avx512 | B fused | C 4 sub | D vpconflictq | E 8 sub gather/scatter |
+|---|---|---|---|---|---|---|
+| histogram, 10M keys in 0..1024 | 5.56 | 5.31 to 6.45 | 4.82 to 7.07 | 5.50 to 7.18 | 10.13 | 9.62 to 9.73 |
+| histogram, 1.2M rows, 4 keys of 65536 (TPC-H q01 shape) | 1.16 | 0.93 | 0.98 | 0.98 | 0.87 | 1.49 |
+| histogram, 1.2M rows, runs of 600 (q42 shape) | 0.89 | 0.67 | 0.86 | 0.84 | 0.54 | 1.33 |
+| reduce_into add, 10M rows in 0..1024 | 7.32 | 6.11 to 6.92 | 5.52 (base) | - | - | 9.81 to 9.83 |
+| reduce_into add, 4 keys of 65536 | - | 0.95 | 1.01 | - | - | 1.55 to 1.61 |
+| reduce_into add, runs of 600 | - | 0.72 | 0.94 | - | - | 1.33 to 1.34 |
+
+Ranges are repeated runs of rebuilt binaries. E loses to the scalar loop by 1.5x to 1.9x in every case, and D by 1.6x to 1.9x on the bench's uniform keys. Scatter is slow on this core, and Zen 5 handles repeated increments of one address well, so the scalar loop is not latency-bound even with 4 keys. D needs AVX512CD, which `Isa::Avx512` does not check. Decision: no intrinsics. The measurement document records histogram and reduce_into as scalar bucket loops on AVX2 and AVX-512 (bucketed reductions, already a strain case in the spec), with a vectorized bounds pass.
+
+D is the fastest variant on the two skewed shapes (0.87 and 0.54 ms), and fusion alone does not explain it. B is also a single fused pass with a scalar bucket loop, yet it measures 0.98 and 0.86 ms on the same shapes. On the runs-of-600 shape nearly every 8-key vector holds a duplicate, so D increments almost all keys through its scalar fallback, the same increments B makes. What D does differently is its bounds handling: it tests eight keys per `vpcmpuq` into a mask and runs the conflict test and the fallback per 8-key chunk, while B ORs a flag per key inside the increment loop. The prototype did not isolate which of these differences gives D its 0.54 against B's 0.86 ms. B's own uniform-key time varies from 4.82 to 7.07 ms across rebuilds, so codegen layout also moves these numbers.
+
+Gap over 1.5x of native: histogram 1.72x, reduce_into 1.94x. The native loop is one pass that relies on Rust's bounds-checked indexing. The kernel reads the keys twice, once for the order-independent error check and once for the buckets. Fusing the check into the bucket loop (variant B: clamp, OR the out-of-range flag, report the first bad key only on the error path) gave 13% (histogram) and 25% (reduce_into) in the prototype, keeps the error independent of row order, and applies to the scalar and auto entries alike. Candidate for plan 5, not done here.
+
+### div_const_i64 and div_const_u64: strain case, no intrinsics
+
+Neither AVX2 nor AVX-512 has a 64-bit multiply-high, and the assembly shows the compiler extracting each lane to a scalar `mul`. The rest of the computation is vector code, so the i64 auto entry runs at 0.65 of scalar and 0.85 of the native `x / 60` loop, which is all scalar. The u64 entry runs at the scalar entry's speed (1.06) because the baseline build has the same shape. The spec names no technique. The measurement document records both as strain cases like `mul_i64`: multiply-high scalar on both ISAs. A `vpmuludq`-based 64-bit multiply-high emulation was not attempted.
+
+### gather_i64, gather_u64, gather_f64: intrinsics committed
+
+The auto row loop is scalar. The entries `gather::avx2` and `gather::avx512` in `src/kernels/x86/gather.rs` reuse the scalar body's `Gather::checked` (argument and bounds check), then load rows with `vpgatherqq` (`_mm256_i64gather_epi64` / `_mm512_i64gather_epi64`). One entry per ISA serves all 64-bit row types, since a gather moves bits. Final run: avx2-intrinsics 39.34 ms, avx512-intrinsics 40.57 ms against scalar 49.02 ms, **0.80 and 0.83 of scalar**, and 1.01 and 1.04 of the best native (native-avx2 `vpgatherqq` loop, 39.09 ms). Run3 gave 39.90 and 40.74 ms against scalar 50.84 ms (0.78 and 0.80). Prototype (best-of, into a preallocated buffer): source 10M, ymm 36.2 and zmm 37.3 ms against scalar 42.1 (base) and 45.2 (avx512 build). For a 1024-row source zmm wins 8% (6.41 against 6.99 ms). The 10M bench decides. Known cost of the entry: for a 65536-row (512 KB) source the hardware gather is slower than the scalar loop, ymm 9.85 and zmm 11.03 ms against the scalar avx512 build's 9.34 ms, 1.05x and 1.18x. The entry is installed for every source size, so the intrinsics backend pays this on mid-sized sources. TPC-H q01's `gather(counts, groups)` has a 65536-row source, but its index array holds only the few non-empty groups, so the cost there is negligible. `tests/isa_variants.rs` now checks 39 AVX2 and 41 AVX-512 intrinsics kernels (3 more each), and `variant_entry_counts_are_stable` records the counts. 32-bit, `u8`, and bool gathers keep the auto entry.
+
+### scan_add_i64: not committed, strain case
+
+The auto loop is the scalar `add` chain on both ISAs. The spec's technique, a log-step in-register prefix plus carry, was prototyped on AVX-512 (`valignq` shifts by 1, 2, 4, add carry, `vpermq` broadcast of lane 7): 4.04 ms against the scalar loop's 4.17 ms at 10M rows into a preallocated buffer, 3%. The scan is memory-bound at this size (the interpreter's 7.4 ms includes allocation and zeroing of the 80 MB output). A 3% prototype gain is inside the run-to-run noise of the interpreter bench (scan scalar 7.14 to 7.40 ms across runs), so it cannot be shown to beat the scalar entry. Decision: no intrinsics. The measurement document records `scan_<op>` on integers as a scalar loop on AVX2 and AVX-512.
+
+### scan_by_add_i64 and scan_by_add_u64: AVX-512 intrinsics committed, AVX2 strain case
+
+`scan_by` is not memory-bound like `scan`: 10.80 ms against scan's 7.37 ms, 0.48 of add_i64's bandwidth against 0.62. The auto hot loop is branch-free (`cmovne` resets the accumulator at a start), so the cost is not branch misses. It is the two-instruction dependency per row (`cmov`, then `add`) against one `add` for `scan`. The segmented log-step was prototyped at 10M rows into preallocated buffers (best-of, load 7.0):
+
+| Starts probability | scalar base | scalar avx512 build | log-step AVX2 | log-step AVX-512 |
+|---|---|---|---|---|
+| 1/16 | 7.01 | 6.98 | 7.10 | 4.99 |
+| 1/2 | 7.02 | 6.96 | 7.12 | 4.75 |
+| 1/1024 | 7.01 | 6.97 | 7.13 | 4.88 |
+
+AVX-512 keeps the start flags in a mask register and shifts lanes with `valignq` against zero, so each step is one shift and one masked add. AVX2 needs `vpermq` plus a blend for a one-lane shift and `vperm2i128` for a two-lane shift, with the flags as vectors, and it runs at the scalar loop's speed. Decision: the AVX-512 entry `scan::update_avx512` in `src/kernels/x86/scan.rs` serves `scan_by_add_i64` and `scan_by_add_u64` (commit 11405a6). It parses the tile with the scalar body's `tile_rows`, so it fails exactly when the scalar entry fails, and it carries the accumulator across tiles. In the interpreter bench (fix 1 run, same run): avx512-intrinsics 8.38 ms against scalar 10.34 ms, avx2-auto 10.35 ms, avx512-auto 10.49 ms, **0.81 of scalar**. `tests/isa_variants.rs` checks it, including tiled runs, and now counts 43 AVX-512 intrinsics kernels. The measurement document records `scan_by_add` as a scalar loop on AVX2 and other `scan_by` folds as scalar loops on both ISAs. The other folds were not prototyped: integer `min`, `max`, and the bitwise folds have the same select-plus-op chain and could take the same segmented form.
+
+### prev, bitwise, argsort
+
+* `prev`: a `memcpy`, already vectorized by libc. No decision needed.
+* `and`, `or`, `xor`, `not`: vectorized (`ymm` 16 rows, `zmm` 32 rows per iteration), memory-bound at add_i64's bandwidth.
+* `argsort`: the sort is the baseline build of `sort_unstable_by_key` on all ISAs, the scalar argsort strain case the spec already lists. 0.10 GB/s.
+
+### Not attempted
+
+* `vpconflictq` reduce_into (histogram's D already loses on uniform keys).
+* div_const multiply-high emulation with `vpmuludq` (spec names no technique).
+* Segmented log-step for the other `scan_by` folds (min, max, mul, bitwise), and for `scan_by` on 32-bit and 8-bit inputs.
+* Gathers on 32-bit, `u8`, and bool rows.
+
+## Acceptance queries
+
+Final run (15:07:41 to 15:10:20, load 4.71 to 3.90, commit 1132325, same kernels as 428afc9) and corgi (15:10:20 to 15:10:24, load 3.90 to 3.74). Verkehrt times are criterion means in ms, with the fastest sample after the slash. Corgi reports the best of at least 3 runs (up to 50 within 1.5 s) of `Program::run`, with the input `Value` cloned per run and outside compile and load. Its filter matches by substring, so `q01` also ran TPC-H `q01b`. DuckDB one-thread is the `one_thread_ms` that the data preparation script recorded for each suite.
+
+| Query | scalar | avx2-auto | avx2-intrinsics | avx512-auto | avx512-intrinsics | corgi | DuckDB 1t | Best Verkehrt / DuckDB | Best Verkehrt / corgi |
+|---|---|---|---|---|---|---|---|---|---|
+| clickbench q01 | 0.227 / 0.223 | 0.097 / 0.096 | 0.097 / 0.096 | 0.091 / 0.090 | 0.092 / 0.090 | 0.37 | 1.39 | 0.07 | 0.25 |
+| clickbench q02 | 0.342 / 0.339 | 0.185 / 0.182 | 0.184 / 0.182 | 0.180 / 0.177 | 0.185 / 0.178 | 0.34 | 1.11 | 0.16 | 0.53 |
+| clickbench q06 | 0.533 / 0.524 | 0.192 / 0.191 | 0.192 / 0.191 | 0.187 / 0.185 | 0.187 / 0.184 | 2.52 | 1.67 | 0.11 | 0.07 |
+| clickbench q07 | 0.854 / 0.839 | 0.822 / 0.806 | 0.612 / 0.597 | 0.687 / 0.671 | 0.462 / 0.459 | 1.15 | 2.00 | 0.23 | 0.40 |
+| clickbench q42 | 46.97 / 45.62 | 32.00 / 31.02 | 27.76 / 27.44 | 29.15 / 28.33 | 21.59 / 21.14 | 8.28 | 7.08 | 3.05 | 2.61 |
+| tpch q01 | 26.21 / 25.43 | 21.88 / 21.08 | 22.82 / 21.94 | 21.86 / 21.63 | 19.17 / 18.69 | 48.92 (q01b 39.72) | 41.60 | 0.46 | 0.39 |
+| tpch q06 | 5.89 / 5.76 | 3.64 / 3.52 | 2.86 / 2.78 | 2.85 / 2.74 | 2.24 / 2.10 | 4.36 | 4.74 | 0.47 | 0.51 |
+
+Ratios use the best Verkehrt mean (avx512-intrinsics, except q02 where avx512-auto is fastest) over corgi's best-of and DuckDB's one-thread time. Run1 (commit 9bb5e11, before the inline fix and the gather entries) agrees within 5% on most queries and variants. The exceptions are slower now: clickbench q07 avx2-auto +20.6% (0.681 then, 0.822 ms now, in both final acceptance runs), tpch q01 avx2-intrinsics +9.1% and scalar +6.3%, and tpch q06 +5.5% to +6.2% for avx2-auto, avx512-auto, and avx512-intrinsics. The q07 avx2-auto change came after the inline fix, and its cause was not investigated. Run1 corgi: q01 0.38, q02 0.34, q06 2.56, q07 1.16, q42 8.29, tpch q01 49.00, q01b 39.61, q06 4.40 ms.
+
+The q07 and q42 rows above predate the program fix. Before it, clickbench q42 was the only query slower than both corgi and DuckDB, at 3.05x DuckDB one-thread. The re-measured q07 and q42 times are in q07-q42-bench.txt. Its program filters five columns of `hits_0`, compresses `EventTime`, divides by 60, and builds a histogram over minutes. The queries were not profiled per kernel.
