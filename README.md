@@ -107,7 +107,8 @@ The `auto` and baseline medians drifted by up to 1.36x between builds of unchang
 Read [docs/measurements/2026-10-30-x86-kernels.md](docs/measurements/2026-10-30-x86-kernels.md) for the full tables, the setup, and the caveats before quoting any number.
 
 On an Apple M5 Max, the baseline build, which the compiler vectorizes for NEON, runs `sum`, `sum(x * y)`, and `count(x > 0.5)` within 1.02x of the native loop.
-The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from between 2.77x and 3.39x, depending on the run, to 0.93x, and `filter` on `f64` rows reaches 1.10x to 1.39x, only 6 to 11% faster than the scalar entry.
+The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from between 2.77x and 3.39x, depending on the run, to 0.93x.
+`filter` on `f64` rows reaches 1.10x to 1.39x of native, only 6 to 11% faster than the scalar entry.
 The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 for `x * y`, and 2^12 for `min`.
 These are single runs on AC power in high power mode, except two reruns of `argmin`, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
 Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
