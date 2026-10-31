@@ -1135,7 +1135,8 @@ fn whole_tables_have_scalar_and_auto_entries() {
     let isa = Isa::detect();
     if let Some(KernelImpl::Whole(f)) = impls.get(auto(isa)) {
         let args = [i64_s(5)];
-        // SAFETY: `Isa::detect` returned an ISA this CPU supports, and the body is safe Rust.
+        // SAFETY: `f` is the auto entry of `Isa::detect()`, whose level `features::runnable`
+        // approved for this CPU, and the body is safe Rust.
         let got = unsafe { f(&args) };
         assert_eq!(scalar(got), Scalar::I64(5));
     }
@@ -1241,7 +1242,7 @@ fn variant_entry_counts_are_stable() {
             counts[v.index()] += usize::from(def.impls.get(v).is_some());
         }
     }
-    // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
+    // Scalar, then auto and intrinsics for x86-64-v3, x86-64-v4, and NEON. The x86 literals were
     // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
     // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
     // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`

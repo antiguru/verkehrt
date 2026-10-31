@@ -106,56 +106,87 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The byte ranges of the bodies of the `macro_rules!` definitions in `src`, found by brace
-/// matching.
-fn macro_bodies(src: &str) -> Vec<Range<usize>> {
-    src.match_indices("macro_rules!")
-        .map(|(at, _)| {
-            let open = at + src[at..].find('{').expect("a macro body");
-            let mut depth = 0;
-            for (i, c) in src[open..].char_indices() {
-                match c {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return open..open + i + 1;
-                        }
-                    }
-                    _ => {}
+/// The macros that may forward a metavariable to `#[target_feature]`. Their invocations are
+/// checked in `feature_strings`.
+const FORWARDING_MACROS: [&str; 2] = ["auto_backend", "selection_loops"];
+
+/// The index of the delimiter that closes the one at `open` in `src`, found by depth
+/// matching. String literals are skipped, because the feature lists hold no delimiters but
+/// an argument may.
+fn closing(src: &str, open: usize) -> usize {
+    let mut depth = 0;
+    let mut in_string = false;
+    for (i, c) in src[open..].char_indices() {
+        match c {
+            '"' => in_string = !in_string,
+            '(' | '{' | '[' if !in_string => depth += 1,
+            ')' | '}' | ']' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return open + i;
                 }
             }
-            panic!("unbalanced macro body at byte {at}");
+            _ => {}
+        }
+    }
+    panic!("unbalanced delimiter at byte {open}");
+}
+
+/// The text after `at` without leading whitespace, and its byte offset in `src`.
+fn skip_whitespace(src: &str, at: usize) -> usize {
+    at + (src[at..].len() - src[at..].trim_start().len())
+}
+
+/// The name and byte range of the body of each `macro_rules!` definition in `src`, found by
+/// delimiter matching.
+fn macro_bodies(src: &str) -> Vec<(&str, Range<usize>)> {
+    src.match_indices("macro_rules!")
+        .map(|(at, m)| {
+            let name_at = skip_whitespace(src, at + m.len());
+            let name_end = name_at
+                + src[name_at..]
+                    .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .expect("a macro name");
+            let open = skip_whitespace(src, name_end);
+            (&src[name_at..name_end], open..closing(src, open) + 1)
         })
         .collect()
 }
 
 /// The feature strings in `src`: each `target_feature(enable = ...)` argument, and the last
 /// argument of each invocation of a macro that forwards it to `#[target_feature]`. An
-/// argument that is a metavariable (`$features`) inside a `macro_rules!` definition is
-/// checked at the invocations instead, and any other argument that is not a string literal
-/// fails.
+/// argument that is a metavariable (`$features`) is allowed only inside the definition of a
+/// forwarding macro, whose invocations are checked instead. Any other argument that is not a
+/// string literal fails.
 fn feature_strings(src: &str) -> Vec<String> {
     let bodies = macro_bodies(src);
     let mut args: Vec<(usize, &str)> = Vec::new();
-    for (at, m) in src.match_indices("target_feature(") {
-        let rest = &src[at + m.len()..];
-        let end = rest.find(')').expect("a closing parenthesis");
-        let arg = rest[..end]
+    for (at, m) in src.match_indices("target_feature") {
+        let open = skip_whitespace(src, at + m.len());
+        if !src[open..].starts_with('(') {
+            // The word in a comment, a string, or an identifier such as `is_x86_feature_detected`.
+            continue;
+        }
+        let arg = src[open + 1..closing(src, open)]
             .trim()
             .strip_prefix("enable")
             .and_then(|r| r.trim_start().strip_prefix('='))
             .unwrap_or_else(|| panic!("unknown target_feature form at byte {at}"));
         args.push((at, arg.trim()));
     }
-    for name in ["auto_backend!(", "selection_loops!("] {
-        for (at, m) in src.match_indices(name) {
-            let rest = &src[at + m.len()..];
-            let end = rest.find(')').expect("a closing parenthesis");
+    for name in FORWARDING_MACROS {
+        for (at, m) in src.match_indices(&format!("{name}!")) {
+            let open = skip_whitespace(src, at + m.len());
+            if !src[open..].starts_with(['(', '{', '[']) {
+                continue;
+            }
             // The last argument, a string literal with commas inside or a metavariable.
-            let list = rest[..end].trim().trim_end_matches(',').trim_end();
+            let list = src[open + 1..closing(src, open)]
+                .trim()
+                .trim_end_matches(',')
+                .trim_end();
             let last = match list.strip_suffix('"') {
-                Some(open) => &list[open.rfind('"').expect("an opening quote")..],
+                Some(head) => &list[head.rfind('"').expect("an opening quote")..],
                 None => list.rsplit(',').next().unwrap().trim(),
             };
             args.push((at, last));
@@ -167,8 +198,12 @@ fn feature_strings(src: &str) -> Vec<String> {
                 Some(s.strip_suffix('"').expect("a string literal").to_string())
             } else {
                 assert!(
-                    arg.starts_with('$') && bodies.iter().any(|b| b.contains(&at)),
-                    "feature argument {arg} at byte {at} is not a string literal"
+                    arg.starts_with('$')
+                        && bodies.iter().any(|(name, body)| {
+                            body.contains(&at) && FORWARDING_MACROS.contains(name)
+                        }),
+                    "feature argument {arg} at byte {at} is not a string literal and not in a \
+                     forwarding macro"
                 );
                 None
             }
@@ -176,9 +211,10 @@ fn feature_strings(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// Every feature string that reaches `#[target_feature]` in `src/` is a level string, so a
-/// level's `FeatureSet` and the code compiled for it agree. The VBMI2 string is confined to
-/// the module that only VBMI2-declaring entries reach.
+/// Every feature string that reaches `#[target_feature]` in `src/` and `benches/` is a level
+/// string, so a level's `FeatureSet` and the code compiled for it agree. The VBMI2 string is
+/// confined to the module that only VBMI2-declaring entries reach, so no bench carries it
+/// unless a bench function uses VBMI2.
 #[test]
 fn target_feature_strings_match_levels() {
     const VBMI2_FILE: &str = "src/kernels/x86/compress/avx512_vbmi2.rs";
@@ -187,6 +223,7 @@ fn target_feature_strings_match_levels() {
     let own = root.join(file!());
     let mut files = Vec::new();
     rust_files(&root.join("src"), &mut files);
+    rust_files(&root.join("benches"), &mut files);
     let v3 = level(Isa::X86_64V3);
     let v4 = level(Isa::X86_64V4);
     let v4_vbmi2 = v4.union(FeatureSet::of(&[Avx512vbmi2]));
