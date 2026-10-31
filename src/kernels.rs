@@ -13,12 +13,14 @@ mod aarch64;
 mod arch;
 mod auto;
 pub mod dispatch;
+pub mod features;
 pub mod scalar;
 mod select_loops;
 #[cfg(target_arch = "x86_64")]
 mod x86;
 
 pub use dispatch::Dispatch;
+pub use features::{Feature, FeatureSet};
 
 #[cfg(test)]
 mod tests;
