@@ -35,6 +35,8 @@ let order = argsort(0 - counts);
 // OFFSET 100 LIMIT 10, clamped to the number of groups.
 let lo = min(ng, 100);
 let hi = min(ng, 110);
-export URLHash = slice(gather(gh, order), lo, hi);
-export EventDate = slice(gather(gd, order), lo, hi);
-export PageViews = slice(gather(counts, order), lo, hi);
+// Slice the order before gathering, so only the 10 output groups are gathered.
+let top = slice(order, lo, hi);
+export URLHash = gather(gh, top);
+export EventDate = gather(gd, top);
+export PageViews = gather(counts, top);
