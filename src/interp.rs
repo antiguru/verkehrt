@@ -245,6 +245,11 @@ impl Interpreter {
 }
 
 impl Prepared {
+    /// The declared inputs as (name, type), in source order.
+    pub fn inputs(&self) -> impl Iterator<Item = (&str, ValueType)> {
+        self.inputs.iter().map(|d| (d.name.as_str(), d.ty))
+    }
+
     /// Runs the program on `inputs` and returns its exports in source order. Every declared
     /// input must be supplied with its declared type. `print` writes to `diag`, as do trace
     /// lines when the interpreter traces. Statistics are not collected.
