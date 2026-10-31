@@ -219,19 +219,15 @@ fn compress<T: Elem, const BOOL: bool>(reg: &mut Registry) {
 /// The entries of `compress` on rows of storage type `T`: the scalar and auto entries of its
 /// body, plus intrinsics entries where they exist.
 fn compress_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
-    #[allow(unused_mut)]
     let mut impls = KernelImpl::selection::<Compress<T, BOOL>>();
-    #[cfg(target_arch = "x86_64")]
-    crate::kernels::x86::add_compress::<T, BOOL>(&mut impls);
+    crate::kernels::arch::add_compress::<T, BOOL>(&mut impls);
     impls
 }
 
 /// The entries of `where`, see `compress_impls`.
 fn where_impls() -> [Option<KernelImpl>; Variant::COUNT] {
-    #[allow(unused_mut)]
     let mut impls = KernelImpl::selection::<Where>();
-    #[cfg(target_arch = "x86_64")]
-    crate::kernels::x86::add_where(&mut impls);
+    crate::kernels::arch::add_where(&mut impls);
     impls
 }
 

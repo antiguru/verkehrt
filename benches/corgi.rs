@@ -178,6 +178,27 @@ fn corgi(c: &mut Criterion) {
         g.finish();
     }
 
+    // min. Corgi has `fold_min`, so it runs the same reduction as Verkehrt's `reduce(x, min)`.
+    // The data has no NaN, so the minimum is the same f64 in both.
+    {
+        let want = f64_of(reference(
+            "input x: f64[]; export m = reduce(x, min);",
+            &[("x", xv.clone())],
+        ));
+        let p = compile("input fold_min");
+        let got = corgi_f64(&p.run(cx.clone()));
+        assert_eq!(got.to_bits(), want.to_bits(), "min");
+        let mut g = c.benchmark_group("corgi/min");
+        configure(&mut g);
+        g.throughput(Throughput::Bytes(bytes));
+        bench(&mut g, &p, &cx);
+        g.finish();
+    }
+
+    // argmin is not benched. Corgi's operator table (`src/frontend/mod.rs`) has `fold_min`,
+    // `fold_max`, and `fold_add` but no argmin or argmax, and the first-index rule would need a
+    // composition of `fold_min`, `eq`, and `filter` that is a different algorithm.
+
     // filter at three selectivities, compared bitwise against Verkehrt's rows
     for (name, cut) in [
         ("filter-1pct", 0.99f64),

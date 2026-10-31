@@ -1,5 +1,6 @@
-//! x86-64 variants of the kernels. `auto` compiles the portable bodies for AVX2 and AVX-512,
-//! and `compress` holds the hand-written intrinsics entries of the selections.
+//! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro to compile
+//! the portable bodies for AVX2 and AVX-512, and `compress` holds the hand-written intrinsics
+//! entries of the selections.
 //!
 //! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
 //! for their ISA, which is what makes calling them sound.
@@ -9,8 +10,15 @@ use crate::kernels::{
 };
 use crate::value::Elem;
 
-mod auto;
 mod compress;
+
+/// The auto entries of the x86-64 ISAs, see `crate::kernels::auto`.
+mod auto {
+    use crate::kernels::auto::auto_backend;
+
+    auto_backend!(avx2, "AVX2", "avx2");
+    auto_backend!(avx512, "AVX-512", "avx512f,avx512bw,avx512vl,avx512vbmi2");
+}
 
 const AVX2_AUTO: Variant = Variant {
     isa: Isa::Avx2,

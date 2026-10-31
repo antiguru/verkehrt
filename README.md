@@ -77,8 +77,9 @@ The output above comes from a single run on an AVX-512 machine, so the times are
 ## Backends
 
 Every kernel has a scalar reference entry, and each instruction set adds up to two backends on top of it.
-The `auto` backend compiles the kernel's portable body under the instruction set's target features and covers every kernel.
-The `intrinsics` backend holds hand-written kernels and exists only where one was written, currently compress, `where`, and the fused filter.
+The `auto` backend compiles the kernel's portable body under the instruction set's target features and covers every kernel on x86-64.
+NEON has no `auto` entries, because the baseline aarch64 build already targets NEON, so the scalar entries are what the compiler produces for NEON, vectorized or not.
+The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, plus float min, max, argmin, and argmax on NEON.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
 `--isa scalar|avx2|avx512|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
 
@@ -86,11 +87,11 @@ The `intrinsics` backend holds hand-written kernels and exists only where one wa
 |---|---|---|
 | x86-64 | AVX2 | `auto` and `intrinsics` |
 | x86-64 | AVX-512 (F, BW, VL, VBMI2) | `auto` and `intrinsics` |
-| aarch64 | NEON | In progress, kernels run their scalar entries until NEON entries land |
+| aarch64 | NEON | `intrinsics` for compress, `where`, the fused filter, and float min, max, argmin, and argmax, other kernels run their scalar entries, which the baseline build compiles for NEON and the compiler may vectorize |
 
 Every variant must return the scalar kernel's result bit for bit, and a NaN result only has to be NaN.
 The property test `tests/isa_variants.rs` checks this for every installed variant, over aligned and misaligned views and lengths around the vector widths.
-CI runs the test suite on Linux and on macOS runners, which are Apple Silicon, so the NEON entries will be checked there.
+CI runs the test suite on Linux and on macOS runners, which are Apple Silicon, so the NEON entries are checked there.
 The benchmarks then show whether each variant is also fast.
 
 ## Results
@@ -104,6 +105,13 @@ These numbers come from one AMD Ryzen AI MAX+ 395 with boost off and other work 
 The clock moved between 2.0 and 3.0 GHz under load, so absolute throughput is below what the CPU reaches with boost on, while ratios share the same conditions.
 The `auto` and baseline medians drifted by up to 1.36x between builds of unchanged code, and the cause was not measured.
 Read [docs/measurements/2026-10-30-x86-kernels.md](docs/measurements/2026-10-30-x86-kernels.md) for the full tables, the setup, and the caveats before quoting any number.
+
+On an Apple M5 Max, the baseline build, which the compiler vectorizes for NEON, runs `sum`, `sum(x * y)`, and `count(x > 0.5)` within 1.02x of the native loop.
+The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from between 2.77x and 3.39x, depending on the run, to 0.93x.
+`filter` on `f64` rows reaches 1.10x to 1.39x of native, only 6 to 11% faster than the scalar entry.
+The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 for `x * y`, and 2^12 for `min`.
+These are single runs on AC power in high power mode, except two reruns of `argmin`, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
+Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
 
 ## Building and testing
 
@@ -135,6 +143,8 @@ CARGO_INCREMENTAL=0 cargo bench --locked --bench corgi
 * [Core interpreter plan](docs/superpowers/plans/2026-10-30-verkehrt-core.md): parser, type checker, lowering, egglog planning, and scalar kernels.
 * [x86 kernels plan](docs/superpowers/plans/2026-10-30-verkehrt-kernels-x86.md): AVX2 and AVX-512 kernels in both backends, benchmarks, and crossover measurements.
 * [x86 measurements](docs/measurements/2026-10-30-x86-kernels.md): results, setup, and caveats.
+* [NEON kernels plan](docs/superpowers/plans/2026-10-31-verkehrt-kernels-neon.md): NEON intrinsics for the selections and float extremes, benchmarks, and crossover measurements.
+* [aarch64 measurements](docs/measurements/2026-10-31-aarch64-kernels.md): results, setup, and caveats.
 
 ## Prior art
 

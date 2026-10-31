@@ -1060,3 +1060,23 @@ fn new_kernels_resolve_through_lookup_with_classes_and_costs() {
     assert_eq!(def("reduce_add_i32").output, sc_ty(I64));
     assert_eq!(def("reduce_add_u8").output, sc_ty(U64));
 }
+
+/// The number of kernels with an entry in each variant slot, in `Variant::index` order.
+#[test]
+fn variant_entry_counts_are_stable() {
+    let reg = Registry::new();
+    let mut counts = [0usize; Variant::COUNT];
+    for (_, def) in reg.iter() {
+        for (slot, count) in counts.iter_mut().enumerate() {
+            *count += usize::from(def.impls[slot].is_some());
+        }
+    }
+    // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
+    // recorded before the architecture layer existed.
+    #[cfg(target_arch = "x86_64")]
+    assert_eq!(counts, [509, 231, 29, 231, 31, 0, 0]);
+    // NEON intrinsics cover 6 compress kernels, `where`, 24 fused filters, and the 8 float
+    // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
+    #[cfg(target_arch = "aarch64")]
+    assert_eq!(counts, [509, 0, 0, 0, 0, 0, 39]);
+}
