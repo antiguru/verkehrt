@@ -17,6 +17,7 @@ The acceptance suite covers ClickBench q01, q02, q06, q07, and q42, and TPC-H q0
 
 * No new primitives or kernels. A query that needs one is a gap, not a reason to extend the language here.
 * No changes to the harness or to `prepare.py`'s output format, except that the harness may gain an output kind that `prepare.py` already writes and the harness does not yet read. That change gets a unit test like the existing kinds.
+* The column loader gains the sign flip-back that `prepare.py`'s format requires for its signed columns, and an `_ends` input for the row ends of a string column. These are the data format's contract, not new primitives.
 * No performance work. Slow but correct is an acceptable outcome, because the measurement's purpose is to feed plan 5.
 
 ## Query notes

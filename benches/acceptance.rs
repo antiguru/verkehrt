@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use verkehrt::columns::load_inputs;
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs};
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
 use verkehrt::{Interpreter, Options};
@@ -75,7 +75,7 @@ fn suite(c: &mut Criterion, var: &str, suite: &str) {
         g.measurement_time(Duration::from_secs(3));
         for (label, interp) in &interps {
             let prepared = interp.prepare(&program).unwrap();
-            let inputs = load_inputs(&dir, &prepared).unwrap();
+            let inputs = load_inputs(&dir, &prepared, CLICKBENCH_SIGNED).unwrap();
             let named: Vec<(&str, Value)> = inputs
                 .iter()
                 .map(|(n, v)| (n.as_str(), v.clone()))

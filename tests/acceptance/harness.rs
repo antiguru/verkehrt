@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use verkehrt::columns::load_inputs;
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs};
 use verkehrt::value::{Array, Scalar, Value};
 use verkehrt::{Interpreter, Options};
 
@@ -142,7 +142,7 @@ pub fn run_query(dir: &Path, program_path: &Path) -> Result<String, String> {
     let kinds = parse_kinds(&program);
     let interp = Interpreter::new(Options::default()).map_err(|e| e.to_string())?;
     let prepared = interp.prepare(&program).map_err(|e| e.to_string())?;
-    let inputs = load_inputs(dir, &prepared)?;
+    let inputs = load_inputs(dir, &prepared, CLICKBENCH_SIGNED)?;
     let named: Vec<(&str, Value)> = inputs
         .iter()
         .map(|(n, v)| (n.as_str(), v.clone()))

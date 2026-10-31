@@ -200,3 +200,43 @@ fn acceptance_plans() {
         }
     }
 }
+
+#[test]
+fn harness_flips_signed_columns_back() {
+    let dir = scratch("signed");
+    // -1, 5, and i64::MIN as `prepare.py` stores them, with bit 63 flipped.
+    let flip = 1u64 << 63;
+    write_u64(&dir, "UserID.u64", &[u64::MAX ^ flip, 5 ^ flip, 0]);
+    // An unlisted column keeps its words as stored.
+    write_u64(&dir, "CounterID.u64", &[1, 2, 3]);
+    let program = dir.join("q.vk");
+    fs::write(
+        &program,
+        "// output: [i,u]\n\
+         input UserID: i64[];\n\
+         input CounterID: i64[];\n\
+         export u = UserID;\n\
+         export c = CounterID;\n",
+    )
+    .unwrap();
+    assert_eq!(
+        run_query(&dir, &program).unwrap(),
+        format!("-1\t1\n5\t2\n{}\t3\n", i64::MIN)
+    );
+}
+
+#[test]
+fn harness_reads_ends_inputs() {
+    let dir = scratch("ends");
+    // Rows of length 3, 0, and 4.
+    write_u64(&dir, "URL.ends", &[3, 3, 7]);
+    let program = dir.join("q.vk");
+    fs::write(
+        &program,
+        "// output: [u]\n\
+         input URL_ends: i64[];\n\
+         export l = URL_ends - prev(URL_ends, 0);\n",
+    )
+    .unwrap();
+    assert_eq!(run_query(&dir, &program).unwrap(), "3\n0\n4\n");
+}
