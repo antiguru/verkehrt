@@ -179,6 +179,22 @@ impl<T: Elem + Ord> WholeBody for ArgSort<T> {
     }
 }
 
+/// The plan 4 body of `argsort`, kept as the oracle that pins the kernel's output: the stable
+/// ascending positions of `xs`.
+#[cfg(test)]
+fn argsort_reference<T: Elem + Ord>(xs: &[T]) -> Vec<i64> {
+    let mut out: Vec<i64> = (0..).take(xs.len()).collect();
+    // Ties break on the position, so the unstable sort is stable.
+    out.sort_unstable_by_key(|&i| {
+        let row = usize::try_from(i.cast_unsigned()).unwrap_or(0);
+        (xs[row], i)
+    });
+    out
+}
+
+#[cfg(test)]
+mod tests;
+
 /// The body of `reduce_into`, the fold `O` of the values per key in `0..n`. Rows of storage type
 /// `T` fold into buckets of `O::Out`, and a bucket without rows holds `O::identity`.
 pub(crate) struct ReduceInto<T, O>(PhantomData<fn() -> (T, O)>);
