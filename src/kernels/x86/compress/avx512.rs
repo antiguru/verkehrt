@@ -1,6 +1,7 @@
-//! AVX-512 selection entries. The keep mask of a vector comes from a compare into a mask
-//! register (`filter`) or from a byte test of the bool mask (`compress`, `where`), and
-//! `vpcompress` packs the kept lanes to the front of the vector, which is then stored whole.
+//! Selection entries for the x86-64-v4 level (AVX-512). The keep mask of a vector comes from a
+//! compare into a mask register (`filter`) or from a byte test of the bool mask (`compress`,
+//! `where`), and `vpcompress` packs the kept lanes to the front of the vector, which is then
+//! stored whole.
 //! Everything here is compiled for the x86-64-v4 level alone. `u8` and bool need the VBMI2
 //! byte compress, so they live in `avx512_vbmi2`, and no row type here has a byte `Lanes`.
 

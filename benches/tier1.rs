@@ -268,7 +268,7 @@ struct Interp {
     label: String,
     interp: Interpreter,
     /// Whether it uses the intrinsics backend. On x86-64 the selections, the 64-bit
-    /// `gather`s, and the AVX-512 `scan_by_add` on 64-bit integers have intrinsics entries,
+    /// `gather`s, and the `x86-64-v4` `scan_by_add` on 64-bit integers have intrinsics entries,
     /// so only the `filter`, `gather`, and `scan_by` groups measure these variants. On
     /// aarch64 the selections and the float extremes (`min`, `argmin`) have them. Elsewhere
     /// the intrinsics backend resolves to the scalar entries, so those groups skip it.
@@ -724,8 +724,8 @@ fn indices_in_range(idx: &[i64], n: usize) -> bool {
 }
 
 /// `gather` with the same bounds pass as the kernel. The baseline target uses indexed loads,
-/// the ISA flavors use the hardware gathers, four rows per `vpgatherqq` on AVX2 and eight on
-/// AVX-512, so they are not the shared portable body.
+/// the ISA flavors use the hardware gathers, four rows per `vpgatherqq` at `x86-64-v3` and eight
+/// at `x86-64-v4`, so they are not the shared portable body.
 mod n_gather {
     use super::indices_in_range;
 
@@ -822,8 +822,8 @@ fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
 fn tier2(c: &mut Criterion) {
     let all_interps = interpreters();
-    // Among the tier 2 kernels only `gather` and, on AVX-512, `scan_by_add` have intrinsics
-    // entries on x86-64, so only their groups measure them. AVX2 `scan_by_add` has none, so
+    // Among the tier 2 kernels only `gather` and, at `x86-64-v4`, `scan_by_add` have intrinsics
+    // entries on x86-64, so only their groups measure them. `x86-64-v3` `scan_by_add` has none, so
     // its intrinsics variant would rerun the auto entry and is left out.
     let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
     let all: Vec<&Interp> = all_interps.iter().collect();

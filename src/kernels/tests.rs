@@ -1255,7 +1255,7 @@ fn variant_entry_counts_are_stable() {
     // The 4 `div_const_<t>` and 4 `argsort_<t>` kernels added 12 scalar entries (the array and
     // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
     // `gather_i64`, `gather_u64`, and `gather_f64` added 3 intrinsics entries per x86 ISA.
-    // `scan_by_add_i64` and `scan_by_add_u64` added 2 AVX-512 intrinsics entries.
+    // `scan_by_add_i64` and `scan_by_add_u64` added 2 x86-64-v4 intrinsics entries.
     #[cfg(target_arch = "x86_64")]
     assert_eq!(counts, [749, 439, 39, 439, 43, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
@@ -1879,7 +1879,7 @@ fn detected_level_is_available() {
     assert_eq!(Isa::detect(), features::best_level(FeatureSet::detect()));
 }
 
-/// Only the AVX-512 byte `compress` entries declare a feature beyond their level, and they
+/// Only the x86-64-v4 byte `compress` entries declare a feature beyond their level, and they
 /// have an auto entry of the same level to fall back to.
 #[cfg(target_arch = "x86_64")]
 #[test]

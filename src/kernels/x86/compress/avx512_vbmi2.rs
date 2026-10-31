@@ -1,6 +1,6 @@
-//! The AVX-512 `compress` entry on `u8` and bool rows. The keep mask comes from a byte test of
-//! the bool mask, and the VBMI2 byte compress `vpcompressb` packs the kept bytes to the front
-//! of the vector, which is then stored whole.
+//! The x86-64-v4 `compress` entry (AVX-512 with VBMI2) on `u8` and bool rows. The keep mask
+//! comes from a byte test of the bool mask, and the VBMI2 byte compress `vpcompressb` packs
+//! the kept bytes to the front of the vector, which is then stored whole.
 //!
 //! VBMI2 is not part of the x86-64-v4 level, so everything here is compiled for the v4 string
 //! plus `avx512vbmi2`. The module exposes its entries only through `compress_entry`, which

@@ -41,7 +41,7 @@ fn rest(xs: &[u64], idx: &[i64], out: &mut [u64]) {
     }
 }
 
-/// The AVX2 entry of `gather` on 64-bit rows of type `T`.
+/// The x86-64-v3 entry of `gather` on 64-bit rows of type `T`.
 // SAFETY: the caller guarantees the features of the x86-64-v3 level (`Dispatch` calls the
 // entry only after `resolve` found `features::runnable` true for it through `select`). The
 // pointer assumptions are stated at the unsafe block.
@@ -71,7 +71,7 @@ unsafe fn v3<T: Elem>(args: &[Value]) -> Result<Value, String> {
     .map(Value::Array)
 }
 
-/// The AVX-512 entry of `gather` on 64-bit rows of type `T`.
+/// The x86-64-v4 entry of `gather` on 64-bit rows of type `T`.
 // SAFETY: the caller guarantees the features of the x86-64-v4 level (`Dispatch` calls the
 // entry only after `resolve` found `features::runnable` true for it through `select`). The
 // pointer assumptions are stated at the unsafe block.

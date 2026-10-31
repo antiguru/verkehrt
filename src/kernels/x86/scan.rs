@@ -6,8 +6,8 @@
 //! lanes up. The lanes before the vector's first start then add the carry, the output of the
 //! previous row. The scalar loop instead chains a select and an add through every row. The
 //! sum wraps, so the order of the additions does not change the bits, and the entry returns
-//! the scalar entry's result. AVX2 has no entry: its lane shifts cross the 128-bit halves,
-//! and the prototype ran no faster than the scalar loop.
+//! the scalar entry's result. The x86-64-v3 level has no entry: its AVX2 lane shifts cross the 128-bit
+//! halves, and the prototype ran no faster than the scalar loop.
 
 use std::arch::x86_64::*;
 use std::marker::PhantomData;

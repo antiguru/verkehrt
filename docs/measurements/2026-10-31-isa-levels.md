@@ -103,7 +103,7 @@ The crossover sweep (68 rows, two passes each) has one row beyond 15% in either 
 
 Scalar entries and native loops that this branch did not change also moved between the two builds, which bounds what a row can show.
 Over the 28 scalar rows of `comparison-tier1-tier2-acceptance.txt` the ratio of the best new mean to the best baseline mean ranges from 0.943 (`tier2/reduce-into-add-i64`) over 0.950 (`div-const-u64`), 0.955 (`prev-i64`), and 0.958 (`tier1/min`) to 1.139 (ClickBench q01), and the `cast_i64_f64` scalar entry is 5% faster in the new build (8.35 against 7.92 ms medians).
-The native loops of the bench binary moved by 0.56 to 0.86 in four rows (`filter-*/native-base`, `div-const-i64/native-avx512`).
+The `native-base` loops of the three `filter-*` rows, which this branch did not change, moved by 0.76 to 0.86. `div-const-i64/native-avx512` (0.56) is left out, because its feature string changed to the v4 string with DQ.
 This document therefore treats a shift of -6% to +14% as the build-to-build shift, in both directions: a gain below 6% is not a gain, and a loss below 14% is not shown to come from the levels.
 
 ### Regressions
@@ -131,7 +131,7 @@ Rows that moved but are not level regressions or are within the spread:
 * The ClickBench q42 `x86-64-v4-auto` (+2%) and `x86-64-v4-intrinsics` (+2%) rows are within the spread.
 
 No kernel got a narrower feature string than its level, as the design requires, and none of the regressions blocks the change.
-The controller files each row of the table as an issue.
+The `compress_u8` `x86-64-v3` row, the one row outside the build-to-build shift, is tracked as issue #25. The other rows lie inside the build-to-build shift and have no issue.
 
 ## Acceptance queries
 
