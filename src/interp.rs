@@ -25,6 +25,9 @@ pub struct Options {
     pub trace: bool,
     /// Collect per-kernel totals, written by `Interpreter::write_stats`.
     pub stats: bool,
+    /// CPU features to treat as absent, so no kernel entry that needs one is selected and
+    /// an instruction set whose level needs one is unavailable.
+    pub disable: FeatureSet,
 }
 
 pub struct Interpreter {
@@ -62,18 +65,18 @@ impl Interpreter {
     /// Fails with `ErrorKind::Usage` when the requested instruction set is not available.
     pub fn new(opts: Options) -> Result<Interpreter, Error> {
         let isa = match opts.isa {
-            Some(isa) if !isa.is_available() => {
+            Some(isa) if !isa.is_available_with(opts.disable) => {
                 return Err(Error::usage(format!(
                     "instruction set '{}' is not available on this CPU",
                     isa.name()
                 )));
             }
             Some(isa) => isa,
-            None => Isa::detect(),
+            None => Isa::detect_with(opts.disable),
         };
         let reg = Registry::new();
         let planner = Planner::new(&reg);
-        let dispatch = reg.resolve(isa, opts.backend, FeatureSet::EMPTY);
+        let dispatch = reg.resolve(isa, opts.backend, opts.disable);
         Ok(Interpreter {
             opts,
             dispatch,

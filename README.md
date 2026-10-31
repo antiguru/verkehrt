@@ -82,6 +82,9 @@ NEON has no `auto` entries, because the baseline aarch64 build already targets N
 The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, float min, max, argmin, and argmax on NEON, `gather` on 64-bit rows on AVX2 and AVX-512, and `scan_by` with `add` on AVX-512.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
 `--isa scalar|avx2|avx512|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
+`--disable FEATURE` treats a CPU feature such as `avx512vbmi2` as absent and can be repeated.
+Kernel entries that need a disabled feature are not selected, and `--isa` rejects a level that needs one.
+A feature this CPU does not report prints a note, because disabling it has no effect.
 
 | Architecture | Instruction set | Status |
 |---|---|---|

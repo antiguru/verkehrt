@@ -94,13 +94,24 @@ impl Isa {
 
     /// The best instruction set this CPU supports.
     pub fn detect() -> Isa {
-        features::best_level(FeatureSet::detect())
+        Isa::detect_with(FeatureSet::EMPTY)
+    }
+
+    /// The best instruction set this CPU supports with the features of `disable` treated as
+    /// absent.
+    pub fn detect_with(disable: FeatureSet) -> Isa {
+        features::best_level(FeatureSet::detect().minus(disable))
     }
 
     /// Whether this CPU supports every feature of the instruction set's level, see
     /// `features::runnable`.
     pub fn is_available(self) -> bool {
-        features::runnable(self, FeatureSet::EMPTY, FeatureSet::detect())
+        self.is_available_with(FeatureSet::EMPTY)
+    }
+
+    /// Like `is_available`, with the features of `disable` treated as absent.
+    pub fn is_available_with(self, disable: FeatureSet) -> bool {
+        features::runnable(self, FeatureSet::EMPTY, FeatureSet::detect().minus(disable))
     }
 
     pub fn from_name(name: &str) -> Option<Isa> {

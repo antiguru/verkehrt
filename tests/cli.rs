@@ -1,6 +1,7 @@
 //! End-to-end tests of the `verkehrt` binary.
 
 use assert_cmd::Command;
+use verkehrt::kernels::{Feature, FeatureSet, Isa};
 
 fn verkehrt() -> Command {
     Command::cargo_bin("verkehrt").unwrap()
@@ -39,6 +40,63 @@ fn program_error_exits_1() {
     let a = verkehrt().arg("run").arg(&file).assert().code(1);
     assert!(stderr_of(&a).contains("error[type] at 1:"));
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn unknown_feature_is_usage_error() {
+    let a = verkehrt()
+        .args(["run", "--disable", "avx513", "x.vk"])
+        .assert()
+        .failure();
+    let err = stderr_of(&a);
+    assert!(err.contains("unknown feature 'avx513'"), "{err}");
+    assert!(err.contains("avx512vbmi2"), "{err}");
+}
+
+#[test]
+fn disabling_a_level_feature_rejects_the_forced_level() {
+    if !Isa::X86_64V4.is_available() {
+        eprintln!("skipped: x86-64-v4 is not available on this CPU");
+        return;
+    }
+    let a = verkehrt()
+        .args([
+            "run",
+            "--isa",
+            "x86-64-v4",
+            "--disable",
+            "avx512dq",
+            "tests/programs/dot.vk",
+        ])
+        .assert()
+        .failure();
+    let err = stderr_of(&a);
+    assert!(
+        err.contains("instruction set 'x86-64-v4' is not available"),
+        "{err}"
+    );
+}
+
+#[test]
+fn undetected_disable_prints_a_note() {
+    let detected = FeatureSet::detect();
+    let Some(feature) = Feature::ALL.into_iter().find(|f| !detected.contains(*f)) else {
+        eprintln!("skipped: this CPU reports every feature");
+        return;
+    };
+    let name = feature.name();
+    let a = verkehrt()
+        .args(["run", "--disable", name, "tests/programs/dot.vk"])
+        .assert()
+        .success()
+        .stdout("32.0\n");
+    let err = stderr_of(&a);
+    assert!(
+        err.contains(&format!(
+            "note: feature '{name}' is not detected on this CPU, disabling it has no effect"
+        )),
+        "{err}"
+    );
 }
 
 #[test]
