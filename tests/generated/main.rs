@@ -183,7 +183,9 @@ fn generated_programs() {
         None => CI_SEED,
     });
     let threads = env_num("VERKEHRT_GEN_THREADS").unwrap_or_else(|| match local {
-        Some(_) => std::thread::available_parallelism().map_or(1, |n| n.get() as u64),
+        Some(_) => std::thread::available_parallelism().map_or(1, |n| {
+            u64::try_from(n.get()).expect("the worker count fits u64")
+        }),
         None => CI_THREADS,
     });
     let shrink_secs = env_num("VERKEHRT_GEN_SHRINK_SECS")
