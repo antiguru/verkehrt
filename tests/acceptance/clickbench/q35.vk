@@ -1,0 +1,24 @@
+// sql: SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, COUNT(*) AS c FROM hits
+// sql:   GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY c DESC, ClientIP LIMIT 10
+// output: [i,i,i,i,u]
+input ClientIP: i64[];
+
+// The offsets are functions of ClientIP, so grouping by ClientIP alone gives the same groups. They
+// are computed after the top 10 is picked, in i64 where no ClientIP can overflow.
+let s = gather(ClientIP, argsort(ClientIP));
+let n = length(s);
+let start = or(s != prev(s, 0), iota(n) == 0);
+let ng = count(start);
+let gid = scan(cast_i64(start), add) - 1;
+let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
+let gk = compress(s, start);
+// The groups are in ClientIP order, so a stable sort on descending counts breaks ties by address.
+// An empty column gives no groups and empty outputs.
+let order = argsort(0 - counts);
+let top = slice(order, 0, min(ng, 10));
+let ip = gather(gk, top);
+export ClientIP = ip;
+export ClientIP_1 = ip - 1;
+export ClientIP_2 = ip - 2;
+export ClientIP_3 = ip - 3;
+export c = gather(counts, top);

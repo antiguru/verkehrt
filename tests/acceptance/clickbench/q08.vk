@@ -1,0 +1,27 @@
+// sql: SELECT RegionID, COUNT(DISTINCT UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC, RegionID LIMIT 10
+// output: [u,u]
+input RegionID: i64[];
+input UserID: i64[];
+
+// Sorting by the minor key (UserID) first and the major key (RegionID) second, both stable, orders
+// the rows by (RegionID, UserID).
+let o1 = argsort(UserID);
+let r1 = gather(RegionID, o1);
+let u1 = gather(UserID, o1);
+let o2 = argsort(r1);
+let r = gather(r1, o2);
+let u = gather(u1, o2);
+// A row starts a group when its region differs from the previous row, and it starts a distinct
+// user within the group when either key differs. An empty column gives no groups and empty outputs.
+let n = length(r);
+let start = or(r != prev(r, 0), iota(n) == 0);
+let ustart = or(start, u != prev(u, 0));
+let ng = count(start);
+let gid = scan(cast_i64(start), add) - 1;
+let users = reduce_into(gid, cast_i64(ustart), ng, add);
+let gr = compress(r, start);
+// The groups are in RegionID order, so a stable sort on descending counts breaks ties by region.
+let order = argsort(0 - users);
+let top = slice(order, 0, min(ng, 10));
+export RegionID = gather(gr, top);
+export u = gather(users, top);
