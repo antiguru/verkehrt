@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 48 cases on 4 workers, 7.5 s to 8.1 s in release, and in debug 10.2 s on 32 cores against 17.9 s limited to 2 cores with `taskset -c 0,1` |
+| CI run | fixed seed `0x5eed0001`, 48 cases on 4 workers, 7.5 s to 8.1 s in release, and in debug 10.2 s on 32 cores against 17.9 s limited to 2 cores with `taskset -c 0,1`, both measured during the final review |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -40,8 +40,8 @@ The oracle 2 column names the comparison of errors: "kind only" compared the err
 
 About 15,000 further cases with seeds 1, 1000, 20000, and 100000 ran on still earlier generator versions with oracle 2 comparing the error kind only, also without oracle failures.
 In the seed 500000 run, 5308 of 6000 programs (88%) ran to completion.
-In the seed 1200000 run below, fusion changed the plan of 2375 of 6000 programs (40%).
 The rest stopped with runtime errors on empty reductions, bucket keys, `gather` indices, `slice` bounds, length mismatches, and `div_const` by zero, which exercises error agreement.
+A separate count during the final review fixes, at seed 1200000, found that fusion changed the plan of 2375 of 6000 programs (40%).
 
 The second table lists the runs that include oracle 3, with the oracle 3 version each used.
 
