@@ -1,0 +1,127 @@
+# Lambdas and functions lowered over arrays: broadcasts, fills, shadowing, and div_const.
+
+# filter_compresses_by_lifted_predicate
+lower mode=run
+let x = [1.0]; print(filter(x, |v| v > 0.5));
+----
+bind x = L_c
+print compress(L_x, gt(L_x, bcast(L_c)))
+
+# prev_keeps_its_scalar_operand
+lower mode=run
+let x = [1, 2]; print(prev(x, 0));
+----
+bind x = L_c
+print prev(L_x, L_c)
+
+# Elementwise kernels still broadcast their scalar operands.
+lower mode=run
+let x = [1, 2]; print(x + 1);
+----
+bind x = L_c
+print add(L_x, bcast(L_c))
+
+# constant_body_is_filled
+lower mode=run
+let x = [1.0]; print(map(x, |v| 1.0));
+----
+bind x = L_c
+print fill(length(L_x), L_c)
+
+# if_becomes_select
+lower mode=run
+let x = [1.0]; print(map(x, |v| if v > 0.0 { v } else { 0.0 - v }));
+----
+bind x = L_c
+print select(gt(L_x, bcast(L_c)), L_x, sub(bcast(L_c), L_x))
+
+# named_function_inlines_through_map
+lower mode=run
+fn sq(v: f64) -> f64 { v * v } let x = [1.0]; print(sum(map(x, sq)));
+----
+bind x = L_c
+print reduce_add(mul(L_x, L_x))
+
+# function_called_twice_and_nested
+lower mode=run
+fn sq(v: f64[]) -> f64[] { v * v } fn quad(v: f64[]) -> f64[] { sq(sq(v)) } let x = [1.0]; let y = [2.0]; print(quad(x) + y);
+----
+bind x = L_c
+bind y = L_c
+bind _t0 = mul(L_x, L_x)
+print add(mul(L_t0, L_t0), L_y)
+
+# block_lets_are_substituted
+lower mode=run
+fn f(v: f64[]) -> f64 { let s = sum(v); s + 1.0 } let x = [1.0]; print(f(x));
+----
+bind x = L_c
+print add(reduce_add(L_x), L_c)
+
+# scalar_capture_is_broadcast
+lower mode=run
+let x = [1.0]; let s = sum(x); print(map(x, |v| v * s));
+----
+bind x = L_c
+print mul(L_x, bcast(reduce_add(L_x)))
+
+# zip_map_reads_each_array_through_a_length_check
+lower mode=run
+let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a));
+----
+bind x = L_c
+bind y = L_c
+print samelen(L_x, length(L_y))
+
+lower mode=run
+let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a + b));
+----
+bind x = L_c
+bind y = L_c
+print add(samelen(L_x, length(L_y)), samelen(L_y, length(L_x)))
+
+# lambda_parameter_shadows_outer_variable
+lower mode=run
+let v = [1.0]; let x = [2.0]; print(sum(v)); print(map(x, |v| v * 2.0));
+----
+bind v = L_c
+bind x = L_c
+print reduce_add(L_v)
+print mul(L_x, bcast(L_c))
+
+# function_local_shadows_outer_variable
+lower mode=run
+fn f(a: f64[]) -> f64 { let x = sum(a); x + 1.0 } let x = [1.0]; let y = [2.0]; print(f(y) + sum(x));
+----
+bind x = L_c
+bind y = L_c
+print add(add(reduce_add(L_y), L_c), reduce_add(L_x))
+
+# div_const_lifts_in_a_lambda
+# The divisor stays a scalar, only the dividend is an array operand.
+lower mode=run
+let x = [100, 200]; print(map(x, |v| div_const(v, 60)));
+----
+bind x = L_c
+print div_const(L_x, L_c)
+
+# div_const_with_a_captured_divisor_lifts_in_a_lambda
+lower mode=run
+let x = [100, 200]; let c = 60; print(map(x, |v| div_const(v, c)));
+----
+bind x = L_c
+bind c = L_c
+print div_const(L_x, L_c)
+
+# div_const_through_functions_lifts_in_a_lambda
+lower mode=run
+fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let x = [100, 200]; print(map(x, |v| f(v, 3)));
+----
+bind x = L_c
+print div_const(L_x, L_c)
+
+lower mode=run
+fn g(a: i64, b: i64) -> i64 { div_const(a, b) } fn f(a: i64, b: i64) -> i64 { g(a + 1, b * 2) } let x = [100, 200]; print(map(x, |v| f(v, 3)));
+----
+bind x = L_c
+print div_const(add(L_x, bcast(L_c)), mul(L_c, L_c))

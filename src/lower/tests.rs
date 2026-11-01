@@ -50,201 +50,51 @@ fn dump(l: &Lowered, g: &Globals) -> Vec<String> {
         .collect()
 }
 
-fn run_dump(src: &str) -> Vec<String> {
-    let (l, g) = lowered(src, Mode::Run);
-    dump(&l, &g)
+/// Renders the dump of `src` lowered in `mode`, or the lowering error with its span as
+/// `error: <message> at <line>:<col>`. The program must check, and any lowering error
+/// must be a type error.
+fn lower_output(src: &str, mode: Mode) -> String {
+    match lowered_with(src, mode) {
+        Ok((l, g)) => dump(&l, &g)
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect(),
+        Err(e) => {
+            assert_eq!(e.kind, ErrorKind::Type, "{e}");
+            match e.span {
+                Some(s) => format!("error: {} at {}:{}\n", e.message, s.line, s.col),
+                None => format!("error: {}\n", e.message),
+            }
+        }
+    }
 }
 
+/// Runs the `lower` directive on every file in `testdata`. The `mode` argument is `run` or
+/// `repl`, and the output is one line per statement from `dump`.
 #[test]
-fn array_lets_stay_binds() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let y = [2.0]; print(sum(x * y));"),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "print reduce_add(mul(L_x, L_y))"
-        ]
-    );
-}
-
-#[test]
-fn single_use_let_is_inlined() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));"),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "print reduce_add(mul(L_x, L_y))"
-        ]
-    );
-}
-
-#[test]
-fn multi_use_let_stays() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t)); print(t);"),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "bind t = mul(L_x, L_y)",
-            "print reduce_add(L_t)",
-            "print L_t"
-        ]
-    );
-}
-
-#[test]
-fn repl_keeps_every_let() {
-    let (l, g) = lowered(
-        "let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));",
-        Mode::Repl,
-    );
-    assert_eq!(
-        dump(&l, &g),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "bind t = mul(L_x, L_y)",
-            "print reduce_add(L_t)"
-        ]
-    );
-}
-
-#[test]
-fn inlining_chains() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let a = x + x; let b = a * x; print(sum(b));"),
-        ["bind x = L_c", "print reduce_add(mul(add(L_x, L_x), L_x))"]
-    );
-}
-
-#[test]
-fn filter_compresses_by_lifted_predicate() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(filter(x, |v| v > 0.5));"),
-        ["bind x = L_c", "print compress(L_x, gt(L_x, bcast(L_c)))"]
-    );
-}
-
-#[test]
-fn prev_keeps_its_scalar_operand() {
-    assert_eq!(
-        run_dump("let x = [1, 2]; print(prev(x, 0));"),
-        ["bind x = L_c", "print prev(L_x, L_c)"]
-    );
-    // Elementwise kernels still broadcast their scalar operands.
-    assert_eq!(
-        run_dump("let x = [1, 2]; print(x + 1);"),
-        ["bind x = L_c", "print add(L_x, bcast(L_c))"]
-    );
-}
-
-#[test]
-fn constant_body_is_filled() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(map(x, |v| 1.0));"),
-        ["bind x = L_c", "print fill(length(L_x), L_c)"]
-    );
-}
-
-#[test]
-fn if_becomes_select() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(map(x, |v| if v > 0.0 { v } else { 0.0 - v }));"),
-        [
-            "bind x = L_c",
-            "print select(gt(L_x, bcast(L_c)), L_x, sub(bcast(L_c), L_x))"
-        ]
-    );
-}
-
-#[test]
-fn named_function_inlines_through_map() {
-    assert_eq!(
-        run_dump("fn sq(v: f64) -> f64 { v * v } let x = [1.0]; print(sum(map(x, sq)));"),
-        ["bind x = L_c", "print reduce_add(mul(L_x, L_x))"]
-    );
-}
-
-#[test]
-fn function_called_twice_and_nested() {
-    assert_eq!(
-        run_dump(
-            "fn sq(v: f64[]) -> f64[] { v * v } fn quad(v: f64[]) -> f64[] { sq(sq(v)) } \
-             let x = [1.0]; let y = [2.0]; print(quad(x) + y);"
-        ),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "bind _t0 = mul(L_x, L_x)",
-            "print add(mul(L_t0, L_t0), L_y)"
-        ]
-    );
-}
-
-#[test]
-fn block_lets_are_substituted() {
-    assert_eq!(
-        run_dump("fn f(v: f64[]) -> f64 { let s = sum(v); s + 1.0 } let x = [1.0]; print(f(x));"),
-        ["bind x = L_c", "print add(reduce_add(L_x), L_c)"]
-    );
-}
-
-#[test]
-fn repeated_subterm_is_hoisted() {
-    let (l, g) = lowered("let x = [1.0]; print(sum(x + x) + sum(x + x));", Mode::Run);
-    assert_eq!(
-        dump(&l, &g),
-        [
-            "bind x = L_c",
-            "bind _t0 = reduce_add(add(L_x, L_x))",
-            "print add(L_t0, L_t0)"
-        ]
-    );
-    let LStmt::Bind { var, .. } = &l.stmts[1] else {
-        panic!("expected a bind")
-    };
-    assert_eq!(g.name(*var), "_t0");
-}
-
-#[test]
-fn inner_term_shared_only_through_parent_is_not_hoisted_twice() {
-    let (l, g) = lowered(
-        "let x = [1.0]; let y = [2.0]; print(sum(x * y) + sum(x * y) + sum(x));",
-        Mode::Run,
-    );
-    assert_eq!(
-        dump(&l, &g),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "bind _t0 = reduce_add(mul(L_x, L_y))",
-            "print add(add(L_t0, L_t0), reduce_add(L_x))"
-        ]
-    );
-}
-
-#[test]
-fn inner_term_also_used_elsewhere_is_hoisted_separately() {
-    let (l, g) = lowered(
-        "let x = [1.0]; print(sum(x + x) + sum(x + x) + sum(sqrt(x + x)));",
-        Mode::Run,
-    );
-    assert_eq!(
-        dump(&l, &g),
-        [
-            "bind x = L_c",
-            "bind _t0 = add(L_x, L_x)",
-            "bind _t1 = reduce_add(L_t0)",
-            "print add(add(L_t1, L_t1), reduce_add(sqrt(L_t0)))"
-        ]
+fn datadriven_lowering() {
+    datadriven::walk(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/lower/testdata"),
+        |f| {
+            f.run(|tc| match tc.directive.as_str() {
+                "lower" => {
+                    let mode = match tc.args["mode"][0].as_str() {
+                        "run" => Mode::Run,
+                        "repl" => Mode::Repl,
+                        m => panic!("unknown mode {m}"),
+                    };
+                    lower_output(&tc.input, mode)
+                }
+                d => panic!("unknown directive {d}"),
+            })
+        },
     );
 }
 
 #[test]
 fn input_and_export() {
+    // The dump of this case is in `testdata/lets.dd`.
     let (l, g) = lowered("input x: f64[]; export d = sum(x * x);", Mode::Run);
-    assert_eq!(dump(&l, &g), ["bind d = reduce_add(mul(L_x, L_x))"]);
     let (var, _) = g.lookup("d").unwrap();
     assert_eq!(l.exports, [("d".to_string(), var)]);
     let (x, _) = g.lookup("x").unwrap();
@@ -252,39 +102,6 @@ fn input_and_export() {
         l.leaves
             .iter()
             .any(|leaf| matches!(leaf, Leaf::Var(v) if *v == x))
-    );
-}
-
-#[test]
-fn export_is_never_inlined() {
-    let (l, g) = lowered("let x = [1.0]; export e = x + x; print(sum(e));", Mode::Run);
-    assert_eq!(
-        dump(&l, &g),
-        [
-            "bind x = L_c",
-            "bind e = add(L_x, L_x)",
-            "print reduce_add(L_e)"
-        ]
-    );
-}
-
-#[test]
-fn zero_use_let_stays() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let t = x + x; print(sum(x));"),
-        [
-            "bind x = L_c",
-            "bind t = add(L_x, L_x)",
-            "print reduce_add(L_x)"
-        ]
-    );
-}
-
-#[test]
-fn scalar_capture_is_broadcast() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let s = sum(x); print(map(x, |v| v * s));"),
-        ["bind x = L_c", "print mul(L_x, bcast(reduce_add(L_x)))"]
     );
 }
 
@@ -303,229 +120,6 @@ fn term_equality_ignores_span() {
     let mut set = HashSet::new();
     set.insert(a);
     assert!(set.contains(&b));
-}
-
-#[test]
-fn zip_map_reads_each_array_through_a_length_check() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a));"),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "print samelen(L_x, length(L_y))"
-        ]
-    );
-    assert_eq!(
-        run_dump("let x = [1.0]; let y = [2.0]; print(zip_map(x, y, |a, b| a + b));"),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "print add(samelen(L_x, length(L_y)), samelen(L_y, length(L_x)))"
-        ]
-    );
-}
-
-#[test]
-fn lambda_parameter_shadows_outer_variable() {
-    assert_eq!(
-        run_dump("let v = [1.0]; let x = [2.0]; print(sum(v)); print(map(x, |v| v * 2.0));"),
-        [
-            "bind v = L_c",
-            "bind x = L_c",
-            "print reduce_add(L_v)",
-            "print mul(L_x, bcast(L_c))"
-        ]
-    );
-}
-
-#[test]
-fn function_local_shadows_outer_variable() {
-    assert_eq!(
-        run_dump(
-            "fn f(a: f64[]) -> f64 { let x = sum(a); x + 1.0 } let x = [1.0]; let y = [2.0]; print(f(y) + sum(x));"
-        ),
-        [
-            "bind x = L_c",
-            "bind y = L_c",
-            "print add(add(reduce_add(L_y), L_c), reduce_add(L_x))"
-        ]
-    );
-}
-
-#[test]
-fn single_use_let_inlines_into_call_argument() {
-    assert_eq!(
-        run_dump("fn f(a: f64[]) -> f64 { sum(a) } let x = [1.0]; let t = x + x; print(f(t));"),
-        ["bind x = L_c", "print reduce_add(add(L_x, L_x))"]
-    );
-}
-
-#[test]
-fn single_use_let_inlines_into_lambda() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let s = sum(x) * 2.0; print(map(x, |v| v + s));"),
-        [
-            "bind x = L_c",
-            "print add(L_x, bcast(mul(reduce_add(L_x), L_c)))"
-        ]
-    );
-}
-
-#[test]
-fn scalar_subexpression_gets_one_broadcast() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let a = 2.0; let b = 3.0; print(x * (a + b));"),
-        [
-            "bind x = L_c",
-            "bind a = L_c",
-            "bind b = L_c",
-            "print mul(L_x, bcast(add(L_a, L_b)))"
-        ]
-    );
-}
-
-#[test]
-fn single_use_let_inlines_across_print() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let t = x + x; print(sum(x)); print(sum(t));"),
-        [
-            "bind x = L_c",
-            "print reduce_add(L_x)",
-            "print reduce_add(add(L_x, L_x))"
-        ]
-    );
-}
-
-#[test]
-fn array_literal_of_non_constant_is_type_error() {
-    let e = lowered_with("let x = [1.0]; print([sum(x)]);", Mode::Run).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Type);
-    assert_eq!(e.message, "array literal elements must be constants");
-    assert_eq!(e.span, Some(Span { line: 1, col: 23 }));
-}
-
-#[test]
-fn scalar_condition_if_is_lazy() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(if sum(x) > 0.0 { x } else { x + x });"),
-        [
-            "bind x = L_c",
-            "print if(gt(reduce_add(L_x), L_c), L_x, add(L_x, L_x))"
-        ]
-    );
-}
-
-#[test]
-fn mask_condition_if_and_lambda_if_select() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(if x > 0.0 { 1.0 } else { 0.0 });"),
-        [
-            "bind x = L_c",
-            "print select(gt(L_x, bcast(L_c)), bcast(L_c), bcast(L_c))"
-        ]
-    );
-    // A condition on a captured scalar is still per element inside a lambda.
-    assert_eq!(
-        run_dump(
-            "let x = [1.0]; let s = sum(x); print(map(x, |v| if s > 0.0 { v } else { 0.0 }));"
-        ),
-        [
-            "bind x = L_c",
-            "print select(bcast(gt(reduce_add(L_x), L_c)), L_x, bcast(L_c))"
-        ]
-    );
-}
-
-#[test]
-fn repeated_subterm_in_branch_is_not_hoisted() {
-    assert_eq!(
-        run_dump("let x = [1.0]; print(if sum(x) > 0.0 { sum(x + x) + sum(x + x) } else { 0.0 });"),
-        [
-            "bind x = L_c",
-            "print if(gt(reduce_add(L_x), L_c), add(reduce_add(add(L_x, L_x)), reduce_add(add(L_x, L_x))), L_c)"
-        ]
-    );
-    // Repeats in the condition run unconditionally and are hoisted.
-    assert_eq!(
-        run_dump("let x = [1.0]; print(if sum(x) > sum(x) { sum(x) } else { 0.0 });"),
-        [
-            "bind x = L_c",
-            "bind _t0 = reduce_add(L_x)",
-            "print if(gt(L_t0, L_t0), reduce_add(L_x), L_c)"
-        ]
-    );
-}
-
-#[test]
-fn repeated_conditional_is_hoisted_whole() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let c = if sum(x) > 0.0 { 1.0 } else { 2.0 }; print(c + c);"),
-        [
-            "bind x = L_c",
-            "bind c = if(gt(reduce_add(L_x), L_c), L_c, L_c)",
-            "print add(L_c, L_c)"
-        ]
-    );
-    assert_eq!(
-        run_dump(
-            "fn f(x: f64[]) -> f64 { if sum(x) > 0.0 { 1.0 } else { 2.0 } } let x = [1.0]; print(f(x) + f(x));"
-        ),
-        [
-            "bind x = L_c",
-            "bind _t0 = if(gt(reduce_add(L_x), L_c), L_c, L_c)",
-            "print add(L_t0, L_t0)"
-        ]
-    );
-}
-
-#[test]
-fn single_use_let_inlines_into_branch() {
-    assert_eq!(
-        run_dump("let x = [1.0]; let t = sum(x + x); print(if true { t } else { 0.0 });"),
-        [
-            "bind x = L_c",
-            "print if(L_c, reduce_add(add(L_x, L_x)), L_c)"
-        ]
-    );
-}
-
-#[test]
-fn div_const_lifts_in_a_lambda() {
-    // The divisor stays a scalar, only the dividend is an array operand.
-    assert_eq!(
-        run_dump("let x = [100, 200]; print(map(x, |v| div_const(v, 60)));"),
-        ["bind x = L_c", "print div_const(L_x, L_c)"]
-    );
-}
-
-#[test]
-fn div_const_with_a_captured_divisor_lifts_in_a_lambda() {
-    assert_eq!(
-        run_dump("let x = [100, 200]; let c = 60; print(map(x, |v| div_const(v, c)));"),
-        ["bind x = L_c", "bind c = L_c", "print div_const(L_x, L_c)"]
-    );
-}
-
-#[test]
-fn div_const_through_functions_lifts_in_a_lambda() {
-    assert_eq!(
-        run_dump(
-            "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } \
-             let x = [100, 200]; print(map(x, |v| f(v, 3)));"
-        ),
-        ["bind x = L_c", "print div_const(L_x, L_c)"]
-    );
-    assert_eq!(
-        run_dump(
-            "fn g(a: i64, b: i64) -> i64 { div_const(a, b) } \
-             fn f(a: i64, b: i64) -> i64 { g(a + 1, b * 2) } \
-             let x = [100, 200]; print(map(x, |v| f(v, 3)));"
-        ),
-        [
-            "bind x = L_c",
-            "print div_const(add(L_x, bcast(L_c)), mul(L_c, L_c))"
-        ]
-    );
 }
 
 /// Every lambda the checker accepts must also lower, so the checker and lowering cannot

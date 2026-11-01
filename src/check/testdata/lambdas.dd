@@ -1,0 +1,90 @@
+# Lambdas: what they may capture and call, and how map, filter, and zip_map type.
+
+# map_lambda
+type
+let x = [1.0]; let m = map(x, |v| (v * 2.0) + 1.0);
+----
+f64[]
+
+# lambda_rejects_reduction
+type
+let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * sum(y));
+----
+error: 'sum' cannot be used inside a lambda at 1:54
+
+# prev_is_rejected_inside_a_lambda
+type
+let x = [1, 2]; let m = map(x, |v| prev(v, 0));
+----
+error: 'prev' cannot be used inside a lambda at 1:36
+
+# lambda_rejects_array_capture
+type
+let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * y);
+----
+error: lambda captures array 'y' at 1:54
+
+# lambda_captures_scalar
+type
+let t = 0.5; let f = filter([1.0], |v| v > t);
+----
+f64[]
+
+# filter_needs_bool
+type
+let f = filter([1.0], |v| v * 2.0);
+----
+error: filter predicate must return bool, got f64 at 1:23
+
+# scan_is_rejected_inside_a_lambda
+type
+let x = [1, 2]; let m = map(x, |v| scan(v, add));
+----
+error: 'scan' cannot be used inside a lambda at 1:36
+
+# zip_map_types
+type
+let m = zip_map([1.0], [2.0], |a, b| a + b);
+----
+f64[]
+
+type
+let m = zip_map([1.0], [2.0], |a| a);
+----
+error: lambda needs 2 parameter(s), got 1 at 1:31
+
+# zip_map_checks_the_length_of_both_arrays
+# The body ignores the i8 array, but lowering still reads its length.
+type
+let x = [1, 2]; let y = [1i8, 2i8]; print(zip_map(x, y, |a, b| a + 1));
+----
+error: 'zip_map' compares the lengths of its i64[] and i8[] arrays: no kernel for 'length' on i8[] at 1:43
+
+# map_over_i8_has_no_array_kernel
+# The scalar kernel exists, but lifting multiplies arrays, which has no i8 kernel.
+type
+let x = [1i8]; print(map(x, |v| v * v));
+----
+error: no kernel for '*' on i8[], i8[] at 1:35
+
+# A uniform body stays scalar and is filled to the array's length, which i8 lacks.
+type
+let x = [1i8]; let c = 2i8; let m = map(x, |v| c * c);
+----
+error: the lambda body does not use its parameters, so 'map' fills its i8 value to the length of the i8[] array: no kernel for 'length' on i8[] at 1:37
+
+type
+let x = [1]; let c = 2; let m = map(x, |v| cast_i8(c));
+----
+error: the lambda body does not use its parameters, so 'map' fills its i8 value to the length of the i64[] array: no kernel for 'fill' on i64, i8 at 1:33
+
+type
+let x = [1]; let c = 2; let m = map(x, |v| c * c);
+----
+i64[]
+
+# group_id_takes_one_or_two_key_columns (the lambda case)
+type
+let x = [1]; let y = map(x, |v| group_id(v));
+----
+error: 'group_id' cannot be used inside a lambda at 1:33

@@ -1,0 +1,128 @@
+# Which lets stay binds, which are inlined, and which subterms are hoisted.
+
+# array_lets_stay_binds
+lower mode=run
+let x = [1.0]; let y = [2.0]; print(sum(x * y));
+----
+bind x = L_c
+bind y = L_c
+print reduce_add(mul(L_x, L_y))
+
+# single_use_let_is_inlined
+lower mode=run
+let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));
+----
+bind x = L_c
+bind y = L_c
+print reduce_add(mul(L_x, L_y))
+
+# multi_use_let_stays
+lower mode=run
+let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t)); print(t);
+----
+bind x = L_c
+bind y = L_c
+bind t = mul(L_x, L_y)
+print reduce_add(L_t)
+print L_t
+
+# repl_keeps_every_let
+lower mode=repl
+let x = [1.0]; let y = [2.0]; let t = x * y; print(sum(t));
+----
+bind x = L_c
+bind y = L_c
+bind t = mul(L_x, L_y)
+print reduce_add(L_t)
+
+# inlining_chains
+lower mode=run
+let x = [1.0]; let a = x + x; let b = a * x; print(sum(b));
+----
+bind x = L_c
+print reduce_add(mul(add(L_x, L_x), L_x))
+
+# repeated_subterm_is_hoisted
+lower mode=run
+let x = [1.0]; print(sum(x + x) + sum(x + x));
+----
+bind x = L_c
+bind _t0 = reduce_add(add(L_x, L_x))
+print add(L_t0, L_t0)
+
+# inner_term_shared_only_through_parent_is_not_hoisted_twice
+lower mode=run
+let x = [1.0]; let y = [2.0]; print(sum(x * y) + sum(x * y) + sum(x));
+----
+bind x = L_c
+bind y = L_c
+bind _t0 = reduce_add(mul(L_x, L_y))
+print add(add(L_t0, L_t0), reduce_add(L_x))
+
+# inner_term_also_used_elsewhere_is_hoisted_separately
+lower mode=run
+let x = [1.0]; print(sum(x + x) + sum(x + x) + sum(sqrt(x + x)));
+----
+bind x = L_c
+bind _t0 = add(L_x, L_x)
+bind _t1 = reduce_add(L_t0)
+print add(add(L_t1, L_t1), reduce_add(sqrt(L_t0)))
+
+# input_and_export (the dump, the exports and leaves stay in Rust)
+lower mode=run
+input x: f64[]; export d = sum(x * x);
+----
+bind d = reduce_add(mul(L_x, L_x))
+
+# export_is_never_inlined
+lower mode=run
+let x = [1.0]; export e = x + x; print(sum(e));
+----
+bind x = L_c
+bind e = add(L_x, L_x)
+print reduce_add(L_e)
+
+# zero_use_let_stays
+lower mode=run
+let x = [1.0]; let t = x + x; print(sum(x));
+----
+bind x = L_c
+bind t = add(L_x, L_x)
+print reduce_add(L_x)
+
+# single_use_let_inlines_across_print
+lower mode=run
+let x = [1.0]; let t = x + x; print(sum(x)); print(sum(t));
+----
+bind x = L_c
+print reduce_add(L_x)
+print reduce_add(add(L_x, L_x))
+
+# single_use_let_inlines_into_call_argument
+lower mode=run
+fn f(a: f64[]) -> f64 { sum(a) } let x = [1.0]; let t = x + x; print(f(t));
+----
+bind x = L_c
+print reduce_add(add(L_x, L_x))
+
+# single_use_let_inlines_into_lambda
+lower mode=run
+let x = [1.0]; let s = sum(x) * 2.0; print(map(x, |v| v + s));
+----
+bind x = L_c
+print add(L_x, bcast(mul(reduce_add(L_x), L_c)))
+
+# scalar_subexpression_gets_one_broadcast
+lower mode=run
+let x = [1.0]; let a = 2.0; let b = 3.0; print(x * (a + b));
+----
+bind x = L_c
+bind a = L_c
+bind b = L_c
+print mul(L_x, bcast(add(L_a, L_b)))
+
+# array_literal_of_non_constant_is_type_error
+lower mode=run
+let x = [1.0]; print([sum(x)]);
+----
+error: array literal elements must be constants at 1:23
