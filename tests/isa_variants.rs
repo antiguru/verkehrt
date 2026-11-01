@@ -212,6 +212,41 @@ fn bucket_keys(input: &Input, start: usize, n: usize, buckets: i64) -> Value {
     Value::Array(Array::from_vec(keys))
 }
 
+/// The rows of `rows` at the positions `idx`, as an array of the same type.
+fn rows_at<T: Elem>(rows: &Array, idx: &[usize]) -> Array {
+    let rows = rows.as_slice::<T>();
+    Array::from_vec(idx.iter().map(|&i| rows[i]).collect())
+}
+
+/// Key column `k` of a `group_id` case, over the rows `start..start + n` of its input.
+/// Generated rows are mostly distinct, so an input with a `pick` draws each row from the
+/// first `d` rows of its view instead, which repeats keys. `d` lies in `1..=64` when the
+/// input asks for a splat and in `1..=n` otherwise. A second column without a `pick` follows
+/// the first column's choice of rows, so whole pairs repeat as well.
+fn group_keys(def: &KernelDef, case: &Case, k: usize, start: usize, n: usize) -> Value {
+    let input = &case.inputs[k];
+    let lead = if k == 1 && input.pick.is_none() {
+        &case.inputs[0]
+    } else {
+        input
+    };
+    let Some(pick) = lead.pick.filter(|_| n > 0) else {
+        return Value::Array(input.rows.slice(start, n));
+    };
+    let d = 1 + pick.index(if lead.splat { n.min(64) } else { n });
+    // A multiplicative scramble, so first occurrences are not simply rows `0..d`.
+    let idx: Vec<usize> = (0..n)
+        .map(|i| start + i.wrapping_mul(0x9E37_79B9) % d)
+        .collect();
+    Value::Array(match spec_type(def.inputs[k]) {
+        ScalarType::I64 => rows_at::<i64>(&input.rows, &idx),
+        ScalarType::U64 => rows_at::<u64>(&input.rows, &idx),
+        ScalarType::I32 => rows_at::<i32>(&input.rows, &idx),
+        ScalarType::U8 => rows_at::<u8>(&input.rows, &idx),
+        other => panic!("{} takes no {other:?} keys", def.name),
+    })
+}
+
 /// The arguments for `n` rows, starting at row 0 of each buffer when `aligned`, else at each
 /// input's own offset.
 fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value> {
@@ -246,6 +281,9 @@ fn args_for(def: &KernelDef, case: &Case, aligned: bool, n: usize) -> Vec<Value>
                 if k == 0 {
                     return bucket_keys(input, start(input), n, buckets);
                 }
+            }
+            if def.name.starts_with("group_id") {
+                return group_keys(def, case, k, start(input), n);
             }
             if is_array(k) {
                 return Value::Array(input.rows.slice(start(input), n));
@@ -419,9 +457,12 @@ fn check_case(
 ) -> Result<(), TestCaseError> {
     let def = reg.get(id);
     // `argsort` on 64-bit keys switches from a comparison sort to a radix sort above 1024
-    // rows, so it needs the long length too.
-    let long = (def.class == KernelClass::Selection || def.name.starts_with("argsort_"))
-        .then_some(LONG_LEN);
+    // rows, and `group_id` grows its table several times on distinct keys up to the long
+    // length, so both need it too.
+    let long = (def.class == KernelClass::Selection
+        || def.name.starts_with("argsort_")
+        || def.name.starts_with("group_id"))
+    .then_some(LONG_LEN);
     for n in LENGTHS.into_iter().chain([TILED_LEN]).chain(long) {
         for aligned in [true, false] {
             let args = args_for(def, case, aligned, n);
@@ -588,7 +629,13 @@ fn isa_variants_match_scalar() {
 /// Name prefixes of the whole kernels that loop over their arguments, so they have auto
 /// entries. The list is kept here and not derived from the impls tables, so that a kernel
 /// registered with `scalar_only()` by mistake fails the test.
-const WHOLE_AUTO_PREFIXES: [&str; 4] = ["gather_", "histogram", "reduce_into_", "argsort_"];
+const WHOLE_AUTO_PREFIXES: [&str; 5] = [
+    "gather_",
+    "histogram",
+    "reduce_into_",
+    "argsort_",
+    "group_id",
+];
 
 #[test]
 fn every_array_kernel_has_auto_variants() {
