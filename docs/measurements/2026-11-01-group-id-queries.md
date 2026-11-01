@@ -3,7 +3,8 @@
 This document times the six ClickBench queries that group by `group_id` (q04, q08, q09, q15, q32, q35) against their sort-based versions, corgi and DuckDB on one thread.
 It also tries `group_id` on q30, q40 and q41, and decides on q31 from its kernel counts.
 q04, q08, q09, q15 and q35 are 2.8x to 4.5x faster with `group_id` than with sorting on `x86-64-v4-intrinsics` (q04 26.0 to 5.7 ms), and q32 is 1.24x slower, so q32 is reverted to its sort-based version.
-Of the other four queries, `group_id` is 10% to 12% faster on q30 and q41 on the default variant only, which is at the edge of the noise band, and 16% slower on q40, so all three stay sort-based, and q31 is left sort-based without a trial.
+Of the other four queries, `group_id` is 5% to 9% faster on q41 and up to 11% faster on q30 in three interleaved passes of longer runs, and 8% to 16% slower on q40, so all three stay sort-based, and q31 is left sort-based without a trial.
+Every change in this document is a time reduction, 1 - new/old, with "new" the `group_id` time and "old" the sort-based time, so 10% faster means the hash time is 0.90 of the sort time.
 The sort and hash versions run in one session on one build, and the last sections list the gaps.
 
 ## Setup
@@ -13,16 +14,18 @@ The sort and hash versions run in one session on one build, and the last section
 | CPU | AMD Ryzen AI MAX+ 395 (Zen 5, 32 logical CPUs), AVX2 and AVX-512 |
 | Frequency scaling | boost off, governor `powersave`, 3.0 GHz under load (user-reported, the sandbox cannot read cpufreq) |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
-| Verkehrt | branch `grouping/hashed` at `bc70ec7`, plus a `VERKEHRT_PROGRAMS` override in `benches/acceptance.rs` |
-| Sort-based programs | `tests/acceptance/clickbench/qNN.vk` of `bb01630`, run from a directory outside the repository through `VERKEHRT_PROGRAMS` |
+| Verkehrt | branch `grouping/hashed` at `bc70ec7`, plus `VERKEHRT_PROGRAMS`, `VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` overrides in `benches/acceptance.rs` |
+| Sort-based programs | `tests/acceptance/clickbench/qNN.vk` of `bb01630`. The first runs read them from a scratch directory through an earlier, flat form of `VERKEHRT_PROGRAMS`, and the long runs read the repository files |
+| Tried `group_id` programs | `2026-11-01-group-id-queries/programs/clickbench/q30.vk`, `q40.vk`, `q41.vk`, read by the long runs through `VERKEHRT_PROGRAMS` |
 | corgi revision | `2751e04e8501d47b33219be23049bf4afa7a4428`, checkout `~/dev/repos/data/verkehrt/corgi-wip`, the same as in `2026-11-01-clickbench-groups.md` |
 | DuckDB | one-thread times from `duckdb.tsv` of the prepared data directory |
 | Data | `hits_0.parquet`, 1,000,000 rows, the data directory of the earlier rounds |
 
 The method is that of `2026-11-01-clickbench-groups.md`: criterion with `sample_size(10)`, a 0.5 s warm-up and a 3 s measurement time on `Prepared::execute` only, corgi's best of at least 3 runs, and the `one_thread_ms` column of DuckDB.
-`VERKEHRT_PROGRAMS` makes the acceptance bench read its `.vk` files from another directory, so the sort-based versions run in the same build and session as the hash-based ones without a second copy in the repository.
-Differences within about 10% count as noise.
-Every table row in this document is a criterion mean in ms, from the files listed below.
+`VERKEHRT_PROGRAMS=DIR` makes the acceptance bench read the programs of each suite from `DIR/SUITE`, so two versions of a query run in the same build and session without a second copy under `tests/acceptance/`.
+`VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` replace the sample size and the measurement time, and the long runs below use 30 samples and 10 s against the 10 samples and 3 s of the other runs.
+Differences within about 10% count as noise, and a change is a time reduction, 1 - new/old.
+Every table row in this document is a criterion mean in ms, from the files listed below, and a "best" column is the minimum over all runs and variants of that form.
 Other work shares the host, so each run group records `/proc/loadavg` at its start and end, and the load ranged from 1.69 to 2.90 over all groups.
 
 ### Evidence files
@@ -34,11 +37,12 @@ The raw output is in `docs/measurements/2026-11-01-group-id-queries/`.
 * `bench-sortbound.txt`: criterion log for q30, q31, q40, q41 as they stood before this task, all sort-based. Load 2.41 to 2.35.
 * `bench-try-hash.txt`, `bench-try-sort.txt`: q30, q40, q41 as `group_id` and as sort-based, run back to back. Load 1.87 to 2.33.
 * `bench-try-hash-2.txt`, `bench-try-sort-2.txt`: the repeat for q30 and q41. Load 2.23 to 2.39.
+* `long-hash-N.txt`, `long-sort-N.txt` (N = 1 to 3): q30 and q41 as `group_id` and as sort-based with 30 samples and 10 s, interleaved in the order hash 1, sort 1, hash 2, sort 2, hash 3, sort 3. Load at the start and end of each file: 1.64 to 4.89 across the six, the highest at the end of `long-hash-1.txt` (4.89) and in the passes 3 (4.40, 4.01).
 * `corgi.txt`: corgi's bench for the ten queries. Load 2.12 to 2.10.
 * `stats.txt`: per-kernel totals. q04, q08, q09, q15, q32, q35 are the `group_id` versions, q30, q31, q40, q41 the sort-based versions, and the last two sections are the sort-based q32 and q04 run by path. Load 2.26 to 2.40.
 * `stats-q41-hash.txt`: per-kernel totals of the tried `group_id` q41. Load 2.09.
 
-The `group_id` versions of q30, q40 and q41 were tried and reverted, so no file in the repository holds them. The sort-based versions of the queries from `bb01630` are the ones the repository holds.
+The `group_id` versions of q30, q40 and q41 were tried and reverted, and `programs/clickbench/` in the evidence directory holds them, so the timings can be reproduced with `VERKEHRT_PROGRAMS` set to the `programs` directory. The sort-based versions of the queries from `bb01630` are the ones under `tests/acceptance/clickbench/`.
 
 ## Results
 
@@ -94,32 +98,57 @@ In the hash versions of these five, the spread across variants is 14% for q04, 1
 
 ## Decisions
 
-### q32: reverted
+### q32: Reverted
 
 q32 groups 1,000,000 rows into about 1,000,000 distinct (WatchID, ClientIP) pairs, and the hash version is slower than the sort version on all five variants: 89.4 to 92.8 ms against 65.1 to 75.1 ms, and 1.24x slower on `x86-64-v4-intrinsics`.
 The cause is in `stats.txt`.
 The hash version spends 36.0 ms in `group_id2_i64_i64` and still runs three `argsort_i64` calls over the 1M groups (35.6 ms) and 9 `gather_i64` calls (7.7 ms), summing to 86.2 ms.
 The sort version spends 38.3 ms in three `argsort_i64` calls and 21.4 ms in 13 `gather_i64` calls, summing to 70.8 ms.
-Grouping by hash saves 14 ms of gathers and 4 ms in other kernels, and the 36 ms hash pass on mostly distinct keys costs more than that, which matches `docs/measurements/2026-11-01-group-id.md` (slower than sorting on mostly distinct keys at 1M rows).
+Grouping by hash saves 13.7 ms in `gather_i64`, 2.7 ms in `argsort_i64` and 4.2 ms in other kernels, 20.6 ms in total, and the 36.0 ms hash pass on mostly distinct keys costs more than that, which matches `docs/measurements/2026-11-01-group-id.md` (slower than sorting on mostly distinct keys at 1M rows).
 The file is restored to the exact `bb01630` version, and the diff against `bb01630` is empty. The same holds for q30, q40 and q41.
 
-### q41 and q30: reverted at the edge of the band
+### q30 and q41: Reverted after longer runs
 
-The `group_id` q41 is 10.4% and 11.9% faster than the sort version on `x86-64-v4-intrinsics` in two runs (2.84 against 3.17 ms, 2.80 against 3.18 ms), and the other variants are 6% to 9% faster (for example `v4-auto` 3.42 against 3.78 and 3.40 against 3.75 ms), inside the band.
-The `group_id` q30 is 10.4% faster on `x86-64-v4-intrinsics` in both runs (5.27 against 5.88 ms, 5.34 against 5.95 ms), and across the other variants it ranges from 1% slower to 12% faster (`v3-auto` 7.16 against 7.10 ms in run 1 and 6.76 against 7.49 ms in run 2).
-Both clear 10% on one variant by 0.4 to 1.9 points and neither clears it on the rest, so neither is faster beyond noise, and both are reverted to the `bb01630` form.
-The saving is 0.3 to 0.6 ms of a 3 to 6 ms query.
+The first runs (10 samples, 3 s) put `group_id` at 10.4% to 11.9% faster on `x86-64-v4-intrinsics` for q41 and 10.4% for q30, and between 1% slower and 12% faster on the other variants of q30 and 6% to 9.5% faster on those of q41, which is at the edge of the 10% band.
+Per-variant percentages move by a point or two between metrics, so the decision rests on a longer measurement instead.
+The long runs are three interleaved passes of hash and sort (30 samples, 10 s per variant), and the rule is to keep `group_id` only if it is faster beyond the run-to-run spread on most variants in every pass.
+The tables give criterion means in ms and the time reduction of each pass.
+
+q41:
+
+| variant | hash 1 | sort 1 | red. 1 | hash 2 | sort 2 | red. 2 | hash 3 | sort 3 | red. 3 |
+|---|---|---|---|---|---|---|---|---|---|
+| scalar | 5.709 | 6.082 | 6.1% | 5.740 | 6.067 | 5.4% | 5.739 | 6.088 | 5.7% |
+| v3-auto | 4.207 | 4.542 | 7.4% | 4.259 | 4.555 | 6.5% | 4.219 | 4.561 | 7.5% |
+| v3-intrinsics | 3.455 | 3.755 | 8.0% | 3.499 | 3.764 | 7.0% | 3.495 | 3.764 | 7.2% |
+| v4-auto | 3.453 | 3.768 | 8.4% | 3.493 | 3.813 | 8.4% | 3.478 | 3.804 | 8.6% |
+| v4-intrinsics | 2.931 | 3.126 | 6.2% | 2.933 | 3.186 | 7.9% | 2.921 | 3.201 | 8.8% |
+
+q30:
+
+| variant | hash 1 | sort 1 | red. 1 | hash 2 | sort 2 | red. 2 | hash 3 | sort 3 | red. 3 |
+|---|---|---|---|---|---|---|---|---|---|
+| scalar | 8.513 | 9.494 | 10.3% | 8.969 | 8.919 | -0.6% | 8.943 | 9.475 | 5.6% |
+| v3-auto | 7.503 | 8.330 | 9.9% | 7.449 | 8.333 | 10.6% | 7.912 | 8.365 | 5.4% |
+| v3-intrinsics | 6.048 | 6.828 | 11.4% | 6.080 | 6.842 | 11.1% | 6.487 | 6.852 | 5.3% |
+| v4-auto | 6.321 | 7.095 | 10.9% | 6.324 | 7.030 | 10.0% | 6.738 | 7.129 | 5.5% |
+| v4-intrinsics | 5.284 | 5.780 | 8.6% | 5.232 | 5.783 | 9.5% | 5.254 | 5.894 | 10.9% |
+
+q41 is faster with `group_id` in all fifteen cells, by 5.4% to 8.8%, and never reaches 10%.
+Its spread across the three passes is at most 1.3% for the hash version and 2.4% for the sort version, so the gain is real but below the 10% threshold, and it saves 0.2 to 0.4 ms of a 3 to 6 ms query.
+q30 is 10% or more faster in seven of fifteen cells (three variants in each of passes 1 and 2, and v4-intrinsics in pass 3), and 5.3% to 5.6% on the other four variants in pass 3, which ran at a host load of 4.0 to 4.4.
+The hash version's spread across passes is 5% to 7% on four variants, as large as the effect in pass 3, so q30 is not faster beyond the run-to-run spread on most variants in every pass.
+Both queries therefore stay sort-based, and their files are the `bb01630` versions.
 For q41 the kernel totals show where the gain comes from: `argsort_i64` takes 129 us in the hash version (three calls over 336 KB) against 743 us in the sort version, and `group_id2_i64_i64` costs 494 us over 56,737 rows with about 7,000 groups.
 The total kernel time falls from 3842 to 3354 us (13%), and the mask chain, which this change does not touch, is 54% of the remaining time.
 q30 filters 1M rows to about 69,000 and has about 22,800 groups (from the `slice_i64` bytes in `stats.txt`), so the key sorts shrink and the group sort over 22,800 groups remains.
-More runs or a longer measurement time would settle whether the 10% to 12% on the default variant is real, and this document did not run them.
 
-### q40: reverted
+### q40: Reverted
 
-The `group_id` q40 is slower on all five variants, 16% on `x86-64-v4-intrinsics` (4.16 against 3.59 ms) and 8% to 12% on the others.
+The `group_id` q40 is slower on all five variants (one run, 10 samples and 3 s), by 15.9% on `x86-64-v4-intrinsics` (4.16 against 3.59 ms) and by 8.3%, 12.0%, 13.4% and 12.5% on scalar, `v3-auto`, `v3-intrinsics` and `v4-auto`, measured as the hash time over the sort time minus one.
 q40 filters 1M rows to about 50,000 and has about 23,600 groups, nearly half as many groups as rows, and `group_id` also leaves the two group-key sorts in place.
 
-### q31: not tried
+### q31: Not tried
 
 q31 groups about 69,350 filtered rows into about 69,360 slice bytes of groups (`slice_i64 bytes=554912` in the sort-based `stats.txt`, 69,364 elements for an `order` that is also `ng` long), so nearly every row is its own group.
 `group_id` does not shrink the sorts in that case, because the group sort over `ng` is the same size as the row sort, and `docs/measurements/2026-11-01-group-id.md` shows `group_id` slower than sorting on mostly distinct keys.
@@ -149,13 +178,13 @@ This document did not measure what a primitive that also returns the first row o
 The elementwise map before a reduction of issue #30 no longer appears in these programs, because `histogram` replaced the `add_i64 (mul_i64 gid 0) 1` count column.
 q32 keeps the sort-based form, so its row is the sort version's, and the `argsort_i64` and `gather_i64` calls there are the payload gathers through two permutations that composite-key grouping would remove.
 This document does not measure what composite-key grouping or top-k would save in q32, and the hash version shows that the three sorts over 1M groups stay when only the grouping step changes.
-In q30, no kernel exceeds 24%, and the filter on `SearchPhrase_ends` (`prev_i64`, `sub_i64`, `lt_i64` and then `compress_i64` of four columns) adds up to roughly 37% of kernel time before the first sort.
+In q30, no kernel exceeds 24%, and the filter on `SearchPhrase_ends` (`prev_i64`, `sub_i64`, `lt_i64` and then `compress_i64` of four columns) take 37% of kernel time together (2.03 of 5.48 ms in `stats.txt`), and the byte counts put most of it in the 1M-row calls (16 of the 18.2 MB of `prev_i64`).
 This document did not split the `compress_i64` time between the filter and later steps and does not name an issue for the filter.
 
 ## Change against the earlier round
 
 The sort-based times of `2026-11-01-clickbench-groups.md` (the same host, an earlier session) and the sort-based times here agree within 10% for q04, q08, q15 and q35 on `x86-64-v4-intrinsics` (25.73 against 26.01, 48.42 against 48.67, 32.57 against 34.47, 28.97 against 29.46), and q09 and q32 differ by 4.5% (54.86 against 57.34) and 4% (72.11 against 74.95).
-corgi's times differ from that round by at most 2.2% (q09 53.81 to 52.76, q35 40.12 to 39.15, q32 60.29 to 60.45), so the host did not drift visibly.
+corgi's times differ from that round by at most 2.4% (q35 40.12 to 39.15, q09 53.81 to 52.76, q32 60.29 to 60.45), so the host did not drift visibly.
 The q30, q31, q40 and q41 sort-based times are 5.88 to 5.95, 6.86, 3.55 to 3.59 and 3.10 to 3.18 ms, and the earlier round had 4.71, 5.55, 3.53 and 3.14.
 q30 and q31 are 25% and 24% slower than the earlier round, q40 and q41 are level, and this document did not find the cause.
 The q30 and q31 kernel sums in `stats.txt` (5.48 and 6.41 ms) are close to those of the earlier `stats.txt` (5.87 and 6.32 ms), so the stats runs do not show the slowdown that criterion does.
@@ -168,7 +197,7 @@ The ratios between the sort-based and hash-based forms use only data from one se
 * **Hash pass cost.** `group_id` is 98% of q04 and 53% to 54% of q15 and q35, so the table build is the next cost. The `docs/measurements/2026-11-01-group-id.md` document owns that kernel, and this one does not look inside it.
 * **DuckDB on the many-group queries.** q08 (1.55x) and q15 (1.20x) are slower than DuckDB and q09 is level (1.07x). q04 (0.83) and q35 (0.66) are faster, and q32 (1.05 on `v4-intrinsics`, 0.91 on the best sort variant) is level. This document did not look at why DuckDB leads on q08 and q15.
 * **Against corgi.** q32 (1.24 on `v4-intrinsics`) and q30 (1.12) and q31 (1.39) are slower than corgi, and this document did not read corgi's per-op profile.
-* **q30 and q41 at the edge.** `group_id` is 10% to 12% faster on the default variant only, and more runs or a longer measurement time would settle whether it is real.
+* **q41 and q30 below the threshold.** q41 is 5% to 9% faster with `group_id` on every variant in three long passes, below the 10% rule, and q30 is up to 11% faster with a spread across passes as large as the effect. Both stay sort-based, and the programs in `programs/clickbench/` would need a larger gain than the long runs show to be worth switching.
 * **q30 and q31 slowdown.** Both are 24% to 25% above the earlier round on the same variant, and the cause is not measured.
 * **Variant spread in q32.** The sort-based q32 spreads by 15% across variants and was not repeated.
 * **Output checks.** The six queries pass the acceptance tests (`cargo test --release`, 17 acceptance tests pass, including `clickbench_matches_duckdb`) after the reverts. The `group_id` q30, q40 and q41 were checked against the same suite before timing and were then reverted.

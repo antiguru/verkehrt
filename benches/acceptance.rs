@@ -4,6 +4,10 @@
 //! and `VERKEHRT_TPCH`, the directories the acceptance tests read, and skip when the variable
 //! is unset. Each query is prepared and its columns loaded once per variant, so timing covers
 //! `Prepared::execute` only. The acceptance tests check the answers.
+//!
+//! `VERKEHRT_PROGRAMS=DIR` reads the programs of each suite from `DIR/SUITE` instead of
+//! `tests/acceptance/SUITE`. `VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` replace the
+//! sample size (10) and the measurement time in seconds (3) for longer runs.
 
 use std::fs;
 use std::io::sink;
@@ -46,17 +50,16 @@ fn interpreters() -> Vec<(String, Interpreter)> {
     v
 }
 
-/// The `.vk` programs of a suite, sorted by name. `VERKEHRT_PROGRAMS` names a directory to read
-/// them from instead of `tests/acceptance/SUITE`, to time another version of a query in the
-/// same build.
+/// The `.vk` programs of a suite, sorted by name. `VERKEHRT_PROGRAMS` names a directory whose
+/// `SUITE` subdirectory replaces `tests/acceptance/SUITE`, to time another version of a query in
+/// the same build.
 fn programs(suite: &str) -> Vec<PathBuf> {
-    let dir = std::env::var_os("VERKEHRT_PROGRAMS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/acceptance")
-                .join(suite)
-        });
+    let dir = match std::env::var_os("VERKEHRT_PROGRAMS") {
+        Some(root) => PathBuf::from(root).join(suite),
+        None => Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/acceptance")
+            .join(suite),
+    };
     let mut v: Vec<PathBuf> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("program directory {}: {e}", dir.display()))
         .map(|d| d.unwrap().path())
@@ -64,6 +67,13 @@ fn programs(suite: &str) -> Vec<PathBuf> {
         .collect();
     v.sort();
     v
+}
+
+/// The number in the environment variable `var`, or `default` when it is unset.
+fn env_num(var: &str, default: u64) -> u64 {
+    std::env::var(var).map_or(default, |v| {
+        v.parse().unwrap_or_else(|_| panic!("{var}: not a number"))
+    })
 }
 
 /// `signed` lists the suite's columns stored with the sign bit flipped.
@@ -77,9 +87,9 @@ fn suite(c: &mut Criterion, var: &str, suite: &str, signed: &[&str]) {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let program = fs::read_to_string(&path).unwrap();
         let mut g = c.benchmark_group(format!("acceptance/{suite}/{name}"));
-        g.sample_size(10);
+        g.sample_size(env_num("VERKEHRT_BENCH_SAMPLES", 10) as usize);
         g.warm_up_time(Duration::from_millis(500));
-        g.measurement_time(Duration::from_secs(3));
+        g.measurement_time(Duration::from_secs(env_num("VERKEHRT_BENCH_SECS", 3)));
         for (label, interp) in &interps {
             let prepared = interp.prepare(&program).unwrap();
             let inputs = load_inputs(&dir, &prepared, signed).unwrap();
