@@ -559,3 +559,34 @@ fn is_elementwise(op: Op) -> bool {
             | Op::Cast(_)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::canonical;
+
+    /// The canonical sum of `1e16` followed by `n - 1` ones. The ulp of `1e16` is 2, so a one
+    /// added to it alone is lost, and the result shows which ones were summed first.
+    fn sum(n: usize) -> f64 {
+        let mut xs = vec![1.0; n];
+        if let Some(first) = xs.first_mut() {
+            *first = 1e16;
+        }
+        canonical(&xs, 0.0, |a, b| a + b)
+    }
+
+    #[test]
+    fn canonical_order_matches_hand_computed_sums() {
+        // Empty: accumulator 0 as it started, a positive zero.
+        assert_eq!(sum(0).to_bits(), 0.0f64.to_bits());
+        // Below 16 everything is tail, added to `1e16` one at a time and lost.
+        assert_eq!(sum(15), 1e16);
+        // One element per accumulator. The pairwise steps add 1, 2, 4, and 8 to accumulator 0,
+        // each exact: 1e16 + 1 rounds to 1e16, then + 2, + 4, + 8.
+        assert_eq!(sum(16), 1e16 + 14.0);
+        // The same, then the tail one: 1e16 + 15 ties to the even 1e16 + 16.
+        assert_eq!(sum(17), 1e16 + 16.0);
+        // Two blocks: accumulator 0 loses its one, the others hold 2, the pairwise steps add
+        // 2, 4, 8, and 16, and the tail one ties 1e16 + 31 to 1e16 + 32.
+        assert_eq!(sum(33), 1e16 + 32.0);
+    }
+}

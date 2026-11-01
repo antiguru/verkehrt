@@ -331,3 +331,24 @@ pub fn bool_of(a: &Scalar) -> bool {
         other => panic!("expected bool, got {other:?}"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::extreme_f64;
+
+    #[test]
+    fn ieee_extremes_order_zeros_and_propagate_nan() {
+        let bits = |x: f64| x.to_bits();
+        for (a, b) in [(-0.0, 0.0), (0.0, -0.0)] {
+            assert_eq!(bits(extreme_f64(a, b, false)), bits(-0.0), "min({a}, {b})");
+            assert_eq!(bits(extreme_f64(a, b, true)), bits(0.0), "max({a}, {b})");
+        }
+        for max in [false, true] {
+            assert!(extreme_f64(f64::NAN, 1.0, max).is_nan());
+            assert!(extreme_f64(1.0, f64::NAN, max).is_nan());
+            assert!(extreme_f64(f64::NAN, -0.0, max).is_nan());
+        }
+        assert_eq!(extreme_f64(1.0, 2.0, false), 1.0);
+        assert_eq!(extreme_f64(1.0, 2.0, true), 2.0);
+    }
+}
