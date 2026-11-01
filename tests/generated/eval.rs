@@ -54,7 +54,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
-use verkehrt::check::{self, Globals, TExpr, TExprKind, TLambda, TStmt, VarId};
+use verkehrt::check::{self, Globals, TExpr, TExprKind, TFn, TLambda, TStmt, VarId};
 use verkehrt::kernels::Registry;
 use verkehrt::ops::Op;
 use verkehrt::syntax::parse;
@@ -115,31 +115,44 @@ fn merge_into(acc: &mut Option<Stop>, e: Stop) {
 type Lambda = Option<Rc<HashSet<VarId>>>;
 
 /// Whether `e` depends on one of the variables `dep`.
-fn depends(e: &TExpr, dep: &HashSet<VarId>) -> bool {
+fn depends(g: &Globals, e: &TExpr, dep: &HashSet<VarId>) -> bool {
     match &e.kind {
         TExprKind::Lit(_) | TExprKind::Str(_) => false,
         TExprKind::Var(v) => dep.contains(v),
-        // A function body sees only its parameters, so a call depends through its arguments.
-        TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) | TExprKind::Call(_, es) => {
-            es.iter().any(|x| depends(x, dep))
+        TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) => es.iter().any(|x| depends(g, x, dep)),
+        // A call depends only when its body reads a parameter whose argument depends, as
+        // lifting types a call by its body.
+        TExprKind::Call(id, args) => {
+            let f = g.func(*id);
+            depends(g, &f.body, &dependent_params(g, f, args, dep))
         }
         TExprKind::Map(x, lam) | TExprKind::Filter(x, lam) => {
-            depends(x, dep) || depends(&lam.body, dep)
+            depends(g, x, dep) || depends(g, &lam.body, dep)
         }
         TExprKind::ZipMap(x, y, lam) => {
-            depends(x, dep) || depends(y, dep) || depends(&lam.body, dep)
+            depends(g, x, dep) || depends(g, y, dep) || depends(g, &lam.body, dep)
         }
-        TExprKind::If(c, t, f) => [c, t, f].into_iter().any(|x| depends(x, dep)),
+        TExprKind::If(c, t, f) => [c, t, f].into_iter().any(|x| depends(g, x, dep)),
         TExprKind::Block(lets, result) => {
             let mut dep = dep.clone();
             for (v, x) in lets {
-                if depends(x, &dep) {
+                if depends(g, x, &dep) {
                     dep.insert(*v);
                 }
             }
-            depends(result, &dep)
+            depends(g, result, &dep)
         }
     }
+}
+
+/// The parameters of `f` whose arguments `args` depend on one of the variables `dep`.
+fn dependent_params(g: &Globals, f: &TFn, args: &[TExpr], dep: &HashSet<VarId>) -> HashSet<VarId> {
+    f.params
+        .iter()
+        .zip(args)
+        .filter(|(_, a)| depends(g, a, dep))
+        .map(|((p, _), _)| *p)
+        .collect()
 }
 
 /// The state of a lazily evaluated binding.
@@ -262,15 +275,9 @@ impl<'p> Evaluator<'p> {
                 for ((p, _), a) in f.params.iter().zip(args) {
                     inner = inner.bind(*p, Thunk::pending(a, env.clone(), lambda.clone()));
                 }
-                let body_lambda = lambda.as_ref().map(|dep| {
-                    let params = f.params.iter().zip(args);
-                    Rc::new(
-                        params
-                            .filter(|(_, a)| depends(a, dep))
-                            .map(|((p, _), _)| *p)
-                            .collect(),
-                    )
-                });
+                let body_lambda = lambda
+                    .as_ref()
+                    .map(|dep| Rc::new(dependent_params(self.globals, f, args, dep)));
                 self.eval(&f.body, &inner, &body_lambda)
             }
             TExprKind::Map(x, lam) => {
@@ -310,7 +317,7 @@ impl<'p> Evaluator<'p> {
             TExprKind::If(c, t, f) => {
                 let lazy = match lambda {
                     None => c.ty == ValueType::Scalar(ScalarType::Bool),
-                    Some(dep) => !depends(c, dep),
+                    Some(dep) => !depends(self.globals, c, dep),
                 };
                 if lazy {
                     let taken = match self.eval(c, env, lambda)? {
@@ -329,7 +336,7 @@ impl<'p> Evaluator<'p> {
                 for (v, x) in lets {
                     inner = inner.bind(*v, Thunk::pending(x, inner.clone(), inner_lambda.clone()));
                     if let Some(dep) = &inner_lambda
-                        && depends(x, dep)
+                        && depends(self.globals, x, dep)
                     {
                         let mut more = HashSet::clone(dep);
                         more.insert(*v);
@@ -545,4 +552,23 @@ fn stmt_line(s: &TStmt) -> u32 {
     | TStmt::Print { span, .. }
     | TStmt::Expr { span, .. }) = s;
     span.line
+}
+
+#[cfg(test)]
+mod tests {
+    use verkehrt::kernels::Registry;
+
+    use super::evaluate;
+
+    /// A call whose body ignores its parameter is uniform even with a dependent argument, so
+    /// the lambda `if` on it is lazy and the branch not taken never divides by zero.
+    #[test]
+    fn call_ignoring_a_dependent_argument_is_uniform() {
+        let src = "fn f(q: i64) -> bool { true }\n\
+                   let x = [1, 2, 3];\n\
+                   print(map(x, |v| if f(v) { v } else { div_const(v, 0) }));\n";
+        let r = evaluate(&Registry::new(), src, &[], None).expect("supported");
+        assert!(r.result.is_ok(), "the program fails");
+        assert_eq!(r.printed, "[1, 2, 3]\n");
+    }
 }
