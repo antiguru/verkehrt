@@ -1,0 +1,140 @@
+# Many-group ClickBench queries: Measurements
+
+This document times the six ClickBench queries added in plan 5 (q04, q08, q09, q15, q32, q35) against corgi and DuckDB on one thread, and re-times the four sort-bound queries of the #20 round (q30, q31, q40, q41) on the radix `argsort`.
+Of the six new queries, q35 is faster than corgi and slower than DuckDB, q32 is level with DuckDB and slower than corgi, q04, q08 and q09 are level with corgi and 2.9 to 4.9 times slower than DuckDB, and q15 is slower than both.
+In all six, `argsort_i64` is the largest kernel at 53% to 89% of kernel time, and `gather_i64` is the second largest in q08, q09, q32 and q35 at 11% to 31%.
+Compared with the #20 round, q30, q31, q40 and q41 take 28% to 48% less time on the best variant, and `argsort_i64` is no longer the largest kernel in any of the four.
+The comparison with #20 spans two sessions on the same host, and the last sections list the gaps.
+
+## Setup
+
+| Item | Value |
+|---|---|
+| CPU | AMD Ryzen AI MAX+ 395 (Zen 5, 32 logical CPUs), AVX2 and AVX-512 |
+| Frequency scaling | boost off, governor `powersave`, 3.0 GHz under load (user-reported, the sandbox cannot read cpufreq) |
+| Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
+| Verkehrt commit | `62bdfd7` (branch `acceptance/clickbench-groups`) |
+| corgi revision | `2751e04e8501d47b33219be23049bf4afa7a4428`, checkout `~/dev/repos/data/verkehrt/corgi-wip`, the same as in the #20 round |
+| DuckDB | one-thread times from `duckdb.tsv` of the prepared data directory |
+| Data | `hits_0.parquet`, 1,000,000 rows, the data directory of the #20 round |
+
+Other work shares the host, so each run group records `/proc/loadavg` at its start and end.
+The load ranged from 1.78 to 4.42 across all groups, and the highest value is the end of `bench-b.txt`.
+Differences within about 10% between runs or builds count as noise, and the text claims no change inside that band.
+
+### Evidence files
+
+The raw output is in `docs/measurements/2026-11-01-clickbench-groups/`.
+
+* `bench-a.txt`: criterion log for q04, q08, q09, q15, q32. Load 1.78 at the start, 2.41 at the end.
+* `bench-b.txt`: criterion log for q35, q30, q31, q40, q41. Load 2.30 to 4.42.
+* `corgi.txt`: corgi's bench for the ten queries at the pinned revision. Load 3.89 to 3.60.
+* `stats.txt`: per-kernel totals of each query. Load 3.17 to 2.84.
+* `query-plans.txt`: the `acceptance_plans` output, the plan of every acceptance program.
+
+The #20 numbers come from `docs/measurements/2026-10-31-clickbench-now/` (`bench-*.txt`, `corgi.txt`, `stats.txt`).
+
+## How the systems were timed
+
+The method is that of `2026-10-31-clickbench-now.md`.
+
+* Verkehrt: criterion with `sample_size(10)`, a 0.5 s warm-up and a 3 s measurement time (`benches/acceptance.rs`, run as `cargo bench --bench acceptance -- 'clickbench/q(..|..)/'` with `VERKEHRT_CLICKBENCH` set). The timed region is `Prepared::execute` only. Tables give the criterion mean in ms.
+* corgi: `cargo bench --bench clickbench -- q04 q08 ...` in corgi's checkout with `CORGI_CLICKBENCH` set. It prints the best of at least 3 runs of `Program::run` with the input cloned per run, to two decimals.
+* DuckDB: the `one_thread_ms` column of `duckdb.tsv`.
+* Per-kernel totals: `cargo run --release --example acceptance_stats -- QUERY` with `VERKEHRT_CLICKBENCH` set. It prints the run with the least total kernel time of five fresh runs, with the CLI's defaults (best detected ISA, intrinsics backend). The stats timer wraps every kernel call, so per-kernel times include output allocation and first-touch page faults.
+
+The summed kernel time differs from the criterion mean of `x86-64-v4-intrinsics` by -4% to +2% for the six new queries (q04 25.65 against 25.73 ms, q08 46.97 against 48.42, q09 56.02 against 54.86, q15 31.75 against 32.57, q32 68.93 against 72.11, q35 28.81 against 28.97).
+For the four queries of the #20 round it is higher by +14% to +25% (q30 5.87 against 4.71 ms, q31 6.32 against 5.55, q40 4.02 against 3.53, q41 3.77 against 3.14).
+The shares of the four short queries are therefore rough, and this document did not measure the cause of the gap.
+Criterion's mean is slower than a best-of time by a few percent, so the corgi and DuckDB columns favor those systems slightly against Verkehrt.
+
+## Results
+
+Times are criterion means in ms for Verkehrt and best-of in ms for corgi, and ratios below 1.0 mean Verkehrt is faster.
+The ratio columns use the best Verkehrt variant of the row.
+
+| Query | scalar | v3-auto | v3-intrinsics | v4-auto | v4-intrinsics | corgi | DuckDB 1t | best variant | best / DuckDB | best / corgi |
+|---|---|---|---|---|---|---|---|---|---|---|
+| q04 (new) | 26.32 | 26.14 | 26.21 | 27.12 | 25.73 | 27.04 | 6.91 | v4-intrinsics | 3.72 | 0.95 |
+| q08 (new) | 49.66 | 49.02 | 49.62 | 49.56 | 48.42 | 48.88 | 9.85 | v4-intrinsics | 4.92 | 0.99 |
+| q09 (new) | 58.61 | 56.51 | 57.70 | 54.86 | 54.86 | 53.81 | 19.09 | v4-auto | 2.87 | 1.02 |
+| q15 (new) | 34.22 | 33.41 | 33.72 | 32.52 | 32.57 | 28.49 | 9.22 | v4-auto | 3.53 | 1.14 |
+| q32 (new) | 71.75 | 74.36 | 76.53 | 68.36 | 72.11 | 60.29 | 71.29 | v4-auto | 0.96 | 1.13 |
+| q35 (new) | 30.46 | 31.47 | 31.32 | 29.14 | 28.97 | 40.12 | 16.02 | v4-intrinsics | 1.81 | 0.72 |
+| q30 | 8.10 | 7.21 | 5.53 | 5.81 | 4.71 | 5.20 | 8.27 | v4-intrinsics | 0.57 | 0.91 |
+| q31 | 8.77 | 7.95 | 6.52 | 6.54 | 5.55 | 4.86 | 9.62 | v4-intrinsics | 0.58 | 1.14 |
+| q40 | 6.61 | 5.03 | 4.16 | 4.21 | 3.53 | 5.31 | 4.31 | v4-intrinsics | 0.82 | 0.67 |
+| q41 | 6.09 | 4.55 | 3.75 | 3.75 | 3.14 | 4.96 | 3.83 | v4-intrinsics | 0.82 | 0.63 |
+
+Against DuckDB, q32 (0.96) is level, q35 (1.81) is slower by under 2x, and q04, q15, q08 and q09 are slower by 3.7x, 3.5x, 4.9x and 2.9x.
+Against corgi, q04 (0.95), q08 (0.99) and q09 (1.02) are level, q15 (1.14) and q32 (1.13) are slower by a little more than the noise band, and q35 (0.72) is faster.
+This document did not read corgi's per-op profile, so it does not attribute corgi's lead on q15 and q32 or Verkehrt's lead on q35.
+The q04, q08 and q09 times are the same on all five variants within 10% (q04 25.73 to 27.12, q08 48.42 to 49.66, q09 54.86 to 58.61), so the ISA level and the backend change nothing there.
+q32, q15 and q35 spread by 5% to 12% across variants with no consistent order, which this document reads as noise.
+The four queries of the #20 round still gain from the ISA levels, with `x86-64-v4-intrinsics` the best variant and 37% to 48% below `scalar` (q30 8.10 to 4.71 ms, q31 8.77 to 5.55, q40 6.61 to 3.53, q41 6.09 to 3.14).
+
+## Change against #20
+
+The #20 times are the five-variant rows of `2026-10-31-clickbench-now.md`, measured in an earlier session on the same host with Verkehrt at `8c695db`.
+The comparison therefore spans sessions and builds, and only changes above the 10% noise band are claimed.
+The corgi column is a drift check, not part of the comparison: corgi's times for q30, q31, q40 and q41 were 5.18, 4.89, 5.36 and 4.93 ms then and are 5.20, 4.86, 5.31 and 4.96 ms now, all within 1%.
+
+| Query | variant | #20 ms | now ms | change |
+|---|---|---|---|---|
+| q30 | v4-intrinsics (best) | 8.70 | 4.71 | -46% |
+| q30 | scalar | 12.15 | 8.10 | -33% |
+| q31 | v4-intrinsics (best) | 9.13 | 5.55 | -39% |
+| q31 | scalar | 12.36 | 8.77 | -29% |
+| q40 | v4-intrinsics (best) | 4.92 | 3.53 | -28% |
+| q40 | scalar | 7.97 | 6.61 | -17% |
+| q41 | v4-intrinsics (best) | 5.99 | 3.14 | -48% |
+| q41 | scalar | 8.88 | 6.09 | -31% |
+
+All twenty variant rows (four queries, five variants) moved by -17% or more, none inside the noise band.
+The `argsort_i64` kernel time in `stats.txt` fell from 4495 to 1323 us in q30, from 4715 to 1916 us in q31, from 2339 to 941 us in q40, and from 3575 to 783 us in q41.
+The drop in `argsort_i64` is 3172, 2799, 1398 and 2792 us, against drops in the criterion mean of 3.99, 3.58, 1.39 and 2.85 ms.
+The two sets of numbers are the same size, so the sort accounts for most of the change.
+The remaining difference is at most 0.8 ms (q30), and this document did not attribute it.
+
+Against the references, q30 (0.57) and q31 (0.58) are 1.7x faster than DuckDB, and q40 and q41 (both 0.82) are faster by 18%.
+In the #20 round, q30 and q31 were level with DuckDB, and q40 and q41 were 1.14x and 1.56x slower.
+Against corgi, q40 (0.67) and q41 (0.63) are faster, q30 (0.91) is level, and q31 (1.14) is slower by a little more than the noise band.
+
+## What dominates each query
+
+The kernel and its share come from `stats.txt`, where the share is of the summed kernel time of one warm run.
+Plans are in `query-plans.txt`.
+
+| Query | Dominating kernel | Share | Next kernels | Follow-up |
+|---|---|---|---|---|
+| q04 | `argsort_i64` (1 call) | 89% (22.9 of 25.7 ms) | `gather_i64` 5%, `ne_i64` 2% | Plan 5, #9 |
+| q08 | `argsort_i64` (3 calls) | 69% (32.4 of 47.0 ms) | `gather_i64` (6 calls) 18%, `prev_i64` 3% | Plan 5, #9 |
+| q09 | `argsort_i64` (3 calls) | 59% (32.8 of 56.0 ms) | `gather_i64` (13 calls) 23%, `reduce_into_add_i64` 6% | Plan 5, #9 |
+| q15 | `argsort_i64` (2 calls) | 73% (23.2 of 31.7 ms) | `reduce_into_add_i64` 5%, `gather_i64` 4% | Plan 5, #9 |
+| q32 | `argsort_i64` (3 calls) | 53% (36.6 of 68.9 ms) | `gather_i64` (13 calls) 31%, `reduce_into_add_i64` 6% | Plan 5, #9 |
+| q35 | `argsort_i64` (2 calls) | 64% (18.5 of 28.8 ms) | `gather_i64` 11%, `reduce_into_add_i64` 5% | Plan 5, #9 |
+| q30 | none: `compress_i64` 24%, `argsort_i64` 23% | 24%, 23% | `prev_i64` 21%, `sub_i64` 16% | Spread, see below |
+| q31 | `argsort_i64` | 30% | `compress_i64` 23%, `prev_i64` 16%, `sub_i64` 15% | Spread, see below |
+| q40 | `eq_i64` (6 calls, five over the 1M-row filter columns) | 33% | `argsort_i64` 23%, `compress_i64` 15%, `le_i64` 11% | #16 |
+| q41 | `eq_i64` (5 calls, four over the filter columns) | 30% | `argsort_i64` 21%, `compress_i64` 17%, `le_i64` 12% | #16 |
+
+In the six new queries, one `argsort_i64` over a full 1M-row column handles the group key (UserID, ClientIP) and the second call (q15, q35) sorts the group counts.
+The byte counts in `stats.txt` show that the second sort is small: in q15 the two calls handle 17.3 MB together and the first alone handles 16 MB, and in q35 the two handle 17.1 MB.
+This document did not time the two calls separately, so it does not say how much of the 18.5 to 23.2 ms is the count sort.
+The `gather_i64` calls in q08, q09 and q32 carry payload columns through the sort permutation (plans 12, 17 and 18 of q32, for example) and take 8.2, 13.1 and 21.2 ms.
+This document did not measure why those gathers cost what they do, so it names them as a gap and files them under no existing issue.
+
+In q40 and q41 the mask chain is now the largest block.
+The kernels `eq_i64`, `le_i64` and `and_bool` that build the five-column filter take 2036 us in q40 and 1885 us in q41, which is 51% and 50% of kernel time (37% and 29% in #20), and issue #16 (mask chains) covers them.
+In q30 and q31 no kernel exceeds 30%.
+`compress_i64` (six calls, 1.4 ms each query) is the largest in q30, and `prev_i64`, `sub_i64`, `lt_i64` and `compress_i64` also serve the non-empty-phrase filter on `SearchPhrase_ends` (plan 12).
+This document did not split those kernel times between the filter and the later steps, so it attributes q30 and q31 to no single follow-up.
+
+## Gaps
+
+* **DuckDB on the counting queries.** q04, q08, q09, q15 and q35 are 2.9x to 4.9x slower than DuckDB, and the sort alone is slower than DuckDB's whole query (q04: `argsort_i64` 22.9 ms, DuckDB 6.91 ms). The group counts come from sorting a 1M-row key, and DuckDB most likely uses a hash table here (an inference, not checked in DuckDB), which the spec excludes from this layer. These five queries are the candidates for hash grouping. q32 is level with DuckDB (0.96) and needs nothing from it.
+* **In-situ `argsort_i64` against the microbench.** The prototype of `2026-11-01-argsort.md` sorts 1M uniform `i64` keys in about 13.5 ms (`lsd8`), and q04 spends 22.9 ms in one `argsort_i64` call on the real `UserID` column. The key distribution, the prototype against the kernel, and first-touch faults differ between the two, and this document did not measure which accounts for the gap.
+* **Permutation gathers.** `gather_i64` costs 11% to 31% of q08, q09, q32 and q35. Fusing the payload into the sort, or another way to avoid a random-access gather per payload column, is a candidate, and nothing here measures how much it would save.
+* **Top-k.** q15 and q35 sort all group counts to take ten of them. The byte counts say the count sort is small (about 7% of the argsort bytes in q15 and 6% in q35), so a top-k primitive is unlikely to matter for these two on this data. This is an inference from byte counts, not a timing.
+* **Stats for the short queries.** The summed kernel time of q30, q31, q40 and q41 is 14% to 25% above the criterion mean, so their shares are rough.
+* **Output checks.** This round timed the programs and did not re-check their output against `expected/`. Correctness rests on the acceptance tests of the commits that added the queries.
