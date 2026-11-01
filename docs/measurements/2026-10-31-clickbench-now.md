@@ -2,7 +2,7 @@
 
 This document times all 14 ClickBench acceptance queries against corgi and DuckDB on one thread, and names the kernel that dominates each new query.
 Nine queries are new in this round (q00, q03, q19, q27, q29, q30, q31, q40, q41), and the other five (q01, q02, q06, q07, q42) are re-measured so the table is complete.
-Of the nine, q19 and q27 are clearly faster than DuckDB and corgi, q00 is faster than DuckDB and not comparable with corgi (corgi prints 0.00 ms, below its print resolution), and the other six are level with or slower than at least one reference.
+Of the nine, q19 and q27 are clearly faster than DuckDB and corgi, q00 is comparable with neither (Verkehrt reads the length of an already-loaded column, DuckDB runs `COUNT(*)`, and corgi prints 0.00 ms, below its print resolution), and the other six are level with or slower than at least one reference.
 The slower ones point at two cost centres: the sort inside grouping (q30, q31, q40, q41, issue #9) and elementwise maps that materialize before a reduction (q03, q29, issue #30).
 The method follows `2026-10-31-tier2.md`, and every number below comes from a file in `2026-10-31-clickbench-now/`.
 The last sections list the gaps and the candidates for plan 5.
@@ -45,11 +45,11 @@ Criterion's mean is slower than a best-of time by a few percent, so the corgi an
 
 Times are criterion means in ms for Verkehrt and best-of in ms for corgi, and ratios below 1.0 mean Verkehrt is faster.
 The ratio columns use the best Verkehrt variant of the row.
-The corgi ratio for q00 is not computed because corgi's time prints as 0.00 ms, and Verkehrt's is 0.000175 ms.
+The corgi ratio for q00 is not computed because corgi's time prints as 0.00 ms, and Verkehrt's is 0.000175 ms. The DuckDB ratio for q00 is not a like-for-like comparison: Verkehrt's timed region reads the length of a column that is already loaded, while DuckDB's time covers running `COUNT(*)`.
 
 | Query | scalar | v3-auto | v3-intrinsics | v4-auto | v4-intrinsics | corgi | DuckDB 1t | best variant | best / DuckDB | best / corgi |
 |---|---|---|---|---|---|---|---|---|---|---|
-| q00 (new) | 0.00018 | 0.00018 | 0.00018 | 0.00018 | 0.00018 | 0.00 | 0.34 | v4-auto | 0.0005 | n/a |
+| q00 (new) | 0.00018 | 0.00018 | 0.00018 | 0.00018 | 0.00018 | 0.00 | 0.34 | v4-auto | not comparable | n/a |
 | q01 | 0.223 | 0.096 | 0.096 | 0.091 | 0.091 | 0.38 | 1.39 | v4-auto | 0.066 | 0.24 |
 | q02 | 0.340 | 0.182 | 0.184 | 0.184 | 0.175 | 0.34 | 1.11 | v4-intrinsics | 0.158 | 0.51 |
 | q03 (new) | 3.80 | 3.00 | 3.02 | 2.94 | 2.97 | 1.03 | 1.96 | v4-auto | 1.50 | 2.85 |
@@ -64,7 +64,7 @@ The corgi ratio for q00 is not computed because corgi's time prints as 0.00 ms, 
 | q41 (new) | 8.88 | 7.07 | 6.69 | 6.74 | 5.99 | 4.93 | 3.83 | v4-intrinsics | 1.56 | 1.21 |
 | q42 | 4.47 | 2.87 | 2.73 | 2.52 | 2.26 | 8.29 | 7.08 | v4-intrinsics | 0.32 | 0.27 |
 
-Against DuckDB, the new queries split into faster (q00 at 0.0005, q19 at 0.46, q27 at 0.51), level (q31 at 0.95 and q30 at 1.05, inside the noise band), and slower (q40 at 1.14, q03 at 1.50, q41 at 1.56, q29 at 4.33).
+Against DuckDB, the new queries other than q00 split into faster (q19 at 0.46, q27 at 0.51), level (q31 at 0.95 and q30 at 1.05, inside the noise band), and slower (q40 at 1.14, q03 at 1.50, q41 at 1.56, q29 at 4.33).
 Against corgi, q19 and q27 are faster, q00 is not comparable (corgi prints 0.00 ms), q40 (0.92) and q29 (0.95) are level, and q41 (1.21), q30 (1.68), q03 (2.85) and q31 (1.87) are slower.
 All five variants of q00 are equal (0.175 to 0.179 us). Among the four non-scalar variants, q03 and q29 are within 3% of each other, so the ISA level and the backend change nothing there.
 For q07, q19, q27, q30, q31, q40, q41 and q42, `x86-64-v4-intrinsics` is the best variant, with 10% (q42) to 58% (q19) less time than `x86-64-v4-auto`.
@@ -108,7 +108,7 @@ This document did not measure how much of the `argsort` time is the second pass 
 * Sort-bound grouping, plan 5 and issue #9 (`argsort`): q30 (49%), q31 (50%), q40 (44%), q41 (54%). The tier 2 round already recorded `argsort` as a scalar sort at 0.10 GB/s.
 * Mask chains, issue #16: q40 and q41 (the five-column filter, 37% and 29% of kernel time). q42 has the same mask shape.
 * Elementwise maps that materialize before a reduction, issue #30 ("Fuse elementwise maps into reductions"): q29 (89 materialized `add_i64` outputs, each followed by `reduce_add_i64`) and q03 (`div_const`, `mul`, and `sub` materialized before `reduce_add`, plus a missing `rem` primitive).
-* Not slower than a reference by more than noise: q00 (against DuckDB), q19, q27, q30 and q31 (against DuckDB), q40 (against corgi), and q29 (against corgi).
+* Not slower than a reference by more than noise: q19, q27, q30 and q31 (against DuckDB), q40 (against corgi), and q29 (against corgi).
 
 ## Gaps
 

@@ -6,7 +6,9 @@ input UserID: i64[];
 // 2^32 into x = hi * 2^32 + lo exactly. `div_const` truncates toward zero, so lo is the remainder
 // with x's sign. Neither part's sum leaves i64 for fewer than 2^31 rows. The sum of lo may exceed
 // what f64 holds exactly, so its multiples of 2^32 move into the sum of hi as a carry first. The
-// two sums are then combined in f64 with one rounding before the divide.
+// combination in f64 rounds at most three times, at the cast of the hi sum, the add, and the
+// divide, each with relative error at most 2^-53. The add does not cancel, because the cast
+// rounds only when the hi part reaches 2^85 and the remainder stays below 2^32.
 let hi = div_const(UserID, 4294967296);
 let lo = UserID - (hi * 4294967296);
 let sum_lo = sum(lo);
