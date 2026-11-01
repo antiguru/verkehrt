@@ -2,17 +2,22 @@
 // output: [i,u]
 input UserID: i64[];
 
-// Group by sorting. A row starts a group when its id differs from the previous row, or when it is
-// the first row. An empty column gives no groups and empty outputs.
-let s = gather(UserID, argsort(UserID));
-let n = length(s);
-let start = or(s != prev(s, 0), iota(n) == 0);
-let ng = count(start);
-let gid = scan(cast_i64(start), add) - 1;
-let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
-let gk = compress(s, start);
-// The groups are in UserID order, so a stable sort on descending counts breaks ties by id.
-let order = argsort(0 - counts);
-let top = slice(order, 0, min(ng, 10));
+// The number of groups is the largest id plus one. `reduce` rejects an empty array, so a single
+// bucket (every key 0) holds the maximum instead. It is the identity for an empty array, which
+// clamps to 0.
+fn groups(ids: i64[]) -> i64 { max(reduce(reduce_into(ids * 0, ids, 1, max), max) + 1, 0) }
+
+// Group by hashing. `group_id` gives each row the dense id of its key, numbered by first
+// occurrence. An empty column gives no groups and empty outputs.
+let ids = group_id(UserID);
+let ng = groups(ids);
+let counts = histogram(ids, ng);
+// Every row of a group has the same key, so the minimum recovers it.
+let gk = reduce_into(ids, UserID, ng, min);
+// Sorting the groups by key puts them in UserID order, and the stable sort on descending counts
+// then breaks ties by id.
+let ko = argsort(gk);
+let co = argsort(0 - gather(counts, ko));
+let top = gather(ko, slice(co, 0, min(ng, 10)));
 export UserID = gather(gk, top);
 export c = gather(counts, top);

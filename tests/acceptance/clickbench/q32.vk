@@ -6,32 +6,28 @@ input ClientIP: i64[];
 input IsRefresh: i64[];
 input ResolutionWidth: i64[];
 
-// Group by sorting. `argsort` is stable, so sorting by the minor key (ClientIP) first and the major
-// key second orders the rows by (WatchID, ClientIP).
-let o1 = argsort(ClientIP);
-let k1 = gather(WatchID, o1);
-let ip1 = gather(ClientIP, o1);
-let r1 = gather(IsRefresh, o1);
-let w1 = gather(ResolutionWidth, o1);
-let o2 = argsort(k1);
-let k = gather(k1, o2);
-let ip = gather(ip1, o2);
-let r = gather(r1, o2);
-let w = gather(w1, o2);
-// A row starts a group when either key differs from the previous row, or when it is the first row.
-// An empty input gives no rows, no groups, and empty outputs.
-let n = length(k);
-let start = or(or(k != prev(k, 0), ip != prev(ip, 0)), iota(n) == 0);
-let ng = count(start);
-let gid = scan(cast_i64(start), add) - 1;
-let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
-let refreshes = reduce_into(gid, r, ng, add);
-let widths = reduce_into(gid, w, ng, add);
-let gk = compress(k, start);
-let gip = compress(ip, start);
-// The groups are in (WatchID, ClientIP) order, so a stable sort on descending counts breaks ties by key.
-let order = argsort(0 - counts);
-let top = slice(order, 0, min(ng, 10));
+// The number of groups is the largest id plus one. `reduce` rejects an empty array, so a single
+// bucket (every key 0) holds the maximum instead. It is the identity for an empty array, which
+// clamps to 0.
+fn groups(ids: i64[]) -> i64 { max(reduce(reduce_into(ids * 0, ids, 1, max), max) + 1, 0) }
+
+// Group by hashing. `group_id` of the two keys gives each row the dense id of its (WatchID,
+// ClientIP) pair, numbered by first occurrence. An empty input gives no groups and empty outputs.
+let ids = group_id(WatchID, ClientIP);
+let ng = groups(ids);
+let counts = histogram(ids, ng);
+let refreshes = reduce_into(ids, IsRefresh, ng, add);
+let widths = reduce_into(ids, ResolutionWidth, ng, add);
+// Every row of a group has the same keys, so the minimum recovers them.
+let gk = reduce_into(ids, WatchID, ng, min);
+let gip = reduce_into(ids, ClientIP, ng, min);
+// Sorting the groups by (WatchID, ClientIP) takes two stable passes, minor key first. The stable
+// sort on descending counts then breaks ties by key.
+let o1 = argsort(gip);
+let o2 = argsort(gather(gk, o1));
+let ko = gather(o1, o2);
+let co = argsort(0 - gather(counts, ko));
+let top = gather(ko, slice(co, 0, min(ng, 10)));
 let tc = gather(counts, top);
 export WatchID = gather(gk, top);
 export ClientIP = gather(gip, top);
