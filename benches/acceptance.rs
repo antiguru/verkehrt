@@ -82,6 +82,16 @@ fn suite(c: &mut Criterion, var: &str, suite: &str, signed: &[&str]) {
         eprintln!("acceptance/{suite}: skipped, {var} is not set");
         return;
     };
+    if let Some(root) = std::env::var_os("VERKEHRT_PROGRAMS") {
+        let programs_dir = PathBuf::from(root).join(suite);
+        if !programs_dir.is_dir() {
+            eprintln!(
+                "acceptance/{suite}: skipped, {} is not a directory",
+                programs_dir.display()
+            );
+            return;
+        }
+    }
     let interps = interpreters();
     for path in programs(suite) {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();

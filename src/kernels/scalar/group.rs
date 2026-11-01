@@ -16,7 +16,7 @@ use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Wh
 use crate::ops::Op;
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
-/// Slots of the first table, which grows whenever an insert leaves it more than half full.
+/// Cap on the slots of the first table (smaller for fewer than 128 rows), which grows whenever an insert leaves it more than half full.
 pub(super) const INITIAL_SLOTS: usize = 256;
 
 /// Doublings of one growth when nearly every row so far has opened a group. A growth
@@ -164,7 +164,8 @@ pub(super) fn hashed_into<K: GroupKey>(
 /// The table that replaces the full `tab` of `slots` slots, with its slot count and hash
 /// shift. A table that is nearly all distinct keys (`distinct`) grows `2^JUMP_BITS`-fold
 /// instead of doubling, which saves rehashing at every size. No growth goes past `max_slots`,
-/// so a table never has more than 16 slots per group or more slots than twice the rows.
+/// which is `nextpow2(2n)` for n rows and so under 4n. After its first growth a table also has
+/// at most 16 slots per group.
 /// Fails if the new table cannot be allocated.
 #[cold]
 #[inline(never)]

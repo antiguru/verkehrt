@@ -513,8 +513,9 @@ fn colliding_keys_under_the_real_hash() {
 
 /// `mix` is a bijection, so single keys never share a full hash. Pairs can: under a known
 /// multiplier, for any `a` and `a2`, the pair `(a2, b ^ mix(a) ^ mix(a2))` has the full hash
-/// of `(a, b)`. The multiplier of a call is random, so chosen pairs do not collide there, except for
-/// pairs of two, which collide under every multiplier.
+/// of `(a, b)`. The multiplier of a call is random, so chosen pairs do not collide there, except
+/// for the class `(a, b)` and `(a2, b ^ 2^63)` with `fold(a2) = fold(a) ^ 2^63`, which collides
+/// under every multiplier.
 #[test]
 fn pairs_with_equal_full_hashes() {
     let b = 0x1234_5678_9ABC_DEF0u64;
