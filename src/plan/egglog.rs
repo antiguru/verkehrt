@@ -5,8 +5,8 @@ use std::fmt::Write;
 
 use crate::kernels::{InputSpec, KernelDef, Registry};
 use crate::lower::{Term, TermKind};
-use crate::ops::Op;
-use crate::value::ValueType;
+use crate::ops::{Op, ReduceOp};
+use crate::value::{ScalarType, ValueType};
 
 use super::sexpr::{self, Sexp};
 
@@ -28,7 +28,8 @@ fn kernel_ctor(name: &str) -> String {
 }
 
 /// The datatype with one constructor per kernel, the `Arr` relation, then the exact
-/// rewrites and, when `fusion` is set, one rewrite per fused kernel pattern.
+/// rewrites and, when `fusion` is set, the integer sum rewrites of `sum_rules` and one
+/// rewrite per fused kernel pattern.
 pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
     let mut out = format!(
         "(datatype Expr\n  ({LEAF} i64 :cost 0)\n  ({HOLE} i64 :cost 0)\n  ({BCAST} Expr :cost 0)\n"
@@ -73,6 +74,9 @@ pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
         }
     }
     if fusion {
+        for t in ScalarType::ARRAY_TYPES {
+            out.push_str(&sum_rules(reg, t));
+        }
         for (_, def) in reg.iter() {
             if let Some(rule) = fused_rule(def)? {
                 out.push_str(&rule);
@@ -81,6 +85,78 @@ pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
         }
     }
     Ok(out)
+}
+
+/// The rewrites that move a broadcast scalar `k` out of a sum of element type `t` over an
+/// array `x`: `sum(x + k)` to `sum(x) + n * k`, `sum(x - k)` to `sum(x) - n * k`,
+/// `sum(k - x)` to `n * k - sum(x)`, and `sum(x * k)` to `sum(x) * k`, where `n` is
+/// `length(x)` cast to `t`. Every operation of a right-hand side is a scalar kernel of
+/// type `t`. Empty for a float type, for a sum whose result is not of type `t`, and for a
+/// type that lacks one of the kernels.
+fn sum_rules(reg: &Registry, t: ScalarType) -> String {
+    // Integer arithmetic wraps, so it is a ring modulo 2^w, in which these identities hold
+    // bit for bit. Float arithmetic does not associate.
+    if !t.is_int() {
+        return String::new();
+    }
+    let (arr, sc, i64_sc) = (
+        ValueType::Array(t),
+        ValueType::Scalar(t),
+        ValueType::Scalar(ScalarType::I64),
+    );
+    // The constructor of the kernel that `op` resolves to on `args`, if it returns `out`.
+    let kernel = |op: Op, args: &[ValueType], out: ValueType| {
+        reg.lookup(op, args)
+            .filter(|id| reg.get(*id).output == out)
+            .map(|id| kernel_ctor(&reg.get(id).name))
+    };
+    // A sum that widens, as for `i32` to `i64`, adds elements that wrapped in the narrow
+    // type, which no product in either type reproduces.
+    let sum = kernel(Op::Reduce(ReduceOp::Add), &[arr], sc);
+    let len = kernel(Op::Length, &[arr], i64_sc);
+    // `length` is `i64`. A cast to a narrower type wraps to `n mod 2^w`, and the product
+    // with `k` is the same modulo 2^w, so the count stays exact.
+    let count = match t {
+        ScalarType::I64 => len.map(|l| format!("({l} ?x)")),
+        _ => len
+            .zip(kernel(Op::Cast(t), &[i64_sc], sc))
+            .map(|(l, c)| format!("({c} ({l} ?x))")),
+    };
+    let (
+        Some(sum),
+        Some(count),
+        Some(add),
+        Some(sub),
+        Some(mul),
+        Some(add_s),
+        Some(sub_s),
+        Some(mul_s),
+    ) = (
+        sum,
+        count,
+        kernel(Op::Add, &[arr, arr], arr),
+        kernel(Op::Sub, &[arr, arr], arr),
+        kernel(Op::Mul, &[arr, arr], arr),
+        kernel(Op::Add, &[sc, sc], sc),
+        kernel(Op::Sub, &[sc, sc], sc),
+        kernel(Op::Mul, &[sc, sc], sc),
+    )
+    else {
+        return String::new();
+    };
+    // The guard keeps `x` an array, so `k` is the only broadcast. Each right-hand side names
+    // `x` and `k` in the order of its left-hand side, so the plan evaluates them in that
+    // order unless commutativity swaps them.
+    let when = format!(":when (({ARR} ?x))");
+    [
+        format!("(rewrite ({sum} ({add} ?x ({BCAST} ?k))) ({add_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
+        format!("(rewrite ({sum} ({sub} ?x ({BCAST} ?k))) ({sub_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
+        format!("(rewrite ({sum} ({sub} ({BCAST} ?k) ?x)) ({sub_s} ({mul_s} ?k {count}) ({sum} ?x)) {when})"),
+        format!("(rewrite ({sum} ({mul} ?x ({BCAST} ?k))) ({mul_s} ({sum} ?x) ?k) {when})"),
+    ]
+    .iter()
+    .map(|r| format!("{r}\n"))
+    .collect()
 }
 
 /// The rewrite from a fused kernel's pattern to the kernel, or `None` for a single-op kernel.
@@ -125,8 +201,10 @@ fn fused_rule(def: &KernelDef) -> Result<Option<String>, String> {
 /// kernel that `Registry::lookup` resolves for its argument types, and each conditional as a
 /// hole. Returns the commands, the name bound to the root, and the conditionals in hole order.
 pub fn emit(reg: &Registry, term: &Term) -> Result<(String, String, Vec<Term>), String> {
-    // Facts per original node suffice because every rewrite adds a single constructor over
-    // existing e-classes, so saturation never creates an e-class without an original node.
+    // Facts per original node suffice because every rewrite either adds a single constructor
+    // over existing e-classes, or, as the integer sum rewrites do, creates e-classes that
+    // hold scalars only. So every array e-class has an original node, and no rule that
+    // guards an operand with `Arr` matches a created e-class as an array.
     let mut out = String::new();
     let mut next = 0;
     let mut holes = Vec::new();

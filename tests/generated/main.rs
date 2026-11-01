@@ -17,6 +17,7 @@
 mod eval;
 mod r#gen;
 mod oracles;
+mod rewrites;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -31,7 +32,7 @@ use r#gen::{Catalog, Params, Plan as GenPlan};
 use oracles::Engine;
 
 /// Cases of the CI run, measured to stay well under 30 s in a debug build.
-const CI_CASES: u64 = 48;
+const CI_CASES: u64 = 64;
 const CI_SEED: u64 = 0x5eed_0001;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
@@ -60,6 +61,8 @@ struct Stats {
     features: BTreeMap<&'static str, usize>,
     outcomes: BTreeMap<String, usize>,
     fusion_changed_plan: usize,
+    /// Per integer sum rewrite, the statements in which it fired.
+    rewrites_fired: BTreeMap<rewrites::Rewrite, usize>,
     source_bytes: usize,
     slowest: (Duration, String),
 }
@@ -74,6 +77,9 @@ impl Stats {
             *self.outcomes.entry(o).or_default() += n;
         }
         self.fusion_changed_plan += other.fusion_changed_plan;
+        for (r, n) in other.rewrites_fired {
+            *self.rewrites_fired.entry(r).or_default() += n;
+        }
         self.source_bytes += other.source_bytes;
         if other.slowest.0 > self.slowest.0 {
             self.slowest = other.slowest;
@@ -158,6 +164,9 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
                 .or_default() += 1;
         }
         stats.fusion_changed_plan += usize::from(verdict.fusion_changed_plan);
+        for (r, n) in verdict.rewrites_fired {
+            *stats.rewrites_fired.entry(r).or_default() += n;
+        }
         Ok(())
     });
     let failure = match result {
@@ -234,11 +243,12 @@ fn generated_programs() {
         stats.merge(s);
         failures.extend(f);
     }
+    let engine = Engine::new();
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
          plan of {}",
         stats.cases,
-        Engine::new().variant_count(),
+        engine.variant_count(),
         begin.elapsed(),
         stats.source_bytes / stats.cases.max(1),
         stats.fusion_changed_plan,
@@ -253,6 +263,10 @@ fn generated_programs() {
     for (feature, n) in &stats.features {
         eprintln!("  feature {feature:<32} {n:>7}");
     }
+    for r in engine.rewrites() {
+        let n = stats.rewrites_fired.get(r).copied().unwrap_or(0);
+        eprintln!("  rewrite {:<32} {n:>7}", r.to_string());
+    }
     if !failures.is_empty() {
         panic!("{}", failures.join("\n\n"));
     }
@@ -260,6 +274,18 @@ fn generated_programs() {
     assert!(
         stats.cases < 20 || stats.fusion_changed_plan > 0,
         "fusion changed no plan in {} programs",
+        stats.cases
+    );
+    // Oracle 2 checks an integer sum rewrite only in a plan where it fired.
+    let unfired: Vec<String> = engine
+        .rewrites()
+        .iter()
+        .filter(|r| !stats.rewrites_fired.contains_key(r))
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        stats.cases < 20 || unfired.is_empty(),
+        "the rewrites {unfired:?} fired in no plan of {} programs",
         stats.cases
     );
 }

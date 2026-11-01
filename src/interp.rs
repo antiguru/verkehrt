@@ -28,7 +28,8 @@ pub struct Options {
     /// CPU features to treat as absent, so no kernel entry that needs one is selected and
     /// an instruction set whose level needs one is unavailable.
     pub disable: FeatureSet,
-    /// Plan without fused kernel patterns, so every plan uses single-op kernels only.
+    /// Plan without fused kernel patterns and without the integer sum rewrites, so every plan
+    /// uses single-op kernels only and keeps each sum over the array the program sums.
     pub no_fusion: bool,
 }
 

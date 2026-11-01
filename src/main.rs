@@ -42,7 +42,7 @@ struct Flags {
     /// CPU feature to treat as absent, repeatable (for example avx512vbmi2)
     #[arg(long, value_parser = parse_feature)]
     disable: Vec<Feature>,
-    /// Plan without fused kernels, using single-op kernels only
+    /// Plan without fused kernels or integer sum rewrites, using single-op kernels only
     #[arg(long)]
     no_fusion: bool,
     /// Print the plan of each statement to stderr

@@ -31,8 +31,11 @@ use verkehrt::kernels::{Backend, Isa, Registry, Variant};
 use verkehrt::value::{Scalar, Value, ValueType};
 use verkehrt::{Interpreter, Options, Prepared};
 
+use std::collections::BTreeMap;
+
 use crate::eval::{self, Reference};
 use crate::r#gen::Case;
+use crate::rewrites::{self, Rewrite};
 
 /// An export: its name, type, comparable bits, and the value as printed.
 #[derive(Debug)]
@@ -205,6 +208,8 @@ pub struct Engine {
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
     reg: Registry,
+    /// The integer sum rewrites the fused planner emits.
+    rewrites: Vec<Rewrite>,
 }
 
 /// What a checked case did, for the statistics.
@@ -213,6 +218,8 @@ pub struct Verdict {
     pub error: Option<(ErrorKind, String)>,
     /// Whether the fused plan differs from the unfused one in some statement.
     pub fusion_changed_plan: bool,
+    /// The integer sum rewrites that fired, with the number of statements in which each did.
+    pub rewrites_fired: BTreeMap<Rewrite, usize>,
     /// Why oracle 3 skipped the case, which only the #40 stopgap does.
     pub reference_skipped: Option<String>,
 }
@@ -240,16 +247,23 @@ impl Engine {
                 (v, interp)
             })
             .collect();
+        let reg = Registry::new();
         Engine {
             fused: planner(false),
             unfused: planner(true),
             runners,
-            reg: Registry::new(),
+            rewrites: rewrites::expected(&reg),
+            reg,
         }
     }
 
     pub fn variant_count(&self) -> usize {
         self.runners.len()
+    }
+
+    /// The integer sum rewrites the fused planner emits.
+    pub fn rewrites(&self) -> &[Rewrite] {
+        &self.rewrites
     }
 
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
@@ -318,6 +332,7 @@ impl Engine {
         Ok(Verdict {
             error: f.result.as_ref().err().map(|e| (e.kind, e.message.clone())),
             fusion_changed_plan: fused_plan != unfused_plan,
+            rewrites_fired: rewrites::fired(&self.rewrites, &fused_plan, &unfused_plan),
             reference_skipped,
         })
     }

@@ -1,5 +1,6 @@
-//! Kernel selection. Each statement's term goes into an egglog e-graph with exact rewrites
-//! and one rewrite per fused kernel pattern, and the cheapest cover by kernels is extracted.
+//! Kernel selection. Each statement's term goes into an egglog e-graph with exact rewrites,
+//! the integer sum rewrites, and one rewrite per fused kernel pattern, and the cheapest cover
+//! by kernels is extracted.
 
 mod egglog;
 mod sexpr;
@@ -39,8 +40,8 @@ pub struct Planner {
 }
 
 impl Planner {
-    /// Builds the prelude. With `fusion` off no fused pattern is rewritten, so every plan
-    /// uses single-op kernels only. Panics on a malformed fused pattern, a bug in the kernel
+    /// Builds the prelude. With `fusion` off no fused pattern and no integer sum rewrite
+    /// applies, so every plan uses single-op kernels only and keeps each sum over its array. Panics on a malformed fused pattern, a bug in the kernel
     /// tables.
     pub fn new(reg: &Registry, fusion: bool) -> Planner {
         let prelude =
