@@ -7,3 +7,21 @@ let v = { let b = slice(a, 2, 1); b + b };
 print(v);
 ----
 Runtime error at 3:1: slice 2..1 out of range for length 3
+
+# lambda_if_on_uniform_condition_is_lazy
+run
+let x = [1, 2, 3];
+let s = 5;
+print(map(x, |v| if true { v } else { div_const(v, 0) }));
+print(map(x, |v| if s > 0 { 7 } else { div_const(v, 0) }));
+print(map(x, |v| if s < 0 { div_const(v, 0) } else { 7 }));
+print(filter(x, |v| if s > 0 { v > 1 } else { div_const(v, 0) > 1 }));
+print(zip_map(x, x, |v, w| if s > 0 { v + w } else { div_const(w, 0) }));
+print(map(fill(0, 1), |v| if s > 0 { 7 } else { div_const(v, 0) }));
+----
+[1, 2, 3]
+[7, 7, 7]
+[7, 7, 7]
+[2, 3]
+[2, 4, 6]
+[]
