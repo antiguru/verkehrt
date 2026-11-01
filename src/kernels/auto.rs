@@ -4,7 +4,8 @@
 //! scalar entries compute.
 
 /// Emits module `$isa` with the auto entries for one instruction set. `$features` must be
-/// the feature string that `Isa::is_available` checks for `$name`.
+/// the full feature string of the level of `$name`, because auto entries declare no extra
+/// features and `select` checks exactly that level.
 // Only x86-64 instantiates it today, see the `aarch64` module doc for the NEON pivot.
 #[cfg_attr(not(target_arch = "x86_64"), allow(unused_macros))]
 macro_rules! auto_backend {
@@ -19,9 +20,9 @@ macro_rules! auto_backend {
 
             /// The elementwise entry of body `B`.
             // SAFETY: the caller guarantees that the CPU supports the features above, which
-            // `Dispatch` does by calling only entries that `resolve` installed after
-            // `is_available` returned true. The body is safe Rust with bounds checks, so it
-            // makes no pointer or alignment assumptions of its own.
+            // `Dispatch` does by calling only entries that `resolve` installed after `select`
+            // found `features::runnable` true for the level. The body is safe Rust with bounds
+            // checks, so it makes no pointer or alignment assumptions of its own.
             #[target_feature(enable = $features)]
             pub(crate) unsafe fn elementwise<B: ElementwiseBody>(
                 args: &[Arg],
@@ -69,8 +70,8 @@ macro_rules! auto_backend {
                 fn update(&mut self, args: &[Arg], out: &mut [u8]) -> Result<(), String> {
                     // SAFETY: a `ScanOnIsa` is only obtained through the unsafe `scanner`,
                     // whose caller guarantees the CPU features (`Dispatch` calls it only
-                    // after `resolve` checked `is_available`). `update` makes no pointer or
-                    // alignment assumptions.
+                    // after `resolve` checked `features::runnable` through `select`).
+                    // `update` makes no pointer or alignment assumptions.
                     unsafe { scan_update(&mut self.0, args, out) }
                 }
             }
@@ -99,8 +100,8 @@ macro_rules! auto_backend {
                 fn update(&mut self, args: &[Arg]) -> Result<(), String> {
                     // SAFETY: an `OnIsa` is only obtained through the unsafe `reducer`, whose
                     // caller guarantees the CPU features (`Dispatch` calls it only after
-                    // `resolve` checked `is_available`). `update` makes no pointer or
-                    // alignment assumptions.
+                    // `resolve` checked `features::runnable` through `select`). `update`
+                    // makes no pointer or alignment assumptions.
                     unsafe { update(&mut self.0, args) }
                 }
 

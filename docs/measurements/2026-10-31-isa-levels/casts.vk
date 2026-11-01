@@ -1,0 +1,12 @@
+let n = 10000000;
+let x = rand_i64(n, 1);
+let u = cast_u64(x);
+let f = (rand_f64(n, 2) - 0.5) * 1000000000000.0;
+let g = rand_f64(n, 3) * 1000000000000.0;
+print(sum(cast_f64(x)));
+print(sum(cast_f64(u)));
+print(sum(cast_i64(f)));
+print(sum(cast_u64(g)));
+let m = x * x;
+print(sum(m));
+print(reduce(m, min));

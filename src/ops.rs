@@ -1,3 +1,5 @@
+use crate::kernels::FeatureSet;
+use crate::kernels::features;
 use crate::value::ScalarType;
 
 /// Associative folds that `Op::Reduce`, `Op::Scan`, `Op::ScanBy`, and `Op::ReduceInto` can apply.
@@ -82,41 +84,34 @@ pub enum Op {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Isa {
     Scalar,
-    Avx2,
-    Avx512,
+    X86_64V3,
+    X86_64V4,
     Neon,
 }
 
 impl Isa {
-    pub const ALL: [Isa; 4] = [Isa::Scalar, Isa::Avx2, Isa::Avx512, Isa::Neon];
+    pub const ALL: [Isa; 4] = [Isa::Scalar, Isa::X86_64V3, Isa::X86_64V4, Isa::Neon];
 
     /// The best instruction set this CPU supports.
     pub fn detect() -> Isa {
-        [Isa::Avx512, Isa::Avx2, Isa::Neon]
-            .into_iter()
-            .find(|isa| isa.is_available())
-            .unwrap_or(Isa::Scalar)
+        Isa::detect_with(FeatureSet::EMPTY)
     }
 
-    /// Whether this CPU can run code compiled for the instruction set.
+    /// The best instruction set this CPU supports with the features of `disable` treated as
+    /// absent.
+    pub fn detect_with(disable: FeatureSet) -> Isa {
+        features::best_level(FeatureSet::detect().minus(disable))
+    }
+
+    /// Whether this CPU supports every feature of the instruction set's level, see
+    /// `features::runnable`.
     pub fn is_available(self) -> bool {
-        match self {
-            Isa::Scalar => true,
-            #[cfg(target_arch = "x86_64")]
-            Isa::Avx2 => std::arch::is_x86_feature_detected!("avx2"),
-            #[cfg(target_arch = "x86_64")]
-            Isa::Avx512 => {
-                std::arch::is_x86_feature_detected!("avx512f")
-                    && std::arch::is_x86_feature_detected!("avx512bw")
-                    && std::arch::is_x86_feature_detected!("avx512vl")
-                    && std::arch::is_x86_feature_detected!("avx512vbmi2")
-            }
-            #[cfg(target_arch = "aarch64")]
-            Isa::Neon => true,
-            // The remaining variants belong to other architectures.
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
+        self.is_available_with(FeatureSet::EMPTY)
+    }
+
+    /// Like `is_available`, with the features of `disable` treated as absent.
+    pub fn is_available_with(self, disable: FeatureSet) -> bool {
+        features::runnable(self, FeatureSet::EMPTY, FeatureSet::detect().minus(disable))
     }
 
     pub fn from_name(name: &str) -> Option<Isa> {
@@ -126,8 +121,8 @@ impl Isa {
     pub fn name(self) -> &'static str {
         match self {
             Isa::Scalar => "scalar",
-            Isa::Avx2 => "avx2",
-            Isa::Avx512 => "avx512",
+            Isa::X86_64V3 => "x86-64-v3",
+            Isa::X86_64V4 => "x86-64-v4",
             Isa::Neon => "neon",
         }
     }

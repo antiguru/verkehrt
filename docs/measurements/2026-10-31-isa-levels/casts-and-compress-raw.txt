@@ -1,0 +1,955 @@
+##### casts round 1
+=== base scalar load=3.51 4.94 4.98 21:01:01
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10231.7
+stats cast_f64_u64 calls=1 bytes=160000000 time=13362.1
+stats cast_i64_f64 calls=1 bytes=160000000 time=8617.6
+stats cast_i64_u64 calls=1 bytes=160000000 time=7839.7
+stats cast_u64_f64 calls=1 bytes=160000000 time=8378.6
+stats mul_f64 calls=2 bytes=320000000 time=15473.3
+stats mul_i64 calls=1 bytes=240000000 time=7602.6
+stats rand_f64 calls=2 bytes=160000000 time=47967.5
+stats rand_i64 calls=1 bytes=80000000 time=16615.7
+stats reduce_add_f64 calls=2 bytes=160000000 time=4837.9
+stats reduce_add_i64 calls=2 bytes=160000000 time=5294.3
+stats reduce_add_u64 calls=1 bytes=80000000 time=2386.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=3000.0
+stats sub_f64 calls=1 bytes=160000000 time=8062.2
+=== new scalar load=3.51 4.94 4.98 21:01:01
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9380.9
+stats cast_f64_u64 calls=1 bytes=160000000 time=13210.6
+stats cast_i64_f64 calls=1 bytes=160000000 time=7997.3
+stats cast_i64_u64 calls=1 bytes=160000000 time=7700.8
+stats cast_u64_f64 calls=1 bytes=160000000 time=7384.8
+stats mul_f64 calls=2 bytes=320000000 time=15349.2
+stats mul_i64 calls=1 bytes=240000000 time=8383.1
+stats rand_f64 calls=2 bytes=160000000 time=47208.3
+stats rand_i64 calls=1 bytes=80000000 time=16283.6
+stats reduce_add_f64 calls=2 bytes=160000000 time=4350.0
+stats reduce_add_i64 calls=2 bytes=160000000 time=4813.5
+stats reduce_add_u64 calls=1 bytes=80000000 time=2655.5
+stats reduce_min_i64 calls=1 bytes=80000000 time=3053.8
+stats sub_f64 calls=1 bytes=160000000 time=7432.3
+=== base avx2 load=3.51 4.94 4.98 21:01:02
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9574.4
+stats cast_f64_u64 calls=1 bytes=160000000 time=12429.0
+stats cast_i64_f64 calls=1 bytes=160000000 time=8335.0
+stats cast_i64_u64 calls=1 bytes=160000000 time=7481.4
+stats cast_u64_f64 calls=1 bytes=160000000 time=7391.3
+stats mul_f64 calls=2 bytes=320000000 time=14993.3
+stats mul_i64 calls=1 bytes=240000000 time=7723.4
+stats rand_f64 calls=2 bytes=160000000 time=47109.3
+stats rand_i64 calls=1 bytes=80000000 time=16867.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=4097.6
+stats reduce_add_i64 calls=2 bytes=160000000 time=4068.0
+stats reduce_add_u64 calls=1 bytes=80000000 time=2200.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=2040.8
+stats sub_f64 calls=1 bytes=160000000 time=7125.7
+=== new x86-64-v3 load=3.51 4.94 4.98 21:01:02
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9158.2
+stats cast_f64_u64 calls=1 bytes=160000000 time=12006.2
+stats cast_i64_f64 calls=1 bytes=160000000 time=7487.6
+stats cast_i64_u64 calls=1 bytes=160000000 time=6779.0
+stats cast_u64_f64 calls=1 bytes=160000000 time=7483.7
+stats mul_f64 calls=2 bytes=320000000 time=15068.8
+stats mul_i64 calls=1 bytes=240000000 time=6870.1
+stats rand_f64 calls=2 bytes=160000000 time=46049.6
+stats rand_i64 calls=1 bytes=80000000 time=16284.8
+stats reduce_add_f64 calls=2 bytes=160000000 time=3982.1
+stats reduce_add_i64 calls=2 bytes=160000000 time=3974.5
+stats reduce_add_u64 calls=1 bytes=80000000 time=2155.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=1959.8
+stats sub_f64 calls=1 bytes=160000000 time=7667.5
+=== base avx512 load=3.39 4.89 4.97 21:01:02
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9934.1
+stats cast_f64_u64 calls=1 bytes=160000000 time=11540.7
+stats cast_i64_f64 calls=1 bytes=160000000 time=8373.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=8251.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=7804.0
+stats mul_f64 calls=2 bytes=320000000 time=15470.5
+stats mul_i64 calls=1 bytes=240000000 time=7781.1
+stats rand_f64 calls=2 bytes=160000000 time=47557.0
+stats rand_i64 calls=1 bytes=80000000 time=16899.3
+stats reduce_add_f64 calls=2 bytes=160000000 time=3966.5
+stats reduce_add_i64 calls=2 bytes=160000000 time=3865.6
+stats reduce_add_u64 calls=1 bytes=80000000 time=2138.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=2223.0
+stats sub_f64 calls=1 bytes=160000000 time=7690.8
+=== new x86-64-v4 load=3.39 4.89 4.97 21:01:03
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10832.9
+stats cast_f64_u64 calls=1 bytes=160000000 time=12545.6
+stats cast_i64_f64 calls=1 bytes=160000000 time=7715.6
+stats cast_i64_u64 calls=1 bytes=160000000 time=7016.4
+stats cast_u64_f64 calls=1 bytes=160000000 time=7072.2
+stats mul_f64 calls=2 bytes=320000000 time=14558.5
+stats mul_i64 calls=1 bytes=240000000 time=7418.0
+stats rand_f64 calls=2 bytes=160000000 time=47465.5
+stats rand_i64 calls=1 bytes=80000000 time=16334.4
+stats reduce_add_f64 calls=2 bytes=160000000 time=3686.6
+stats reduce_add_i64 calls=2 bytes=160000000 time=3865.1
+stats reduce_add_u64 calls=1 bytes=80000000 time=2031.7
+stats reduce_min_i64 calls=1 bytes=80000000 time=1729.6
+stats sub_f64 calls=1 bytes=160000000 time=7527.8
+##### casts round 2
+=== base scalar load=3.39 4.89 4.97 21:01:03
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=11467.7
+stats cast_f64_u64 calls=1 bytes=160000000 time=13677.0
+stats cast_i64_f64 calls=1 bytes=160000000 time=8349.2
+stats cast_i64_u64 calls=1 bytes=160000000 time=7369.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=8432.3
+stats mul_f64 calls=2 bytes=320000000 time=15494.2
+stats mul_i64 calls=1 bytes=240000000 time=7754.4
+stats rand_f64 calls=2 bytes=160000000 time=47354.0
+stats rand_i64 calls=1 bytes=80000000 time=16943.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=4280.8
+stats reduce_add_i64 calls=2 bytes=160000000 time=4577.9
+stats reduce_add_u64 calls=1 bytes=80000000 time=2325.9
+stats reduce_min_i64 calls=1 bytes=80000000 time=2938.6
+stats sub_f64 calls=1 bytes=160000000 time=8152.8
+=== new scalar load=3.39 4.89 4.97 21:01:04
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9327.4
+stats cast_f64_u64 calls=1 bytes=160000000 time=13125.5
+stats cast_i64_f64 calls=1 bytes=160000000 time=7758.3
+stats cast_i64_u64 calls=1 bytes=160000000 time=7767.3
+stats cast_u64_f64 calls=1 bytes=160000000 time=7401.0
+stats mul_f64 calls=2 bytes=320000000 time=14776.1
+stats mul_i64 calls=1 bytes=240000000 time=7404.3
+stats rand_f64 calls=2 bytes=160000000 time=46674.0
+stats rand_i64 calls=1 bytes=80000000 time=16825.3
+stats reduce_add_f64 calls=2 bytes=160000000 time=4812.4
+stats reduce_add_i64 calls=2 bytes=160000000 time=4772.9
+stats reduce_add_u64 calls=1 bytes=80000000 time=2242.4
+stats reduce_min_i64 calls=1 bytes=80000000 time=2888.0
+stats sub_f64 calls=1 bytes=160000000 time=7297.3
+=== base avx2 load=3.39 4.89 4.97 21:01:04
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9449.2
+stats cast_f64_u64 calls=1 bytes=160000000 time=12042.9
+stats cast_i64_f64 calls=1 bytes=160000000 time=8116.3
+stats cast_i64_u64 calls=1 bytes=160000000 time=7419.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7560.8
+stats mul_f64 calls=2 bytes=320000000 time=15536.9
+stats mul_i64 calls=1 bytes=240000000 time=7283.3
+stats rand_f64 calls=2 bytes=160000000 time=47583.5
+stats rand_i64 calls=1 bytes=80000000 time=16423.1
+stats reduce_add_f64 calls=2 bytes=160000000 time=3639.9
+stats reduce_add_i64 calls=2 bytes=160000000 time=3921.8
+stats reduce_add_u64 calls=1 bytes=80000000 time=1963.0
+stats reduce_min_i64 calls=1 bytes=80000000 time=2013.6
+stats sub_f64 calls=1 bytes=160000000 time=7852.4
+=== new x86-64-v3 load=3.39 4.89 4.97 21:01:04
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9507.3
+stats cast_f64_u64 calls=1 bytes=160000000 time=12112.0
+stats cast_i64_f64 calls=1 bytes=160000000 time=7772.5
+stats cast_i64_u64 calls=1 bytes=160000000 time=7041.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7181.9
+stats mul_f64 calls=2 bytes=320000000 time=14736.4
+stats mul_i64 calls=1 bytes=240000000 time=7898.4
+stats rand_f64 calls=2 bytes=160000000 time=46462.3
+stats rand_i64 calls=1 bytes=80000000 time=16099.9
+stats reduce_add_f64 calls=2 bytes=160000000 time=3600.6
+stats reduce_add_i64 calls=2 bytes=160000000 time=3872.7
+stats reduce_add_u64 calls=1 bytes=80000000 time=2264.3
+stats reduce_min_i64 calls=1 bytes=80000000 time=1925.8
+stats sub_f64 calls=1 bytes=160000000 time=7464.4
+=== base avx512 load=3.39 4.89 4.97 21:01:05
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9893.4
+stats cast_f64_u64 calls=1 bytes=160000000 time=11040.7
+stats cast_i64_f64 calls=1 bytes=160000000 time=8313.1
+stats cast_i64_u64 calls=1 bytes=160000000 time=7702.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7626.8
+stats mul_f64 calls=2 bytes=320000000 time=14757.5
+stats mul_i64 calls=1 bytes=240000000 time=6982.3
+stats rand_f64 calls=2 bytes=160000000 time=47576.3
+stats rand_i64 calls=1 bytes=80000000 time=16295.3
+stats reduce_add_f64 calls=2 bytes=160000000 time=4303.2
+stats reduce_add_i64 calls=2 bytes=160000000 time=3615.9
+stats reduce_add_u64 calls=1 bytes=80000000 time=1802.1
+stats reduce_min_i64 calls=1 bytes=80000000 time=1678.0
+stats sub_f64 calls=1 bytes=160000000 time=7367.5
+=== new x86-64-v4 load=3.39 4.89 4.97 21:01:05
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=12034.7
+stats cast_f64_u64 calls=1 bytes=160000000 time=11834.3
+stats cast_i64_f64 calls=1 bytes=160000000 time=7113.7
+stats cast_i64_u64 calls=1 bytes=160000000 time=6691.3
+stats cast_u64_f64 calls=1 bytes=160000000 time=7148.0
+stats mul_f64 calls=2 bytes=320000000 time=14006.9
+stats mul_i64 calls=1 bytes=240000000 time=7269.7
+stats rand_f64 calls=2 bytes=160000000 time=46692.7
+stats rand_i64 calls=1 bytes=80000000 time=16936.0
+stats reduce_add_f64 calls=2 bytes=160000000 time=3664.9
+stats reduce_add_i64 calls=2 bytes=160000000 time=4025.6
+stats reduce_add_u64 calls=1 bytes=80000000 time=2123.1
+stats reduce_min_i64 calls=1 bytes=80000000 time=1705.0
+stats sub_f64 calls=1 bytes=160000000 time=8869.7
+##### casts round 3
+=== base scalar load=3.39 4.89 4.97 21:01:06
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9870.5
+stats cast_f64_u64 calls=1 bytes=160000000 time=13271.2
+stats cast_i64_f64 calls=1 bytes=160000000 time=8136.4
+stats cast_i64_u64 calls=1 bytes=160000000 time=7805.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7713.4
+stats mul_f64 calls=2 bytes=320000000 time=15983.0
+stats mul_i64 calls=1 bytes=240000000 time=7838.2
+stats rand_f64 calls=2 bytes=160000000 time=47476.5
+stats rand_i64 calls=1 bytes=80000000 time=16890.0
+stats reduce_add_f64 calls=2 bytes=160000000 time=4795.2
+stats reduce_add_i64 calls=2 bytes=160000000 time=5117.0
+stats reduce_add_u64 calls=1 bytes=80000000 time=2456.7
+stats reduce_min_i64 calls=1 bytes=80000000 time=2945.0
+stats sub_f64 calls=1 bytes=160000000 time=8032.0
+=== new scalar load=3.39 4.89 4.97 21:01:06
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9472.9
+stats cast_f64_u64 calls=1 bytes=160000000 time=13161.5
+stats cast_i64_f64 calls=1 bytes=160000000 time=8360.2
+stats cast_i64_u64 calls=1 bytes=160000000 time=7498.0
+stats cast_u64_f64 calls=1 bytes=160000000 time=7436.8
+stats mul_f64 calls=2 bytes=320000000 time=15148.8
+stats mul_i64 calls=1 bytes=240000000 time=7629.8
+stats rand_f64 calls=2 bytes=160000000 time=46711.2
+stats rand_i64 calls=1 bytes=80000000 time=16441.7
+stats reduce_add_f64 calls=2 bytes=160000000 time=4342.1
+stats reduce_add_i64 calls=2 bytes=160000000 time=4874.3
+stats reduce_add_u64 calls=1 bytes=80000000 time=2525.4
+stats reduce_min_i64 calls=1 bytes=80000000 time=2891.3
+stats sub_f64 calls=1 bytes=160000000 time=7906.0
+=== base avx2 load=3.39 4.89 4.97 21:01:06
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9779.7
+stats cast_f64_u64 calls=1 bytes=160000000 time=12533.3
+stats cast_i64_f64 calls=1 bytes=160000000 time=8115.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=7433.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=7563.6
+stats mul_f64 calls=2 bytes=320000000 time=15605.0
+stats mul_i64 calls=1 bytes=240000000 time=7303.6
+stats rand_f64 calls=2 bytes=160000000 time=47099.9
+stats rand_i64 calls=1 bytes=80000000 time=16885.8
+stats reduce_add_f64 calls=2 bytes=160000000 time=3933.5
+stats reduce_add_i64 calls=2 bytes=160000000 time=4234.2
+stats reduce_add_u64 calls=1 bytes=80000000 time=2206.4
+stats reduce_min_i64 calls=1 bytes=80000000 time=1971.9
+stats sub_f64 calls=1 bytes=160000000 time=7571.4
+=== new x86-64-v3 load=3.39 4.89 4.97 21:01:07
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9806.3
+stats cast_f64_u64 calls=1 bytes=160000000 time=12003.7
+stats cast_i64_f64 calls=1 bytes=160000000 time=7347.2
+stats cast_i64_u64 calls=1 bytes=160000000 time=6823.8
+stats cast_u64_f64 calls=1 bytes=160000000 time=7145.0
+stats mul_f64 calls=2 bytes=320000000 time=14654.5
+stats mul_i64 calls=1 bytes=240000000 time=7613.6
+stats rand_f64 calls=2 bytes=160000000 time=47410.1
+stats rand_i64 calls=1 bytes=80000000 time=16506.4
+stats reduce_add_f64 calls=2 bytes=160000000 time=3861.1
+stats reduce_add_i64 calls=2 bytes=160000000 time=3934.8
+stats reduce_add_u64 calls=1 bytes=80000000 time=2179.9
+stats reduce_min_i64 calls=1 bytes=80000000 time=1964.4
+stats sub_f64 calls=1 bytes=160000000 time=7791.0
+=== base avx512 load=3.36 4.86 4.96 21:01:07
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9632.5
+stats cast_f64_u64 calls=1 bytes=160000000 time=11110.0
+stats cast_i64_f64 calls=1 bytes=160000000 time=8369.7
+stats cast_i64_u64 calls=1 bytes=160000000 time=8489.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=7324.7
+stats mul_f64 calls=2 bytes=320000000 time=14300.8
+stats mul_i64 calls=1 bytes=240000000 time=7015.2
+stats rand_f64 calls=2 bytes=160000000 time=47693.9
+stats rand_i64 calls=1 bytes=80000000 time=17472.8
+stats reduce_add_f64 calls=2 bytes=160000000 time=4229.0
+stats reduce_add_i64 calls=2 bytes=160000000 time=3762.9
+stats reduce_add_u64 calls=1 bytes=80000000 time=1854.1
+stats reduce_min_i64 calls=1 bytes=80000000 time=1734.9
+stats sub_f64 calls=1 bytes=160000000 time=7628.9
+=== new x86-64-v4 load=3.36 4.86 4.96 21:01:08
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10835.1
+stats cast_f64_u64 calls=1 bytes=160000000 time=12490.1
+stats cast_i64_f64 calls=1 bytes=160000000 time=7623.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=6703.6
+stats cast_u64_f64 calls=1 bytes=160000000 time=6916.2
+stats mul_f64 calls=2 bytes=320000000 time=14606.7
+stats mul_i64 calls=1 bytes=240000000 time=7363.9
+stats rand_f64 calls=2 bytes=160000000 time=46596.8
+stats rand_i64 calls=1 bytes=80000000 time=16426.1
+stats reduce_add_f64 calls=2 bytes=160000000 time=3642.3
+stats reduce_add_i64 calls=2 bytes=160000000 time=3979.6
+stats reduce_add_u64 calls=1 bytes=80000000 time=2218.0
+stats reduce_min_i64 calls=1 bytes=80000000 time=1917.3
+stats sub_f64 calls=1 bytes=160000000 time=7437.0
+##### casts round 4
+=== base scalar load=3.36 4.86 4.96 21:01:08
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9368.5
+stats cast_f64_u64 calls=1 bytes=160000000 time=13233.1
+stats cast_i64_f64 calls=1 bytes=160000000 time=8571.5
+stats cast_i64_u64 calls=1 bytes=160000000 time=7850.3
+stats cast_u64_f64 calls=1 bytes=160000000 time=7147.2
+stats mul_f64 calls=2 bytes=320000000 time=15727.6
+stats mul_i64 calls=1 bytes=240000000 time=7751.4
+stats rand_f64 calls=2 bytes=160000000 time=47230.2
+stats rand_i64 calls=1 bytes=80000000 time=16594.3
+stats reduce_add_f64 calls=2 bytes=160000000 time=4576.6
+stats reduce_add_i64 calls=2 bytes=160000000 time=4928.5
+stats reduce_add_u64 calls=1 bytes=80000000 time=2506.9
+stats reduce_min_i64 calls=1 bytes=80000000 time=2883.3
+stats sub_f64 calls=1 bytes=160000000 time=7586.2
+=== new scalar load=3.36 4.86 4.96 21:01:08
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=8991.5
+stats cast_f64_u64 calls=1 bytes=160000000 time=13368.9
+stats cast_i64_f64 calls=1 bytes=160000000 time=7867.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=7457.0
+stats cast_u64_f64 calls=1 bytes=160000000 time=7411.4
+stats mul_f64 calls=2 bytes=320000000 time=15092.8
+stats mul_i64 calls=1 bytes=240000000 time=7432.1
+stats rand_f64 calls=2 bytes=160000000 time=46854.6
+stats rand_i64 calls=1 bytes=80000000 time=16658.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=4910.4
+stats reduce_add_i64 calls=2 bytes=160000000 time=4595.7
+stats reduce_add_u64 calls=1 bytes=80000000 time=2484.7
+stats reduce_min_i64 calls=1 bytes=80000000 time=2905.6
+stats sub_f64 calls=1 bytes=160000000 time=7369.1
+=== base avx2 load=3.36 4.86 4.96 21:01:09
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9678.5
+stats cast_f64_u64 calls=1 bytes=160000000 time=12627.2
+stats cast_i64_f64 calls=1 bytes=160000000 time=8297.7
+stats cast_i64_u64 calls=1 bytes=160000000 time=7450.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7469.7
+stats mul_f64 calls=2 bytes=320000000 time=15568.7
+stats mul_i64 calls=1 bytes=240000000 time=7720.9
+stats rand_f64 calls=2 bytes=160000000 time=47207.4
+stats rand_i64 calls=1 bytes=80000000 time=16851.8
+stats reduce_add_f64 calls=2 bytes=160000000 time=4066.1
+stats reduce_add_i64 calls=2 bytes=160000000 time=4378.8
+stats reduce_add_u64 calls=1 bytes=80000000 time=2312.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=1884.4
+stats sub_f64 calls=1 bytes=160000000 time=7880.1
+=== new x86-64-v3 load=3.36 4.86 4.96 21:01:09
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9417.9
+stats cast_f64_u64 calls=1 bytes=160000000 time=11818.4
+stats cast_i64_f64 calls=1 bytes=160000000 time=7843.5
+stats cast_i64_u64 calls=1 bytes=160000000 time=7613.4
+stats cast_u64_f64 calls=1 bytes=160000000 time=7595.6
+stats mul_f64 calls=2 bytes=320000000 time=14757.1
+stats mul_i64 calls=1 bytes=240000000 time=7037.0
+stats rand_f64 calls=2 bytes=160000000 time=47894.4
+stats rand_i64 calls=1 bytes=80000000 time=16405.3
+stats reduce_add_f64 calls=2 bytes=160000000 time=4022.4
+stats reduce_add_i64 calls=2 bytes=160000000 time=4246.1
+stats reduce_add_u64 calls=1 bytes=80000000 time=2128.8
+stats reduce_min_i64 calls=1 bytes=80000000 time=1952.1
+stats sub_f64 calls=1 bytes=160000000 time=7117.1
+=== base avx512 load=3.36 4.86 4.96 21:01:10
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9912.6
+stats cast_f64_u64 calls=1 bytes=160000000 time=11523.9
+stats cast_i64_f64 calls=1 bytes=160000000 time=8161.5
+stats cast_i64_u64 calls=1 bytes=160000000 time=7431.2
+stats cast_u64_f64 calls=1 bytes=160000000 time=7495.3
+stats mul_f64 calls=2 bytes=320000000 time=15470.7
+stats mul_i64 calls=1 bytes=240000000 time=7552.1
+stats rand_f64 calls=2 bytes=160000000 time=48494.9
+stats rand_i64 calls=1 bytes=80000000 time=17003.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=3897.6
+stats reduce_add_i64 calls=2 bytes=160000000 time=3777.5
+stats reduce_add_u64 calls=1 bytes=80000000 time=2073.6
+stats reduce_min_i64 calls=1 bytes=80000000 time=1778.9
+stats sub_f64 calls=1 bytes=160000000 time=7716.3
+=== new x86-64-v4 load=3.36 4.86 4.96 21:01:10
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10589.1
+stats cast_f64_u64 calls=1 bytes=160000000 time=14534.3
+stats cast_i64_f64 calls=1 bytes=160000000 time=7463.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=7309.9
+stats cast_u64_f64 calls=1 bytes=160000000 time=7119.3
+stats mul_f64 calls=2 bytes=320000000 time=14755.8
+stats mul_i64 calls=1 bytes=240000000 time=7221.7
+stats rand_f64 calls=2 bytes=160000000 time=46661.8
+stats rand_i64 calls=1 bytes=80000000 time=16945.6
+stats reduce_add_f64 calls=2 bytes=160000000 time=3666.4
+stats reduce_add_i64 calls=2 bytes=160000000 time=4072.2
+stats reduce_add_u64 calls=1 bytes=80000000 time=1987.5
+stats reduce_min_i64 calls=1 bytes=80000000 time=1807.3
+stats sub_f64 calls=1 bytes=160000000 time=7582.0
+##### casts round 5
+=== base scalar load=3.36 4.86 4.96 21:01:11
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9281.6
+stats cast_f64_u64 calls=1 bytes=160000000 time=13224.9
+stats cast_i64_f64 calls=1 bytes=160000000 time=8171.1
+stats cast_i64_u64 calls=1 bytes=160000000 time=7933.7
+stats cast_u64_f64 calls=1 bytes=160000000 time=7636.1
+stats mul_f64 calls=2 bytes=320000000 time=15360.8
+stats mul_i64 calls=1 bytes=240000000 time=7909.5
+stats rand_f64 calls=2 bytes=160000000 time=47378.6
+stats rand_i64 calls=1 bytes=80000000 time=16687.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=4847.2
+stats reduce_add_i64 calls=2 bytes=160000000 time=4955.4
+stats reduce_add_u64 calls=1 bytes=80000000 time=2499.1
+stats reduce_min_i64 calls=1 bytes=80000000 time=2899.7
+stats sub_f64 calls=1 bytes=160000000 time=8258.8
+=== new scalar load=3.36 4.86 4.96 21:01:11
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9418.8
+stats cast_f64_u64 calls=1 bytes=160000000 time=13469.6
+stats cast_i64_f64 calls=1 bytes=160000000 time=7921.1
+stats cast_i64_u64 calls=1 bytes=160000000 time=7439.6
+stats cast_u64_f64 calls=1 bytes=160000000 time=7340.7
+stats mul_f64 calls=2 bytes=320000000 time=15178.5
+stats mul_i64 calls=1 bytes=240000000 time=7979.8
+stats rand_f64 calls=2 bytes=160000000 time=47136.6
+stats rand_i64 calls=1 bytes=80000000 time=16617.0
+stats reduce_add_f64 calls=2 bytes=160000000 time=4480.1
+stats reduce_add_i64 calls=2 bytes=160000000 time=5251.0
+stats reduce_add_u64 calls=1 bytes=80000000 time=2607.9
+stats reduce_min_i64 calls=1 bytes=80000000 time=2899.7
+stats sub_f64 calls=1 bytes=160000000 time=7680.5
+=== base avx2 load=3.36 4.86 4.96 21:01:11
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=9883.0
+stats cast_f64_u64 calls=1 bytes=160000000 time=12373.3
+stats cast_i64_f64 calls=1 bytes=160000000 time=8147.9
+stats cast_i64_u64 calls=1 bytes=160000000 time=7330.0
+stats cast_u64_f64 calls=1 bytes=160000000 time=7944.1
+stats mul_f64 calls=2 bytes=320000000 time=15603.3
+stats mul_i64 calls=1 bytes=240000000 time=7573.9
+stats rand_f64 calls=2 bytes=160000000 time=47300.5
+stats rand_i64 calls=1 bytes=80000000 time=17333.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=3717.0
+stats reduce_add_i64 calls=2 bytes=160000000 time=4029.1
+stats reduce_add_u64 calls=1 bytes=80000000 time=2046.3
+stats reduce_min_i64 calls=1 bytes=80000000 time=2052.6
+stats sub_f64 calls=1 bytes=160000000 time=7715.4
+=== new x86-64-v3 load=3.36 4.86 4.96 21:01:12
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10306.1
+stats cast_f64_u64 calls=1 bytes=160000000 time=13356.6
+stats cast_i64_f64 calls=1 bytes=160000000 time=7827.4
+stats cast_i64_u64 calls=1 bytes=160000000 time=7435.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=7509.1
+stats mul_f64 calls=2 bytes=320000000 time=15665.4
+stats mul_i64 calls=1 bytes=240000000 time=7140.1
+stats rand_f64 calls=2 bytes=160000000 time=47702.6
+stats rand_i64 calls=1 bytes=80000000 time=16688.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=3851.3
+stats reduce_add_i64 calls=2 bytes=160000000 time=3821.3
+stats reduce_add_u64 calls=1 bytes=80000000 time=2082.2
+stats reduce_min_i64 calls=1 bytes=80000000 time=1949.0
+stats sub_f64 calls=1 bytes=160000000 time=7291.8
+=== base avx512 load=3.25 4.81 4.94 21:01:12
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=10500.6
+stats cast_f64_u64 calls=1 bytes=160000000 time=11069.0
+stats cast_i64_f64 calls=1 bytes=160000000 time=7912.2
+stats cast_i64_u64 calls=1 bytes=160000000 time=7068.6
+stats cast_u64_f64 calls=1 bytes=160000000 time=7411.4
+stats mul_f64 calls=2 bytes=320000000 time=15056.6
+stats mul_i64 calls=1 bytes=240000000 time=6962.5
+stats rand_f64 calls=2 bytes=160000000 time=46807.6
+stats rand_i64 calls=1 bytes=80000000 time=16799.2
+stats reduce_add_f64 calls=2 bytes=160000000 time=3733.5
+stats reduce_add_i64 calls=2 bytes=160000000 time=4176.2
+stats reduce_add_u64 calls=1 bytes=80000000 time=2034.4
+stats reduce_min_i64 calls=1 bytes=80000000 time=1831.2
+stats sub_f64 calls=1 bytes=160000000 time=7653.2
+=== new x86-64-v4 load=3.25 4.81 4.94 21:01:13
+-2.9523323877194717e21
+9.221104846674504e25
+-1228814352844271
+4998770940940200438
+3452983743756905373
+-9223371351232316092
+stats cast_f64_i64 calls=1 bytes=160000000 time=11034.4
+stats cast_f64_u64 calls=1 bytes=160000000 time=12481.9
+stats cast_i64_f64 calls=1 bytes=160000000 time=7032.5
+stats cast_i64_u64 calls=1 bytes=160000000 time=6796.5
+stats cast_u64_f64 calls=1 bytes=160000000 time=7883.0
+stats mul_f64 calls=2 bytes=320000000 time=14846.6
+stats mul_i64 calls=1 bytes=240000000 time=7797.6
+stats rand_f64 calls=2 bytes=160000000 time=46749.7
+stats rand_i64 calls=1 bytes=80000000 time=16386.1
+stats reduce_add_f64 calls=2 bytes=160000000 time=3774.5
+stats reduce_add_i64 calls=2 bytes=160000000 time=3883.5
+stats reduce_add_u64 calls=1 bytes=80000000 time=2191.3
+stats reduce_min_i64 calls=1 bytes=80000000 time=1855.2
+stats sub_f64 calls=1 bytes=160000000 time=7688.9
+##### compress round 1
+=== compress base scalar load=3.25 4.81 4.94 21:01:13
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7460.0
+stats compress_u8 calls=2 bytes=50003696 time=18939.2
+stats length_u8 calls=2 bytes=10003696 time=2.9
+stats lt_i64 calls=1 bytes=90000000 time=6475.9
+stats lt_u8 calls=1 bytes=20000000 time=1033.3
+stats rand_i64 calls=3 bytes=240000000 time=49531.5
+=== compress new scalar load=3.25 4.81 4.94 21:01:13
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7864.5
+stats compress_u8 calls=2 bytes=50003696 time=19006.4
+stats length_u8 calls=2 bytes=10003696 time=2.1
+stats lt_i64 calls=1 bytes=90000000 time=6943.4
+stats lt_u8 calls=1 bytes=20000000 time=809.1
+stats rand_i64 calls=3 bytes=240000000 time=49561.3
+=== compress base avx2 load=3.25 4.81 4.94 21:01:13
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7286.8
+stats compress_u8 calls=2 bytes=50003696 time=13479.0
+stats length_u8 calls=2 bytes=10003696 time=3.3
+stats lt_i64 calls=1 bytes=90000000 time=3370.1
+stats lt_u8 calls=1 bytes=20000000 time=851.5
+stats rand_i64 calls=3 bytes=240000000 time=50633.7
+=== compress new x86-64-v3 load=3.25 4.81 4.94 21:01:14
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6680.5
+stats compress_u8 calls=2 bytes=50003696 time=17160.3
+stats length_u8 calls=2 bytes=10003696 time=1.8
+stats lt_i64 calls=1 bytes=90000000 time=3391.5
+stats lt_u8 calls=1 bytes=20000000 time=794.9
+stats rand_i64 calls=3 bytes=240000000 time=49525.6
+=== compress base avx512 load=3.25 4.81 4.94 21:01:14
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6018.5
+stats compress_u8 calls=2 bytes=50003696 time=2433.7
+stats length_u8 calls=2 bytes=10003696 time=2.2
+stats lt_i64 calls=1 bytes=90000000 time=3499.4
+stats lt_u8 calls=1 bytes=20000000 time=745.1
+stats rand_i64 calls=3 bytes=240000000 time=49592.7
+=== compress new x86-64-v4 load=3.25 4.81 4.94 21:01:14
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6604.2
+stats compress_u8 calls=2 bytes=50003696 time=2236.3
+stats length_u8 calls=2 bytes=10003696 time=2.5
+stats lt_i64 calls=1 bytes=90000000 time=3028.2
+stats lt_u8 calls=1 bytes=20000000 time=869.2
+stats rand_i64 calls=3 bytes=240000000 time=47810.1
+=== compress new x86-64-v4 disable avx512vbmi2 load=3.25 4.81 4.94 21:01:14
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6214.2
+stats compress_u8 calls=2 bytes=50003696 time=11705.8
+stats length_u8 calls=2 bytes=10003696 time=2.0
+stats lt_i64 calls=1 bytes=90000000 time=3444.8
+stats lt_u8 calls=1 bytes=20000000 time=1118.7
+stats rand_i64 calls=3 bytes=240000000 time=49632.0
+##### compress round 2
+=== compress base scalar load=3.25 4.81 4.94 21:01:14
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7302.6
+stats compress_u8 calls=2 bytes=50003696 time=18758.7
+stats length_u8 calls=2 bytes=10003696 time=2.2
+stats lt_i64 calls=1 bytes=90000000 time=7057.6
+stats lt_u8 calls=1 bytes=20000000 time=830.8
+stats rand_i64 calls=3 bytes=240000000 time=50296.2
+=== compress new scalar load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7633.1
+stats compress_u8 calls=2 bytes=50003696 time=19975.4
+stats length_u8 calls=2 bytes=10003696 time=2.5
+stats lt_i64 calls=1 bytes=90000000 time=6569.5
+stats lt_u8 calls=1 bytes=20000000 time=946.3
+stats rand_i64 calls=3 bytes=240000000 time=49070.3
+=== compress base avx2 load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6664.5
+stats compress_u8 calls=2 bytes=50003696 time=13776.4
+stats length_u8 calls=2 bytes=10003696 time=2.3
+stats lt_i64 calls=1 bytes=90000000 time=3422.1
+stats lt_u8 calls=1 bytes=20000000 time=1119.1
+stats rand_i64 calls=3 bytes=240000000 time=49843.3
+=== compress new x86-64-v3 load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6557.7
+stats compress_u8 calls=2 bytes=50003696 time=17723.9
+stats length_u8 calls=2 bytes=10003696 time=2.3
+stats lt_i64 calls=1 bytes=90000000 time=3674.8
+stats lt_u8 calls=1 bytes=20000000 time=946.5
+stats rand_i64 calls=3 bytes=240000000 time=49942.7
+=== compress base avx512 load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6854.1
+stats compress_u8 calls=2 bytes=50003696 time=2269.3
+stats length_u8 calls=2 bytes=10003696 time=2.1
+stats lt_i64 calls=1 bytes=90000000 time=3174.5
+stats lt_u8 calls=1 bytes=20000000 time=1263.2
+stats rand_i64 calls=3 bytes=240000000 time=51129.3
+=== compress new x86-64-v4 load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6366.5
+stats compress_u8 calls=2 bytes=50003696 time=3624.6
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=3230.9
+stats lt_u8 calls=1 bytes=20000000 time=791.1
+stats rand_i64 calls=3 bytes=240000000 time=49297.9
+=== compress new x86-64-v4 disable avx512vbmi2 load=3.25 4.81 4.94 21:01:15
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6166.5
+stats compress_u8 calls=2 bytes=50003696 time=11847.5
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=3152.0
+stats lt_u8 calls=1 bytes=20000000 time=810.7
+stats rand_i64 calls=3 bytes=240000000 time=49326.8
+##### compress round 3
+=== compress base scalar load=3.25 4.81 4.94 21:01:16
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6972.2
+stats compress_u8 calls=2 bytes=50003696 time=19451.6
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=7111.7
+stats lt_u8 calls=1 bytes=20000000 time=943.4
+stats rand_i64 calls=3 bytes=240000000 time=51444.0
+=== compress new scalar load=3.25 4.81 4.94 21:01:16
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7374.6
+stats compress_u8 calls=2 bytes=50003696 time=18486.3
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=6617.5
+stats lt_u8 calls=1 bytes=20000000 time=771.0
+stats rand_i64 calls=3 bytes=240000000 time=49443.9
+=== compress base avx2 load=3.25 4.81 4.94 21:01:16
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6891.1
+stats compress_u8 calls=2 bytes=50003696 time=14012.1
+stats length_u8 calls=2 bytes=10003696 time=2.1
+stats lt_i64 calls=1 bytes=90000000 time=3500.9
+stats lt_u8 calls=1 bytes=20000000 time=748.5
+stats rand_i64 calls=3 bytes=240000000 time=50231.5
+=== compress new x86-64-v3 load=3.25 4.81 4.94 21:01:16
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6738.3
+stats compress_u8 calls=2 bytes=50003696 time=16481.4
+stats length_u8 calls=2 bytes=10003696 time=2.1
+stats lt_i64 calls=1 bytes=90000000 time=3546.0
+stats lt_u8 calls=1 bytes=20000000 time=1158.0
+stats rand_i64 calls=3 bytes=240000000 time=49640.7
+=== compress base avx512 load=3.25 4.81 4.94 21:01:16
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6516.4
+stats compress_u8 calls=2 bytes=50003696 time=2274.3
+stats length_u8 calls=2 bytes=10003696 time=2.3
+stats lt_i64 calls=1 bytes=90000000 time=3249.6
+stats lt_u8 calls=1 bytes=20000000 time=1214.7
+stats rand_i64 calls=3 bytes=240000000 time=50175.6
+=== compress new x86-64-v4 load=3.25 4.81 4.94 21:01:17
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6390.7
+stats compress_u8 calls=2 bytes=50003696 time=3068.3
+stats length_u8 calls=2 bytes=10003696 time=2.7
+stats lt_i64 calls=1 bytes=90000000 time=3077.4
+stats lt_u8 calls=1 bytes=20000000 time=813.6
+stats rand_i64 calls=3 bytes=240000000 time=49381.8
+=== compress new x86-64-v4 disable avx512vbmi2 load=3.25 4.81 4.94 21:01:17
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6125.5
+stats compress_u8 calls=2 bytes=50003696 time=12378.3
+stats length_u8 calls=2 bytes=10003696 time=2.0
+stats lt_i64 calls=1 bytes=90000000 time=3156.0
+stats lt_u8 calls=1 bytes=20000000 time=1090.3
+stats rand_i64 calls=3 bytes=240000000 time=49309.1
+##### compress round 4
+=== compress base scalar load=3.23 4.78 4.93 21:01:17
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7420.7
+stats compress_u8 calls=2 bytes=50003696 time=18776.8
+stats length_u8 calls=2 bytes=10003696 time=3.6
+stats lt_i64 calls=1 bytes=90000000 time=6568.1
+stats lt_u8 calls=1 bytes=20000000 time=813.4
+stats rand_i64 calls=3 bytes=240000000 time=50076.3
+=== compress new scalar load=3.23 4.78 4.93 21:01:17
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7975.0
+stats compress_u8 calls=2 bytes=50003696 time=18545.4
+stats length_u8 calls=2 bytes=10003696 time=2.5
+stats lt_i64 calls=1 bytes=90000000 time=6521.9
+stats lt_u8 calls=1 bytes=20000000 time=1131.7
+stats rand_i64 calls=3 bytes=240000000 time=49445.5
+=== compress base avx2 load=3.23 4.78 4.93 21:01:17
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7626.7
+stats compress_u8 calls=2 bytes=50003696 time=14367.7
+stats length_u8 calls=2 bytes=10003696 time=3.5
+stats lt_i64 calls=1 bytes=90000000 time=3528.1
+stats lt_u8 calls=1 bytes=20000000 time=897.4
+stats rand_i64 calls=3 bytes=240000000 time=51903.8
+=== compress new x86-64-v3 load=3.23 4.78 4.93 21:01:18
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7384.8
+stats compress_u8 calls=2 bytes=50003696 time=17310.9
+stats length_u8 calls=2 bytes=10003696 time=2.3
+stats lt_i64 calls=1 bytes=90000000 time=3419.1
+stats lt_u8 calls=1 bytes=20000000 time=789.6
+stats rand_i64 calls=3 bytes=240000000 time=51709.5
+=== compress base avx512 load=3.23 4.78 4.93 21:01:18
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6765.7
+stats compress_u8 calls=2 bytes=50003696 time=2575.2
+stats length_u8 calls=2 bytes=10003696 time=2.5
+stats lt_i64 calls=1 bytes=90000000 time=3184.8
+stats lt_u8 calls=1 bytes=20000000 time=740.1
+stats rand_i64 calls=3 bytes=240000000 time=49967.6
+=== compress new x86-64-v4 load=3.23 4.78 4.93 21:01:18
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6194.1
+stats compress_u8 calls=2 bytes=50003696 time=3162.4
+stats length_u8 calls=2 bytes=10003696 time=3.3
+stats lt_i64 calls=1 bytes=90000000 time=3260.3
+stats lt_u8 calls=1 bytes=20000000 time=1031.8
+stats rand_i64 calls=3 bytes=240000000 time=49152.1
+=== compress new x86-64-v4 disable avx512vbmi2 load=3.23 4.78 4.93 21:01:18
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7142.5
+stats compress_u8 calls=2 bytes=50003696 time=11324.0
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=3157.5
+stats lt_u8 calls=1 bytes=20000000 time=855.5
+stats rand_i64 calls=3 bytes=240000000 time=48398.5
+##### compress round 5
+=== compress base scalar load=3.23 4.78 4.93 21:01:18
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7579.6
+stats compress_u8 calls=2 bytes=50003696 time=18282.6
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=7188.2
+stats lt_u8 calls=1 bytes=20000000 time=1223.0
+stats rand_i64 calls=3 bytes=240000000 time=49922.5
+=== compress new scalar load=3.23 4.78 4.93 21:01:19
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=7837.5
+stats compress_u8 calls=2 bytes=50003696 time=18137.9
+stats length_u8 calls=2 bytes=10003696 time=2.3
+stats lt_i64 calls=1 bytes=90000000 time=6523.6
+stats lt_u8 calls=1 bytes=20000000 time=808.4
+stats rand_i64 calls=3 bytes=240000000 time=49275.6
+=== compress base avx2 load=3.23 4.78 4.93 21:01:19
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6853.9
+stats compress_u8 calls=2 bytes=50003696 time=13222.5
+stats length_u8 calls=2 bytes=10003696 time=2.2
+stats lt_i64 calls=1 bytes=90000000 time=3879.5
+stats lt_u8 calls=1 bytes=20000000 time=819.9
+stats rand_i64 calls=3 bytes=240000000 time=50338.1
+=== compress new x86-64-v3 load=3.23 4.78 4.93 21:01:19
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6678.3
+stats compress_u8 calls=2 bytes=50003696 time=17085.6
+stats length_u8 calls=2 bytes=10003696 time=1.7
+stats lt_i64 calls=1 bytes=90000000 time=3434.3
+stats lt_u8 calls=1 bytes=20000000 time=755.2
+stats rand_i64 calls=3 bytes=240000000 time=48998.0
+=== compress base avx512 load=3.23 4.78 4.93 21:01:19
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6706.9
+stats compress_u8 calls=2 bytes=50003696 time=3246.8
+stats length_u8 calls=2 bytes=10003696 time=3.8
+stats lt_i64 calls=1 bytes=90000000 time=3685.7
+stats lt_u8 calls=1 bytes=20000000 time=911.0
+stats rand_i64 calls=3 bytes=240000000 time=50818.5
+=== compress new x86-64-v4 load=3.23 4.78 4.93 21:01:19
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6776.0
+stats compress_u8 calls=2 bytes=50003696 time=2994.5
+stats length_u8 calls=2 bytes=10003696 time=2.7
+stats lt_i64 calls=1 bytes=90000000 time=3174.7
+stats lt_u8 calls=1 bytes=20000000 time=1320.4
+stats rand_i64 calls=3 bytes=240000000 time=49463.1
+=== compress new x86-64-v4 disable avx512vbmi2 load=3.23 4.78 4.93 21:01:20
+5002626
+5001070
+stats cast_i64_u8 calls=2 bytes=180000000 time=6383.9
+stats compress_u8 calls=2 bytes=50003696 time=11910.0
+stats length_u8 calls=2 bytes=10003696 time=2.4
+stats lt_i64 calls=1 bytes=90000000 time=3115.8
+stats lt_u8 calls=1 bytes=20000000 time=783.4
+stats rand_i64 calls=3 bytes=240000000 time=49488.4

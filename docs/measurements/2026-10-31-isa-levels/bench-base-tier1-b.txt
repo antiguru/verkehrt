@@ -1,0 +1,639 @@
+# base tier1 b start 21:24:29 load 3.41 4.57 4.99
+Benchmarking tier1/sum/scalar
+Benchmarking tier1/sum/scalar: Warming up for 500.00 ms
+Benchmarking tier1/sum/scalar: Collecting 10 samples in estimated 3.0621 s (1815 iterations)
+Benchmarking tier1/sum/scalar: Analyzing
+tier1/sum/scalar        time:   [1.6566 ms 1.6713 ms 1.6854 ms]
+                        thrpt:  [44.205 GiB/s 44.580 GiB/s 44.976 GiB/s]
+                 change:
+                        time:   [−6.1608% −4.3859% −2.5259%] (p = 0.00 < 0.05)
+                        thrpt:  [+2.5914% +4.5870% +6.5653%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/sum/avx2-auto
+Benchmarking tier1/sum/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/sum/avx2-auto: Collecting 10 samples in estimated 3.0418 s (1925 iterations)
+Benchmarking tier1/sum/avx2-auto: Analyzing
+tier1/sum/avx2-auto     time:   [1.5365 ms 1.5424 ms 1.5502 ms]
+                        thrpt:  [48.063 GiB/s 48.306 GiB/s 48.490 GiB/s]
+                 change:
+                        time:   [−4.8426% −4.1534% −3.4121%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.5326% +4.3334% +5.0891%]
+                        Performance has improved.
+Benchmarking tier1/sum/avx512-auto
+Benchmarking tier1/sum/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/sum/avx512-auto: Collecting 10 samples in estimated 3.0135 s (1980 iterations)
+Benchmarking tier1/sum/avx512-auto: Analyzing
+tier1/sum/avx512-auto   time:   [1.5035 ms 1.5112 ms 1.5216 ms]
+                        thrpt:  [48.964 GiB/s 49.304 GiB/s 49.555 GiB/s]
+                 change:
+                        time:   [−3.5910% −2.6971% −1.7746%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.8067% +2.7719% +3.7248%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/sum/native-base
+Benchmarking tier1/sum/native-base: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-base: Collecting 10 samples in estimated 3.0365 s (1815 iterations)
+Benchmarking tier1/sum/native-base: Analyzing
+tier1/sum/native-base   time:   [1.6539 ms 1.6725 ms 1.6983 ms]
+                        thrpt:  [43.870 GiB/s 44.546 GiB/s 45.049 GiB/s]
+                 change:
+                        time:   [−5.0585% −3.3580% −1.4475%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.4688% +3.4747% +5.3280%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking tier1/sum/native-avx2
+Benchmarking tier1/sum/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-avx2: Collecting 10 samples in estimated 3.0737 s (1980 iterations)
+Benchmarking tier1/sum/native-avx2: Analyzing
+tier1/sum/native-avx2   time:   [1.5435 ms 1.5482 ms 1.5515 ms]
+                        thrpt:  [48.021 GiB/s 48.123 GiB/s 48.270 GiB/s]
+                 change:
+                        time:   [−4.2931% −3.0611% −1.7781%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.8103% +3.1578% +4.4856%]
+                        Performance has improved.
+Benchmarking tier1/sum/native-avx512
+Benchmarking tier1/sum/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-avx512: Collecting 10 samples in estimated 3.0554 s (2035 iterations)
+Benchmarking tier1/sum/native-avx512: Analyzing
+tier1/sum/native-avx512 time:   [1.4668 ms 1.4718 ms 1.4809 ms]
+                        thrpt:  [50.312 GiB/s 50.622 GiB/s 50.795 GiB/s]
+                 change:
+                        time:   [−2.8483% −1.7020% −0.5960%] (p = 0.01 < 0.05)
+                        thrpt:  [+0.5996% +1.7315% +2.9318%]
+                        Change within noise threshold.
+
+Benchmarking tier1/dot/scalar
+Benchmarking tier1/dot/scalar: Warming up for 500.00 ms
+Benchmarking tier1/dot/scalar: Collecting 10 samples in estimated 3.2092 s (825 iterations)
+Benchmarking tier1/dot/scalar: Analyzing
+tier1/dot/scalar        time:   [3.8755 ms 3.9077 ms 3.9372 ms]
+                        thrpt:  [37.848 GiB/s 38.133 GiB/s 38.449 GiB/s]
+                 change:
+                        time:   [−28.893% −25.442% −20.593%] (p = 0.00 < 0.05)
+                        thrpt:  [+25.933% +34.124% +40.632%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/dot/avx2-auto
+Benchmarking tier1/dot/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/dot/avx2-auto: Collecting 10 samples in estimated 3.1702 s (825 iterations)
+Benchmarking tier1/dot/avx2-auto: Analyzing
+tier1/dot/avx2-auto     time:   [3.8058 ms 3.8560 ms 3.8903 ms]
+                        thrpt:  [38.303 GiB/s 38.644 GiB/s 39.154 GiB/s]
+                 change:
+                        time:   [−17.734% −15.308% −12.939%] (p = 0.00 < 0.05)
+                        thrpt:  [+14.862% +18.074% +21.557%]
+                        Performance has improved.
+Benchmarking tier1/dot/avx512-auto
+Benchmarking tier1/dot/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/dot/avx512-auto: Collecting 10 samples in estimated 3.1599 s (825 iterations)
+Benchmarking tier1/dot/avx512-auto: Analyzing
+tier1/dot/avx512-auto   time:   [3.7892 ms 3.8064 ms 3.8379 ms]
+                        thrpt:  [38.826 GiB/s 39.148 GiB/s 39.325 GiB/s]
+                 change:
+                        time:   [−5.6047% −4.7051% −3.6893%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.8306% +4.9374% +5.9375%]
+                        Performance has improved.
+Benchmarking tier1/dot/native-base
+Benchmarking tier1/dot/native-base: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-base: Collecting 10 samples in estimated 3.0973 s (770 iterations)
+Benchmarking tier1/dot/native-base: Analyzing
+tier1/dot/native-base   time:   [3.9873 ms 4.0227 ms 4.0649 ms]
+                        thrpt:  [36.658 GiB/s 37.043 GiB/s 37.372 GiB/s]
+                 change:
+                        time:   [−12.305% −10.926% −9.1964%] (p = 0.00 < 0.05)
+                        thrpt:  [+10.128% +12.267% +14.032%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/dot/native-avx2
+Benchmarking tier1/dot/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-avx2: Collecting 10 samples in estimated 3.1684 s (825 iterations)
+Benchmarking tier1/dot/native-avx2: Analyzing
+tier1/dot/native-avx2   time:   [3.8021 ms 3.8338 ms 3.8565 ms]
+                        thrpt:  [38.639 GiB/s 38.868 GiB/s 39.192 GiB/s]
+                 change:
+                        time:   [−7.6527% −6.8501% −6.0174%] (p = 0.00 < 0.05)
+                        thrpt:  [+6.4026% +7.3538% +8.2868%]
+                        Performance has improved.
+Benchmarking tier1/dot/native-avx512
+Benchmarking tier1/dot/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-avx512: Collecting 10 samples in estimated 3.1551 s (825 iterations)
+Benchmarking tier1/dot/native-avx512: Analyzing
+tier1/dot/native-avx512 time:   [3.8127 ms 3.8340 ms 3.8501 ms]
+                        thrpt:  [38.704 GiB/s 38.866 GiB/s 39.083 GiB/s]
+                 change:
+                        time:   [−8.9949% −7.3566% −5.3584%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.6618% +7.9407% +9.8839%]
+                        Performance has improved.
+
+Benchmarking tier1/count/scalar
+Benchmarking tier1/count/scalar: Warming up for 500.00 ms
+Benchmarking tier1/count/scalar: Collecting 10 samples in estimated 3.0080 s (1430 iterations)
+Benchmarking tier1/count/scalar: Analyzing
+tier1/count/scalar      time:   [2.0569 ms 2.0663 ms 2.0804 ms]
+                        thrpt:  [35.813 GiB/s 36.057 GiB/s 36.222 GiB/s]
+                 change:
+                        time:   [−13.257% −10.936% −8.8694%] (p = 0.00 < 0.05)
+                        thrpt:  [+9.7327% +12.278% +15.283%]
+                        Performance has improved.
+Benchmarking tier1/count/avx2-auto
+Benchmarking tier1/count/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/count/avx2-auto: Collecting 10 samples in estimated 3.0536 s (1870 iterations)
+Benchmarking tier1/count/avx2-auto: Analyzing
+tier1/count/avx2-auto   time:   [1.6060 ms 1.6176 ms 1.6306 ms]
+                        thrpt:  [45.691 GiB/s 46.059 GiB/s 46.392 GiB/s]
+                 change:
+                        time:   [−12.265% −10.692% −8.9280%] (p = 0.00 < 0.05)
+                        thrpt:  [+9.8033% +11.972% +13.979%]
+                        Performance has improved.
+Benchmarking tier1/count/avx512-auto
+Benchmarking tier1/count/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/count/avx512-auto: Collecting 10 samples in estimated 3.0781 s (1870 iterations)
+Benchmarking tier1/count/avx512-auto: Analyzing
+tier1/count/avx512-auto time:   [1.5498 ms 1.5649 ms 1.5747 ms]
+                        thrpt:  [47.315 GiB/s 47.610 GiB/s 48.075 GiB/s]
+                 change:
+                        time:   [−12.311% −10.946% −9.6413%] (p = 0.00 < 0.05)
+                        thrpt:  [+10.670% +12.291% +14.039%]
+                        Performance has improved.
+Benchmarking tier1/count/native-base
+Benchmarking tier1/count/native-base: Warming up for 500.00 ms
+Benchmarking tier1/count/native-base: Collecting 10 samples in estimated 3.0164 s (1430 iterations)
+Benchmarking tier1/count/native-base: Analyzing
+tier1/count/native-base time:   [2.0416 ms 2.0639 ms 2.0865 ms]
+                        thrpt:  [35.708 GiB/s 36.099 GiB/s 36.495 GiB/s]
+                 change:
+                        time:   [−9.4825% −7.9507% −6.4382%] (p = 0.00 < 0.05)
+                        thrpt:  [+6.8812% +8.6374% +10.476%]
+                        Performance has improved.
+Benchmarking tier1/count/native-avx2
+Benchmarking tier1/count/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/count/native-avx2: Collecting 10 samples in estimated 3.0041 s (1870 iterations)
+Benchmarking tier1/count/native-avx2: Analyzing
+tier1/count/native-avx2 time:   [1.5828 ms 1.6042 ms 1.6322 ms]
+                        thrpt:  [45.647 GiB/s 46.443 GiB/s 47.072 GiB/s]
+                 change:
+                        time:   [−12.354% −10.143% −8.2276%] (p = 0.00 < 0.05)
+                        thrpt:  [+8.9652% +11.288% +14.095%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/count/native-avx512
+Benchmarking tier1/count/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/count/native-avx512: Collecting 10 samples in estimated 3.0660 s (1925 iterations)
+Benchmarking tier1/count/native-avx512: Analyzing
+tier1/count/native-avx512
+                        time:   [1.5601 ms 1.6300 ms 1.7135 ms]
+                        thrpt:  [43.481 GiB/s 45.710 GiB/s 47.759 GiB/s]
+                 change:
+                        time:   [−10.230% −7.5011% −4.6015%] (p = 0.00 < 0.05)
+                        thrpt:  [+4.8234% +8.1094% +11.396%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking tier1/min/scalar
+Benchmarking tier1/min/scalar: Warming up for 500.00 ms
+Benchmarking tier1/min/scalar: Collecting 10 samples in estimated 3.4099 s (385 iterations)
+Benchmarking tier1/min/scalar: Analyzing
+tier1/min/scalar        time:   [8.8387 ms 8.8547 ms 8.8687 ms]
+                        thrpt:  [8.4010 GiB/s 8.4143 GiB/s 8.4295 GiB/s]
+                 change:
+                        time:   [−2.1862% −1.5206% −0.8437%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.8509% +1.5441% +2.2350%]
+                        Change within noise threshold.
+Benchmarking tier1/min/avx2-auto
+Benchmarking tier1/min/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/min/avx2-auto: Collecting 10 samples in estimated 3.1722 s (330 iterations)
+Benchmarking tier1/min/avx2-auto: Analyzing
+tier1/min/avx2-auto     time:   [9.6064 ms 9.6295 ms 9.6556 ms]
+                        thrpt:  [7.7163 GiB/s 7.7372 GiB/s 7.7559 GiB/s]
+                 change:
+                        time:   [−1.1410% −0.6385% −0.1888%] (p = 0.02 < 0.05)
+                        thrpt:  [+0.1891% +0.6426% +1.1542%]
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/min/avx512-auto
+Benchmarking tier1/min/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/min/avx512-auto: Collecting 10 samples in estimated 3.1661 s (330 iterations)
+Benchmarking tier1/min/avx512-auto: Analyzing
+tier1/min/avx512-auto   time:   [9.6223 ms 9.6356 ms 9.6580 ms]
+                        thrpt:  [7.7144 GiB/s 7.7324 GiB/s 7.7431 GiB/s]
+                 change:
+                        time:   [−0.6302% −0.3045% +0.0652%] (p = 0.11 > 0.05)
+                        thrpt:  [−0.0651% +0.3055% +0.6342%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking tier1/min/native-base
+Benchmarking tier1/min/native-base: Warming up for 500.00 ms
+Benchmarking tier1/min/native-base: Collecting 10 samples in estimated 3.0633 s (1815 iterations)
+Benchmarking tier1/min/native-base: Analyzing
+tier1/min/native-base   time:   [1.6686 ms 1.6855 ms 1.7003 ms]
+                        thrpt:  [43.820 GiB/s 44.204 GiB/s 44.652 GiB/s]
+                 change:
+                        time:   [−13.500% −12.219% −10.964%] (p = 0.00 < 0.05)
+                        thrpt:  [+12.314% +13.919% +15.607%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/min/native-avx2
+Benchmarking tier1/min/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/min/native-avx2: Collecting 10 samples in estimated 3.0376 s (1925 iterations)
+Benchmarking tier1/min/native-avx2: Analyzing
+tier1/min/native-avx2   time:   [1.5552 ms 1.5623 ms 1.5676 ms]
+                        thrpt:  [47.530 GiB/s 47.690 GiB/s 47.909 GiB/s]
+                 change:
+                        time:   [−7.0416% −5.9672% −4.9017%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.1544% +6.3458% +7.5750%]
+                        Performance has improved.
+Benchmarking tier1/min/native-avx512
+Benchmarking tier1/min/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/min/native-avx512: Collecting 10 samples in estimated 3.0550 s (2035 iterations)
+Benchmarking tier1/min/native-avx512: Analyzing
+tier1/min/native-avx512 time:   [1.4907 ms 1.4940 ms 1.4958 ms]
+                        thrpt:  [49.810 GiB/s 49.871 GiB/s 49.981 GiB/s]
+                 change:
+                        time:   [−7.4339% −6.5415% −5.5318%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.8557% +6.9993% +8.0309%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+Benchmarking tier1/argmin/scalar
+Benchmarking tier1/argmin/scalar: Warming up for 500.00 ms
+Benchmarking tier1/argmin/scalar: Collecting 10 samples in estimated 3.1269 s (495 iterations)
+Benchmarking tier1/argmin/scalar: Analyzing
+tier1/argmin/scalar     time:   [6.2814 ms 6.2861 ms 6.2927 ms]
+                        thrpt:  [11.840 GiB/s 11.852 GiB/s 11.861 GiB/s]
+                 change:
+                        time:   [−3.0645% −2.2860% −1.5052%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.5282% +2.3395% +3.1613%]
+                        Performance has improved.
+Benchmarking tier1/argmin/avx2-auto
+Benchmarking tier1/argmin/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/argmin/avx2-auto: Collecting 10 samples in estimated 3.1397 s (495 iterations)
+Benchmarking tier1/argmin/avx2-auto: Analyzing
+tier1/argmin/avx2-auto  time:   [6.2902 ms 6.3014 ms 6.3211 ms]
+                        thrpt:  [11.787 GiB/s 11.824 GiB/s 11.845 GiB/s]
+                 change:
+                        time:   [−1.7327% −1.1348% −0.5545%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.5576% +1.1478% +1.7633%]
+                        Change within noise threshold.
+Benchmarking tier1/argmin/avx512-auto
+Benchmarking tier1/argmin/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/argmin/avx512-auto: Collecting 10 samples in estimated 3.1432 s (495 iterations)
+Benchmarking tier1/argmin/avx512-auto: Analyzing
+tier1/argmin/avx512-auto
+                        time:   [6.2946 ms 6.3075 ms 6.3249 ms]
+                        thrpt:  [11.780 GiB/s 11.812 GiB/s 11.836 GiB/s]
+                 change:
+                        time:   [−2.1586% −1.3802% −0.5549%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.5580% +1.3995% +2.2062%]
+                        Change within noise threshold.
+Benchmarking tier1/argmin/native-base
+Benchmarking tier1/argmin/native-base: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-base: Collecting 10 samples in estimated 3.1262 s (715 iterations)
+Benchmarking tier1/argmin/native-base: Analyzing
+tier1/argmin/native-base
+                        time:   [4.3730 ms 4.3762 ms 4.3788 ms]
+                        thrpt:  [17.015 GiB/s 17.025 GiB/s 17.038 GiB/s]
+                 change:
+                        time:   [−0.8913% −0.5900% −0.3092%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.3102% +0.5935% +0.8993%]
+                        Change within noise threshold.
+Benchmarking tier1/argmin/native-avx2
+Benchmarking tier1/argmin/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-avx2: Collecting 10 samples in estimated 3.0526 s (1760 iterations)
+Benchmarking tier1/argmin/native-avx2: Analyzing
+tier1/argmin/native-avx2
+                        time:   [1.7122 ms 1.7256 ms 1.7332 ms]
+                        thrpt:  [42.987 GiB/s 43.178 GiB/s 43.515 GiB/s]
+                 change:
+                        time:   [−10.086% −8.8170% −7.5163%] (p = 0.00 < 0.05)
+                        thrpt:  [+8.1271% +9.6696% +11.218%]
+                        Performance has improved.
+Benchmarking tier1/argmin/native-avx512
+Benchmarking tier1/argmin/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-avx512: Collecting 10 samples in estimated 3.0780 s (1870 iterations)
+Benchmarking tier1/argmin/native-avx512: Analyzing
+tier1/argmin/native-avx512
+                        time:   [1.5961 ms 1.6095 ms 1.6255 ms]
+                        thrpt:  [45.836 GiB/s 46.290 GiB/s 46.680 GiB/s]
+                 change:
+                        time:   [−6.9893% −6.2096% −5.3984%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.7065% +6.6207% +7.5145%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+Benchmarking tier1/filter-1pct/scalar
+Benchmarking tier1/filter-1pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/scalar: Collecting 10 samples in estimated 3.4765 s (385 iterations)
+Benchmarking tier1/filter-1pct/scalar: Analyzing
+tier1/filter-1pct/scalar
+                        time:   [8.9967 ms 9.0019 ms 9.0086 ms]
+                        thrpt:  [8.2706 GiB/s 8.2767 GiB/s 8.2815 GiB/s]
+                 change:
+                        time:   [−2.8353% −2.3852% −1.9501%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.9889% +2.4435% +2.9180%]
+                        Performance has improved.
+Benchmarking tier1/filter-1pct/avx2-auto
+Benchmarking tier1/filter-1pct/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/avx2-auto: Collecting 10 samples in estimated 3.3698 s (495 iterations)
+Benchmarking tier1/filter-1pct/avx2-auto: Analyzing
+tier1/filter-1pct/avx2-auto
+                        time:   [6.7673 ms 6.7848 ms 6.8162 ms]
+                        thrpt:  [10.931 GiB/s 10.981 GiB/s 11.010 GiB/s]
+                 change:
+                        time:   [−5.0209% −3.4755% −2.0279%] (p = 0.00 < 0.05)
+                        thrpt:  [+2.0699% +3.6006% +5.2863%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-1pct/avx2-intrinsics
+Benchmarking tier1/filter-1pct/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/avx2-intrinsics: Collecting 10 samples in estimated 3.1332 s (550 iterations)
+Benchmarking tier1/filter-1pct/avx2-intrinsics: Analyzing
+tier1/filter-1pct/avx2-intrinsics
+                        time:   [5.6490 ms 5.6747 ms 5.7004 ms]
+                        thrpt:  [13.070 GiB/s 13.129 GiB/s 13.189 GiB/s]
+                 change:
+                        time:   [−5.4033% −4.3875% −3.4108%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.5313% +4.5889% +5.7119%]
+                        Performance has improved.
+Benchmarking tier1/filter-1pct/avx512-auto
+Benchmarking tier1/filter-1pct/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/avx512-auto: Collecting 10 samples in estimated 3.0186 s (440 iterations)
+Benchmarking tier1/filter-1pct/avx512-auto: Analyzing
+tier1/filter-1pct/avx512-auto
+                        time:   [6.7832 ms 6.8056 ms 6.8297 ms]
+                        thrpt:  [10.909 GiB/s 10.948 GiB/s 10.984 GiB/s]
+                 change:
+                        time:   [−1.9541% −1.0659% −0.0529%] (p = 0.04 < 0.05)
+                        thrpt:  [+0.0530% +1.0774% +1.9930%]
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-1pct/avx512-intrinsics
+Benchmarking tier1/filter-1pct/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/avx512-intrinsics: Collecting 10 samples in estimated 3.1148 s (605 iterations)
+Benchmarking tier1/filter-1pct/avx512-intrinsics: Analyzing
+tier1/filter-1pct/avx512-intrinsics
+                        time:   [5.1353 ms 5.1499 ms 5.1574 ms]
+                        thrpt:  [14.446 GiB/s 14.468 GiB/s 14.508 GiB/s]
+                 change:
+                        time:   [−2.6323% −2.0462% −1.3632%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.3821% +2.0890% +2.7035%]
+                        Performance has improved.
+Benchmarking tier1/filter-1pct/native-base
+Benchmarking tier1/filter-1pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-base: Collecting 10 samples in estimated 3.0606 s (440 iterations)
+Benchmarking tier1/filter-1pct/native-base: Analyzing
+tier1/filter-1pct/native-base
+                        time:   [6.9767 ms 6.9938 ms 7.0100 ms]
+                        thrpt:  [10.628 GiB/s 10.653 GiB/s 10.679 GiB/s]
+                 change:
+                        time:   [−2.9270% −2.0109% −1.2619%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.2780% +2.0521% +3.0152%]
+                        Performance has improved.
+Benchmarking tier1/filter-1pct/native-avx2
+Benchmarking tier1/filter-1pct/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-avx2: Collecting 10 samples in estimated 3.0800 s (605 iterations)
+Benchmarking tier1/filter-1pct/native-avx2: Analyzing
+tier1/filter-1pct/native-avx2
+                        time:   [5.0929 ms 5.0987 ms 5.1056 ms]
+                        thrpt:  [14.593 GiB/s 14.613 GiB/s 14.629 GiB/s]
+                 change:
+                        time:   [−1.5281% −0.8349% −0.1336%] (p = 0.04 < 0.05)
+                        thrpt:  [+0.1338% +0.8419% +1.5518%]
+                        Change within noise threshold.
+Benchmarking tier1/filter-1pct/native-avx512
+Benchmarking tier1/filter-1pct/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-avx512: Collecting 10 samples in estimated 3.1065 s (605 iterations)
+Benchmarking tier1/filter-1pct/native-avx512: Analyzing
+tier1/filter-1pct/native-avx512
+                        time:   [5.1144 ms 5.1218 ms 5.1374 ms]
+                        thrpt:  [14.503 GiB/s 14.547 GiB/s 14.568 GiB/s]
+                 change:
+                        time:   [−2.0739% −1.2398% −0.3642%] (p = 0.02 < 0.05)
+                        thrpt:  [+0.3655% +1.2554% +2.1179%]
+                        Change within noise threshold.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+Benchmarking tier1/filter-50pct/scalar
+Benchmarking tier1/filter-50pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/scalar: Collecting 10 samples in estimated 3.5573 s (330 iterations)
+Benchmarking tier1/filter-50pct/scalar: Analyzing
+tier1/filter-50pct/scalar
+                        time:   [10.785 ms 10.802 ms 10.830 ms]
+                        thrpt:  [6.8793 GiB/s 6.8977 GiB/s 6.9081 GiB/s]
+                 change:
+                        time:   [−3.0438% −2.1516% −1.4552%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.4767% +2.1989% +3.1393%]
+                        Performance has improved.
+Benchmarking tier1/filter-50pct/avx2-auto
+Benchmarking tier1/filter-50pct/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/avx2-auto: Collecting 10 samples in estimated 3.0039 s (330 iterations)
+Benchmarking tier1/filter-50pct/avx2-auto: Analyzing
+tier1/filter-50pct/avx2-auto
+                        time:   [9.0662 ms 9.0955 ms 9.1321 ms]
+                        thrpt:  [8.1586 GiB/s 8.1915 GiB/s 8.2180 GiB/s]
+                 change:
+                        time:   [−2.0278% −1.1242% −0.2138%] (p = 0.03 < 0.05)
+                        thrpt:  [+0.2142% +1.1369% +2.0698%]
+                        Change within noise threshold.
+Benchmarking tier1/filter-50pct/avx2-intrinsics
+Benchmarking tier1/filter-50pct/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/avx2-intrinsics: Collecting 10 samples in estimated 3.0617 s (385 iterations)
+Benchmarking tier1/filter-50pct/avx2-intrinsics: Analyzing
+tier1/filter-50pct/avx2-intrinsics
+                        time:   [7.9324 ms 7.9514 ms 7.9766 ms]
+                        thrpt:  [9.3406 GiB/s 9.3701 GiB/s 9.3926 GiB/s]
+                 change:
+                        time:   [−0.9098% +0.0223% +0.8843%] (p = 0.96 > 0.05)
+                        thrpt:  [−0.8765% −0.0223% +0.9181%]
+                        No change in performance detected.
+Benchmarking tier1/filter-50pct/avx512-auto
+Benchmarking tier1/filter-50pct/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/avx512-auto: Collecting 10 samples in estimated 3.4504 s (385 iterations)
+Benchmarking tier1/filter-50pct/avx512-auto: Analyzing
+tier1/filter-50pct/avx512-auto
+                        time:   [8.9339 ms 8.9808 ms 9.0300 ms]
+                        thrpt:  [8.2509 GiB/s 8.2961 GiB/s 8.3397 GiB/s]
+                 change:
+                        time:   [−1.6670% −0.7496% +0.1750%] (p = 0.14 > 0.05)
+                        thrpt:  [−0.1747% +0.7552% +1.6953%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking tier1/filter-50pct/avx512-intrinsics
+Benchmarking tier1/filter-50pct/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/avx512-intrinsics: Collecting 10 samples in estimated 3.2022 s (440 iterations)
+Benchmarking tier1/filter-50pct/avx512-intrinsics: Analyzing
+tier1/filter-50pct/avx512-intrinsics
+                        time:   [7.2190 ms 7.2587 ms 7.2835 ms]
+                        thrpt:  [10.229 GiB/s 10.264 GiB/s 10.321 GiB/s]
+                 change:
+                        time:   [−0.8522% +0.2109% +1.1558%] (p = 0.71 > 0.05)
+                        thrpt:  [−1.1426% −0.2105% +0.8595%]
+                        No change in performance detected.
+Benchmarking tier1/filter-50pct/native-base
+Benchmarking tier1/filter-50pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-base: Collecting 10 samples in estimated 3.0064 s (385 iterations)
+Benchmarking tier1/filter-50pct/native-base: Analyzing
+tier1/filter-50pct/native-base
+                        time:   [7.7707 ms 7.7860 ms 7.7985 ms]
+                        thrpt:  [9.5539 GiB/s 9.5693 GiB/s 9.5880 GiB/s]
+                 change:
+                        time:   [−1.3557% −0.7813% −0.2074%] (p = 0.02 < 0.05)
+                        thrpt:  [+0.2078% +0.7874% +1.3744%]
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-50pct/native-avx2
+Benchmarking tier1/filter-50pct/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-avx2: Collecting 10 samples in estimated 3.3232 s (550 iterations)
+Benchmarking tier1/filter-50pct/native-avx2: Analyzing
+tier1/filter-50pct/native-avx2
+                        time:   [6.0489 ms 6.0533 ms 6.0612 ms]
+                        thrpt:  [12.292 GiB/s 12.308 GiB/s 12.317 GiB/s]
+                 change:
+                        time:   [−0.9907% −0.4975% −0.0390%] (p = 0.07 > 0.05)
+                        thrpt:  [+0.0390% +0.5000% +1.0007%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking tier1/filter-50pct/native-avx512
+Benchmarking tier1/filter-50pct/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-avx512: Collecting 10 samples in estimated 3.0051 s (495 iterations)
+Benchmarking tier1/filter-50pct/native-avx512: Analyzing
+tier1/filter-50pct/native-avx512
+                        time:   [6.0674 ms 6.0787 ms 6.0979 ms]
+                        thrpt:  [12.218 GiB/s 12.257 GiB/s 12.280 GiB/s]
+                 change:
+                        time:   [−0.5579% −0.1432% +0.2600%] (p = 0.53 > 0.05)
+                        thrpt:  [−0.2593% +0.1434% +0.5610%]
+                        No change in performance detected.
+
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier1/filter-99pct/scalar
+Benchmarking tier1/filter-99pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/scalar: Collecting 10 samples in estimated 3.5520 s (275 iterations)
+Benchmarking tier1/filter-99pct/scalar: Analyzing
+tier1/filter-99pct/scalar
+                        time:   [12.878 ms 12.897 ms 12.923 ms]
+                        thrpt:  [5.7652 GiB/s 5.7771 GiB/s 5.7853 GiB/s]
+                 change:
+                        time:   [−2.4638% −1.5299% −0.7226%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.7279% +1.5536% +2.5260%]
+                        Change within noise threshold.
+Benchmarking tier1/filter-99pct/avx2-auto
+Benchmarking tier1/filter-99pct/avx2-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/avx2-auto: Collecting 10 samples in estimated 3.0483 s (275 iterations)
+Benchmarking tier1/filter-99pct/avx2-auto: Analyzing
+tier1/filter-99pct/avx2-auto
+                        time:   [11.081 ms 11.128 ms 11.227 ms]
+                        thrpt:  [6.6364 GiB/s 6.6951 GiB/s 6.7239 GiB/s]
+                 change:
+                        time:   [−1.2684% −0.4626% +0.5010%] (p = 0.37 > 0.05)
+                        thrpt:  [−0.4985% +0.4648% +1.2847%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier1/filter-99pct/avx2-intrinsics
+Benchmarking tier1/filter-99pct/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/avx2-intrinsics: Collecting 10 samples in estimated 3.4223 s (330 iterations)
+Benchmarking tier1/filter-99pct/avx2-intrinsics: Analyzing
+tier1/filter-99pct/avx2-intrinsics
+                        time:   [10.358 ms 10.404 ms 10.432 ms]
+                        thrpt:  [7.1421 GiB/s 7.1613 GiB/s 7.1931 GiB/s]
+                 change:
+                        time:   [+1.3082% +1.8587% +2.3958%] (p = 0.00 < 0.05)
+                        thrpt:  [−2.3398% −1.8247% −1.2914%]
+                        Performance has regressed.
+Benchmarking tier1/filter-99pct/avx512-auto
+Benchmarking tier1/filter-99pct/avx512-auto: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/avx512-auto: Collecting 10 samples in estimated 3.0001 s (275 iterations)
+Benchmarking tier1/filter-99pct/avx512-auto: Analyzing
+tier1/filter-99pct/avx512-auto
+                        time:   [10.953 ms 10.992 ms 11.027 ms]
+                        thrpt:  [6.7567 GiB/s 6.7780 GiB/s 6.8023 GiB/s]
+                 change:
+                        time:   [−2.1314% −1.4438% −0.6230%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.6269% +1.4649% +2.1778%]
+                        Change within noise threshold.
+Benchmarking tier1/filter-99pct/avx512-intrinsics
+Benchmarking tier1/filter-99pct/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/avx512-intrinsics: Collecting 10 samples in estimated 3.1003 s (330 iterations)
+Benchmarking tier1/filter-99pct/avx512-intrinsics: Analyzing
+tier1/filter-99pct/avx512-intrinsics
+                        time:   [9.4119 ms 9.4708 ms 9.5452 ms]
+                        thrpt:  [7.8055 GiB/s 7.8669 GiB/s 7.9161 GiB/s]
+                 change:
+                        time:   [−1.2047% −0.5696% +0.2120%] (p = 0.15 > 0.05)
+                        thrpt:  [−0.2116% +0.5729% +1.2194%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking tier1/filter-99pct/native-base
+Benchmarking tier1/filter-99pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-base: Collecting 10 samples in estimated 3.4581 s (385 iterations)
+Benchmarking tier1/filter-99pct/native-base: Analyzing
+tier1/filter-99pct/native-base
+                        time:   [8.9275 ms 8.9395 ms 8.9596 ms]
+                        thrpt:  [8.3157 GiB/s 8.3344 GiB/s 8.3457 GiB/s]
+                 change:
+                        time:   [−1.1621% −0.5307% +0.1299%] (p = 0.15 > 0.05)
+                        thrpt:  [−0.1297% +0.5336% +1.1757%]
+                        No change in performance detected.
+Benchmarking tier1/filter-99pct/native-avx2
+Benchmarking tier1/filter-99pct/native-avx2: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-avx2: Collecting 10 samples in estimated 3.3368 s (440 iterations)
+Benchmarking tier1/filter-99pct/native-avx2: Analyzing
+tier1/filter-99pct/native-avx2
+                        time:   [7.6015 ms 7.6480 ms 7.6738 ms]
+                        thrpt:  [9.7091 GiB/s 9.7418 GiB/s 9.8014 GiB/s]
+                 change:
+                        time:   [−1.5149% −0.4625% +0.5585%] (p = 0.41 > 0.05)
+                        thrpt:  [−0.5554% +0.4647% +1.5382%]
+                        No change in performance detected.
+Benchmarking tier1/filter-99pct/native-avx512
+Benchmarking tier1/filter-99pct/native-avx512: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-avx512: Collecting 10 samples in estimated 3.3308 s (440 iterations)
+Benchmarking tier1/filter-99pct/native-avx512: Analyzing
+tier1/filter-99pct/native-avx512
+                        time:   [7.5575 ms 7.6034 ms 7.6513 ms]
+                        thrpt:  [9.7376 GiB/s 9.7991 GiB/s 9.8585 GiB/s]
+                 change:
+                        time:   [−1.0384% −0.3825% +0.2940%] (p = 0.31 > 0.05)
+                        thrpt:  [−0.2932% +0.3840% +1.0493%]
+                        No change in performance detected.
+
+Benchmarking tier1/copy/copy-read-write
+Benchmarking tier1/copy/copy-read-write: Warming up for 500.00 ms
+Benchmarking tier1/copy/copy-read-write: Collecting 10 samples in estimated 3.1354 s (990 iterations)
+Benchmarking tier1/copy/copy-read-write: Analyzing
+tier1/copy/copy-read-write
+                        time:   [3.1395 ms 3.1474 ms 3.1624 ms]
+                        thrpt:  [47.120 GiB/s 47.344 GiB/s 47.463 GiB/s]
+                 change:
+                        time:   [−3.4738% −2.8926% −2.3217%] (p = 0.00 < 0.05)
+                        thrpt:  [+2.3769% +2.9788% +3.5988%]
+                        Performance has improved.
+
+# end 21:28:31 load 3.37 4.66 5.00

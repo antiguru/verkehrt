@@ -13,8 +13,8 @@ use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_fro
 use crate::kernels::scalar::reduce::{Accum, LANES, Reducible};
 use crate::kernels::scalar::select::{append_chunks, predicated};
 use crate::kernels::{
-    Backend, Dispatch, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId, KernelImpl,
-    Reducer, ReductionBody, Registry, SelectionBody, Variant,
+    Backend, Dispatch, FeatureSet, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId,
+    KernelImpl, KernelTable, Reducer, ReductionBody, Registry, SelectionBody,
 };
 use crate::value::{Arg, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -257,7 +257,7 @@ fn add_fused(
     cost_in_widths: u64,
     lhs: String,
     vars: &[&str],
-    impls: [Option<KernelImpl>; Variant::COUNT],
+    impls: KernelTable,
 ) {
     let w = width(ty);
     reg.add(KernelDef {
@@ -278,7 +278,7 @@ fn add_fused(
 
 /// The entries of `filter_<cmp>` for comparison number `C` of `CMPS`: the scalar and auto
 /// entries of its body, plus intrinsics entries where they exist.
-fn filter_impls<T: Reducible, const C: usize>() -> [Option<KernelImpl>; Variant::COUNT] {
+fn filter_impls<T: Reducible, const C: usize>() -> KernelTable {
     let mut impls = KernelImpl::selection::<Filter<T, C>>();
     crate::kernels::arch::add_filter::<T, C>(&mut impls);
     impls
@@ -468,6 +468,6 @@ pub fn reference(reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, 
         return Err(arity_error(pattern.vars.len(), args.len()));
     }
     let env: HashMap<&str, &Value> = pattern.vars.iter().map(String::as_str).zip(args).collect();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     eval(reg, &dispatch, &parse(&pattern.lhs)?, &env)
 }

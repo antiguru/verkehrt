@@ -7,8 +7,10 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
 
+use verkehrt::kernels::features::runnable;
 use verkehrt::kernels::{
-    Backend, Dispatch, InputSpec, Isa, KernelClass, KernelDef, KernelId, Registry, Variant,
+    Backend, Dispatch, Feature, FeatureSet, InputSpec, Isa, KernelClass, KernelDef, KernelId,
+    Registry, Variant,
 };
 use verkehrt::value::{Arg, Array, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -451,14 +453,37 @@ fn check_case(
     Ok(())
 }
 
+/// Kernels checked and kernels that fell back in one variant slot.
+struct Checked {
+    /// Kernels property-tested against scalar.
+    tested: usize,
+    /// Kernels whose entry declares features that the CPU minus the disable set lacks.
+    fell_back: usize,
+}
+
 /// Runs the property for every kernel with an entry in exactly this variant's slot, so a
-/// kernel that falls back to another entry is not tested twice. Returns the kernel count.
-fn check_variant(reg: &Registry, variant: Variant) -> usize {
-    let dispatch = reg.resolve(variant.isa, variant.backend);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
-    let mut checked = 0;
+/// kernel that falls back to another entry is not tested twice. A kernel whose entry is not
+/// runnable under `disable` is not tested. It must resolve to the same level's auto variant
+/// instead and counts as fallen back.
+fn check_variant(reg: &Registry, variant: Variant, disable: FeatureSet) -> Checked {
+    let dispatch = reg.resolve(variant.isa, variant.backend, disable);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
+    let available = FeatureSet::detect().minus(disable);
+    let auto = Variant {
+        isa: variant.isa,
+        backend: Backend::Auto,
+    };
+    let mut checked = Checked {
+        tested: 0,
+        fell_back: 0,
+    };
     for (id, def) in reg.iter() {
-        if def.impls[variant.index()].is_none() {
+        if def.impls.get(variant).is_none() {
+            continue;
+        }
+        if !runnable(variant.isa, def.impls.declared(variant), available) {
+            assert_eq!(dispatch.variant_used(id), auto, "{}", def.name);
+            checked.fell_back += 1;
             continue;
         }
         assert_eq!(dispatch.variant_used(id), variant, "{}", def.name);
@@ -472,7 +497,7 @@ fn check_variant(reg: &Registry, variant: Variant) -> usize {
                 check_case(reg, &dispatch, &scalar, id, &case)
             })
             .unwrap_or_else(|e| panic!("{} {variant}: {e}", def.name));
-        checked += 1;
+        checked.tested += 1;
     }
     checked
 }
@@ -480,50 +505,79 @@ fn check_variant(reg: &Registry, variant: Variant) -> usize {
 /// Whether the ISA has auto entries. NEON does not: on aarch64 the auto backend is the
 /// baseline build, so the `neon/auto` slot is empty and resolves to scalar.
 fn has_auto_entries(isa: Isa) -> bool {
-    matches!(isa, Isa::Avx2 | Isa::Avx512)
+    matches!(isa, Isa::X86_64V3 | Isa::X86_64V4)
 }
 
-/// The ISAs under test that this CPU can run, printing a message for each skipped one.
-fn available_isas() -> Vec<Isa> {
-    Isa::ALL
-        .into_iter()
-        .filter(|isa| *isa != Isa::Scalar)
-        .filter(|isa| {
-            let ok = isa.is_available();
-            if !ok {
-                println!("skipping {}: not available", isa.name());
-            }
-            ok
-        })
-        .collect()
+/// The names of the features in `set`, comma separated, or `none`.
+fn show_set(set: FeatureSet) -> String {
+    let names: Vec<_> = set.iter().map(Feature::name).collect();
+    if names.is_empty() {
+        "none".into()
+    } else {
+        names.join(",")
+    }
+}
+
+/// The configurations under test, a level and the features disabled on it. The ones that
+/// this CPU cannot run are skipped with a message.
+fn configurations() -> Vec<(Isa, FeatureSet)> {
+    [
+        (Isa::X86_64V3, FeatureSet::EMPTY),
+        (Isa::X86_64V4, FeatureSet::EMPTY),
+        (Isa::X86_64V4, FeatureSet::of(&[Feature::Avx512vbmi2])),
+        (Isa::Neon, FeatureSet::EMPTY),
+    ]
+    .into_iter()
+    .filter(|(isa, disable)| {
+        let ok = isa.is_available_with(*disable);
+        if !ok {
+            println!(
+                "skipping {} (disable {}): not available",
+                isa.name(),
+                show_set(*disable)
+            );
+        }
+        ok
+    })
+    .collect()
 }
 
 #[test]
 fn isa_variants_match_scalar() {
     let reg = Registry::new();
-    for isa in available_isas() {
-        let auto = check_variant(
-            &reg,
-            Variant {
-                isa,
-                backend: Backend::Auto,
-            },
-        );
-        let intrinsics = check_variant(
-            &reg,
-            Variant {
-                isa,
-                backend: Backend::Intrinsics,
-            },
-        );
+    let detected = FeatureSet::detect();
+    for (isa, disable) in configurations() {
+        let [auto, intrinsics] = [Backend::Auto, Backend::Intrinsics]
+            .map(|backend| check_variant(&reg, Variant { isa, backend }, disable));
+        let fell_back = auto.fell_back + intrinsics.fell_back;
         println!(
-            "{}: {auto} auto and {intrinsics} intrinsics kernels checked",
-            isa.name()
+            "{} (disable {}): {} auto and {} intrinsics kernels checked, {fell_back} fell back",
+            isa.name(),
+            show_set(disable),
+            auto.tested,
+            intrinsics.tested,
         );
         if has_auto_entries(isa) {
-            assert!(auto > 0, "no auto variants for {}", isa.name());
+            assert!(auto.tested > 0, "no auto variants for {}", isa.name());
         } else {
-            assert_eq!(auto, 0, "unexpected auto variants for {}", isa.name());
+            assert_eq!(
+                auto.tested,
+                0,
+                "unexpected auto variants for {}",
+                isa.name()
+            );
+        }
+        assert_eq!(
+            auto.fell_back,
+            0,
+            "auto entries declare no features on {}",
+            isa.name()
+        );
+        if disable.contains(Feature::Avx512vbmi2) {
+            // compress_u8 and compress_bool.
+            assert_eq!(fell_back, 2);
+        } else if detected.contains(Feature::Avx512vbmi2) {
+            assert_eq!(fell_back, 0);
         }
     }
 }
@@ -550,7 +604,7 @@ fn every_array_kernel_has_auto_variants() {
                 isa,
                 backend: Backend::Auto,
             };
-            let has = def.impls[variant.index()].is_some();
+            let has = def.impls.get(variant).is_some();
             // Variants are compiled for x86-64 only.
             let expected = wanted && has_auto_entries(isa) && cfg!(target_arch = "x86_64");
             assert_eq!(has, expected, "{} {variant}", def.name);
@@ -561,9 +615,9 @@ fn every_array_kernel_has_auto_variants() {
 #[test]
 fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
     let reg = Registry::new();
-    for isa in available_isas()
+    for (isa, disable) in configurations()
         .into_iter()
-        .filter(|isa| has_auto_entries(*isa))
+        .filter(|(isa, _)| has_auto_entries(*isa))
     {
         let auto = Variant {
             isa,
@@ -573,8 +627,8 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
             isa,
             backend: Backend::Intrinsics,
         };
-        let by_auto = reg.resolve(isa, Backend::Auto);
-        let by_intrinsics = reg.resolve(isa, Backend::Intrinsics);
+        let by_auto = reg.resolve(isa, Backend::Auto, disable);
+        let by_intrinsics = reg.resolve(isa, Backend::Intrinsics, disable);
         for name in ["add_f64", "reduce_add_f64", "dot_f64"] {
             let id = reg.by_name(name).unwrap();
             assert_eq!(by_auto.variant_used(id), auto, "{name}");
@@ -589,8 +643,16 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
                 selections.push(format!("filter_{cmp}_{t}"));
             }
         }
-        // AVX2 has no byte compress, so `u8` and bool fall back to auto there.
-        let bytes = if isa == Isa::Avx2 { auto } else { intrinsics };
+        // The byte compress needs `avx512vbmi2` on the v4 level, so `u8` and bool fall back to
+        // auto when the level is v3 or the feature is disabled.
+        let have_vbmi2 = FeatureSet::detect()
+            .minus(disable)
+            .contains(Feature::Avx512vbmi2);
+        let bytes = if isa == Isa::X86_64V3 || !have_vbmi2 {
+            auto
+        } else {
+            intrinsics
+        };
         let expected = selections
             .iter()
             .map(|n| (n.as_str(), intrinsics))
@@ -608,7 +670,7 @@ fn resolve_picks_auto_and_intrinsics_falls_back_to_it() {
 #[test]
 fn neon_auto_resolves_to_scalar() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Auto, FeatureSet::EMPTY);
     for name in ["add_f64", "reduce_add_f64", "dot_f64", "compress_f64"] {
         let id = reg.by_name(name).unwrap();
         assert_eq!(dispatch.variant_used(id), Variant::SCALAR, "{name}");
@@ -622,7 +684,7 @@ fn neon_auto_resolves_to_scalar() {
 #[test]
 fn neon_intrinsics_resolve_for_selections() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
     let intrinsics = Variant {
         isa: Isa::Neon,
         backend: Backend::Intrinsics,
@@ -651,7 +713,7 @@ fn neon_intrinsics_resolve_for_selections() {
 #[test]
 fn neon_intrinsics_resolve_for_float_extremes() {
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics);
+    let dispatch = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
     for t in ["f64", "f32"] {
         for op in ["reduce_min", "reduce_max", "argmin", "argmax"] {
             let name = format!("{op}_{t}");
@@ -689,8 +751,8 @@ fn float_array(values: &[f64], f32s: bool) -> Value {
 #[cfg(target_arch = "aarch64")]
 fn neon_extreme(op: &str, values: &[f64]) -> [Result<Value, String>; 2] {
     let reg = Registry::new();
-    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     [false, true].map(|f32s| {
         let name = format!("{op}_{}", if f32s { "f32" } else { "f64" });
         let id = reg.by_name(&name).unwrap();
@@ -913,8 +975,8 @@ fn neon_extremes_of_empty_rows_fail_like_scalar() {
 #[test]
 fn neon_extreme_reducers_reject_bad_arguments() {
     let reg = Registry::new();
-    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics);
-    let scalar = reg.resolve(Isa::Scalar, Backend::Auto);
+    let neon = reg.resolve(Isa::Neon, Backend::Intrinsics, FeatureSet::EMPTY);
+    let scalar = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let ints = Array::from_vec(vec![1i32, 2, 3]);
     let floats = Array::from_vec(vec![1.0f64, 2.0]);
     let bad: [Vec<Arg>; 4] = [

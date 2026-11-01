@@ -1,0 +1,6 @@
+let n = 10000000;
+let b = cast_u8(rand_i64(n, 1));
+let keep = filter(b, |v| v > 127u8);
+print(length(keep));
+let w = cast_u8(rand_i64(n, 2));
+print(length(compress(w, rand_i64(n, 3) > 0)));

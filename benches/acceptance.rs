@@ -28,7 +28,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
         .unwrap()
     };
     let mut v = vec![("scalar".to_string(), new(Isa::Scalar, Backend::Auto))];
-    for (isa, name) in [(Isa::Avx2, "avx2"), (Isa::Avx512, "avx512")] {
+    for (isa, name) in [(Isa::X86_64V3, "x86-64-v3"), (Isa::X86_64V4, "x86-64-v4")] {
         if !isa.is_available() {
             continue;
         }

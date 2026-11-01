@@ -1,0 +1,139 @@
+# Instruction counts per x86-64-v4 and x86-64-v3 auto entry, from objdump -d --no-show-raw-insn of the release tier1 bench binary of the isa-levels build
+## x86-64-v4
+cast_f64_i64 lines 565 {'vcvttsd2si': 46, 'zmm': 16, 'ymm': 15}
+cast_f64_u64 lines 569 {'vcvttsd2usi': 46, 'zmm': 16, 'ymm': 15}
+cast_i64_f64 lines 206 {'vcvtsi2sd': 6, 'vcvtqq2pd': 5, 'zmm': 15, 'ymm': 2}
+cast_u64_f64 lines 207 {'vcvtusi2sd': 6, 'vcvtuqq2pd': 5, 'zmm': 15, 'ymm': 2}
+mul_i64 lines 407 {'imul': 16, 'zmm': 34, 'vpmullq': 13, 'ymm': 3}
+## x86-64-v3
+cast_f64_i64 lines 213 {'vcvttsd2si': 6, 'ymm': 7}
+cast_f64_u64 lines 253 {'vcvttsd2si': 12, 'ymm': 7}
+cast_i64_f64 lines 236 {'vcvtsi2sd': 26, 'ymm': 7}
+cast_u64_f64 lines 274 {'vsubpd': 11, 'ymm': 53, 'vaddpd': 5}
+mul_i64 lines 486 {'imul': 16, 'ymm': 127, 'vpmuludq': 36}
+
+## v4 vector loops (excerpts)
+  993ae0:	vcvtqq2pd (%r15,%rdx,8),%zmm0
+  993ae7:	vcvtqq2pd 0x40(%r15,%rdx,8),%zmm1
+  993aef:	vcvtqq2pd 0x80(%r15,%rdx,8),%zmm2
+  993af7:	vcvtqq2pd 0xc0(%r15,%rdx,8),%zmm3
+  995460:	vcvtuqq2pd (%r15,%rdx,8),%zmm0
+  995467:	vcvtuqq2pd 0x40(%r15,%rdx,8),%zmm1
+  99546f:	vcvtuqq2pd 0x80(%r15,%rdx,8),%zmm2
+  995477:	vcvtuqq2pd 0xc0(%r15,%rdx,8),%zmm3
+  9adc84:	vpmullq (%r12,%rdx,8),%zmm0,%zmm1
+  9adc8b:	vpmullq 0x40(%r12,%rdx,8),%zmm0,%zmm2
+  9adc93:	vpmullq 0x80(%r12,%rdx,8),%zmm0,%zmm3
+  9adc9b:	vpmullq 0xc0(%r12,%rdx,8),%zmm0,%zmm4
+
+## f64 to i64 at v4, loop body excerpt: one scalar vcvttsd2si per row, assembled into zmm stores
+  98afc0:	vcvttsd2si %xmm6,%r8
+  98afeb:	vcvttsd2si %xmm6,%r8
+  98b013:	vcvttsd2si %xmm6,%r8
+  98b03b:	vcvttsd2si %xmm6,%r8
+  98b065:	vcvttsd2si %xmm6,%r8
+  98b08d:	vcvttsd2si %xmm6,%r8
+  98b0b5:	vcvttsd2si %xmm6,%r8
+  98b0df:	vcvttsd2si %xmm6,%r8
+  98b10a:	vcvttsd2si %xmm6,%r8
+  98b132:	vcvttsd2si %xmm6,%r8
+  98b15a:	vcvttsd2si %xmm6,%r8
+  98b184:	vcvttsd2si %xmm6,%r8
+  98b1ac:	vcvttsd2si %xmm6,%r8
+  98b1d0:	vcvttsd2si %xmm7,%r8
+  98b1fb:	vmovdqu64 %zmm1,(%rax,%rdi,8)
+  98b202:	vmovdqu64 %zmm2,0x40(%rax,%rdi,8)
+  98b20a:	vmovdqu64 %zmm3,0x80(%rax,%rdi,8)
+  98b212:	vmovdqu64 %zmm4,0xc0(%rax,%rdi,8)
+  98b257:	vcvttsd2si %xmm1,%r8
+  98b273:	vcvttsd2si %xmm1,%r9
+  98b28f:	vcvttsd2si %xmm1,%r10
+
+## entries compared between builds (same instruction stream, addresses differ only)
+tier1/argmin f64 update entry: auto::avx2 (baseline, 0x1a1 bytes) vs auto::x86_64_v3 (0x1a1 bytes): diff shows only jump and call target addresses
+compress u8 auto entry: auto::avx2 vs auto::x86_64_v3, both 0x46c bytes: diff shows only rip-relative and jump targets
+gather i64 auto entry: 0x7b7 bytes (avx2) vs 0x7e4 bytes (x86_64_v3), mnemonic histograms agree within 3 instructions
+## cast_f64_i64 at x86-64-v4: hot loop 98ad20 to 98b221: 32 vcvttsd2si, 4 zmm stores, 259 instructions
+  98ad27: vcvttsd2si %xmm1,%r8
+  98ad43: vcvttsd2si %xmm1,%r9
+  98ad5f: vcvttsd2si %xmm1,%r10
+  98ad80: vcvttsd2si %xmm2,%r8
+  98ada6: vcvttsd2si %xmm4,%r9
+  98adcc: vcvttsd2si %xmm6,%r8
+  98adf1: vcvttsd2si %xmm6,%r8
+  98ae15: vcvttsd2si %xmm5,%r8
+  98ae3c: vcvttsd2si %xmm5,%r8
+  98ae61: vcvttsd2si %xmm5,%r8
+  98ae86: vcvttsd2si %xmm6,%r8
+  98aead: vcvttsd2si %xmm6,%r8
+  98aeba: vinserti64x4 $0x1,%ymm1,%zmm2,%zmm1
+  98aed5: vcvttsd2si %xmm6,%r8
+  98aefa: vcvttsd2si %xmm6,%r8
+  98af1f: vcvttsd2si %xmm6,%r8
+  98af46: vcvttsd2si %xmm6,%r8
+  98af6e: vcvttsd2si %xmm6,%r8
+  98af96: vcvttsd2si %xmm6,%r8
+  98afc0: vcvttsd2si %xmm6,%r8
+  98afcd: vinserti64x4 $0x1,%ymm2,%zmm3,%zmm2
+  98afeb: vcvttsd2si %xmm6,%r8
+  98b013: vcvttsd2si %xmm6,%r8
+  98b03b: vcvttsd2si %xmm6,%r8
+  98b065: vcvttsd2si %xmm6,%r8
+  98b08d: vcvttsd2si %xmm6,%r8
+  98b0b5: vcvttsd2si %xmm6,%r8
+  98b0df: vcvttsd2si %xmm6,%r8
+  98b0ec: vinserti64x4 $0x1,%ymm3,%zmm4,%zmm3
+  98b10a: vcvttsd2si %xmm6,%r8
+  98b132: vcvttsd2si %xmm6,%r8
+  98b15a: vcvttsd2si %xmm6,%r8
+  98b184: vcvttsd2si %xmm6,%r8
+  98b1ac: vcvttsd2si %xmm6,%r8
+  98b1d0: vcvttsd2si %xmm7,%r8
+  98b1f4: vinserti64x4 $0x1,%ymm4,%zmm5,%zmm4
+  98b1fb: vmovdqu64 %zmm1,(%rax,%rdi,8)
+  98b202: vmovdqu64 %zmm2,0x40(%rax,%rdi,8)
+  98b20a: vmovdqu64 %zmm3,0x80(%rax,%rdi,8)
+  98b212: vmovdqu64 %zmm4,0xc0(%rax,%rdi,8)
+  98b221: jne    98ad20
+## cast_f64_u64 at x86-64-v4: hot loop 98b750 to 98bc71: 32 vcvttsd2usi, 4 zmm stores, 259 instructions
+  98b757: vcvttsd2usi %xmm2,%r8
+  98b774: vcvttsd2usi %xmm2,%r9
+  98b791: vcvttsd2usi %xmm2,%r10
+  98b7ae: vcvttsd2usi %xmm2,%r11
+  98b7cb: vcvttsd2usi %xmm2,%r13
+  98b7ed: vcvttsd2usi %xmm3,%r12
+  98b814: vcvttsd2usi %xmm5,%r8
+  98b83a: vcvttsd2usi %xmm7,%r9
+  98b860: vcvttsd2usi %xmm7,%r10
+  98b886: vcvttsd2usi %xmm7,%r11
+  98b8ae: vcvttsd2usi %xmm7,%r8
+  98b8d4: vcvttsd2usi %xmm7,%r9
+  98b8fa: vcvttsd2usi %xmm7,%r10
+  98b922: vcvttsd2usi %xmm7,%r11
+  98b928: vinserti64x4 $0x1,%ymm2,%zmm3,%zmm2
+  98b94b: vcvttsd2usi %xmm7,%r8
+  98b971: vcvttsd2usi %xmm7,%r9
+  98b99a: vcvttsd2usi %xmm7,%r10
+  98b9c5: vcvttsd2usi %xmm7,%r11
+  98b9ee: vcvttsd2usi %xmm7,%r8
+  98ba17: vcvttsd2usi %xmm7,%r9
+  98ba42: vcvttsd2usi %xmm7,%r10
+  98ba48: vinserti64x4 $0x1,%ymm3,%zmm4,%zmm3
+  98ba6e: vcvttsd2usi %xmm7,%r11
+  98ba97: vcvttsd2usi %xmm7,%r8
+  98bac0: vcvttsd2usi %xmm7,%r12
+  98baeb: vcvttsd2usi %xmm7,%r9
+  98bb14: vcvttsd2usi %xmm7,%r10
+  98bb3d: vcvttsd2usi %xmm7,%r8
+  98bb68: vcvttsd2usi %xmm7,%r11
+  98bb6e: vinserti64x4 $0x1,%ymm4,%zmm5,%zmm4
+  98bb94: vcvttsd2usi %xmm7,%r9
+  98bbbd: vcvttsd2usi %xmm7,%r8
+  98bbe6: vcvttsd2usi %xmm7,%r10
+  98bc11: vcvttsd2usi %xmm7,%r9
+  98bc44: vinserti64x4 $0x1,%ymm5,%zmm6,%zmm5
+  98bc4b: vmovdqu64 %zmm2,(%rax,%rdi,8)
+  98bc52: vmovdqu64 %zmm3,0x40(%rax,%rdi,8)
+  98bc5a: vmovdqu64 %zmm4,0x80(%rax,%rdi,8)
+  98bc62: vmovdqu64 %zmm5,0xc0(%rax,%rdi,8)
+  98bc71: jne    98b750

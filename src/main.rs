@@ -4,7 +4,7 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use verkehrt::kernels::{Backend, Isa};
+use verkehrt::kernels::{Backend, Feature, FeatureSet, Isa};
 use verkehrt::{Interpreter, Options};
 
 #[derive(Parser)]
@@ -32,13 +32,16 @@ enum Command {
 
 #[derive(Args)]
 struct Flags {
-    /// Instruction set to run kernels with (scalar, avx2, avx512, neon)
+    /// Instruction set to run kernels with (scalar, x86-64-v3, x86-64-v4, neon)
     #[arg(long, value_parser = parse_isa)]
     isa: Option<Isa>,
     /// How kernels are written: auto (compiler vectorized) or intrinsics (hand written, with
     /// auto and scalar as fallbacks)
     #[arg(long, value_parser = parse_backend, default_value = "intrinsics")]
     backend: Backend,
+    /// CPU feature to treat as absent, repeatable (for example avx512vbmi2)
+    #[arg(long, value_parser = parse_feature)]
+    disable: Vec<Feature>,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
@@ -58,8 +61,35 @@ impl Flags {
             show_plan: self.plan,
             trace: self.trace,
             stats: self.stats,
+            disable: self.disable_set(),
         }
     }
+
+    fn disable_set(&self) -> FeatureSet {
+        FeatureSet::of(&self.disable)
+    }
+
+    /// Tells the user about each disabled feature this CPU does not report, since disabling
+    /// it changes nothing.
+    fn note_undetected(&self) {
+        let detected = FeatureSet::detect();
+        for feature in self.disable_set().iter().filter(|f| !detected.contains(*f)) {
+            eprintln!(
+                "note: feature '{}' is not detected on this CPU, disabling it has no effect",
+                feature.name()
+            );
+        }
+    }
+}
+
+fn parse_feature(name: &str) -> Result<Feature, String> {
+    Feature::from_name(name).ok_or_else(|| {
+        let names: Vec<&str> = Feature::ALL.iter().map(|f| f.name()).collect();
+        format!(
+            "unknown feature '{name}', expected one of: {}",
+            names.join(", ")
+        )
+    })
 }
 
 fn parse_isa(name: &str) -> Result<Isa, String> {
@@ -92,6 +122,7 @@ fn main() -> ExitCode {
 }
 
 fn run(file: &std::path::Path, flags: &Flags) -> Result<(), String> {
+    flags.note_undetected();
     let src = std::fs::read_to_string(file)
         .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     let mut interp = Interpreter::new(flags.options()).map_err(|e| e.to_string())?;
@@ -108,6 +139,7 @@ fn run(file: &std::path::Path, flags: &Flags) -> Result<(), String> {
 }
 
 fn repl(flags: &Flags) -> Result<(), String> {
+    flags.note_undetected();
     let mut interp = Interpreter::new(flags.options()).map_err(|e| e.to_string())?;
     if std::io::stdin().is_terminal() {
         repl_interactive(&mut interp)?;

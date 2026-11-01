@@ -19,7 +19,9 @@ pub(crate) fn ones(bits: u64) -> usize {
 }
 
 /// Emits the chunk loops and the `compress`, `filter`, and `where` entries of one ISA,
-/// compiled for `$features`, the feature string that `Isa::is_available` checks for `$name`.
+/// compiled for `$features`, the feature string of the level of `$name` plus the features
+/// that its entries declare. With `compress:` before `$name` it emits only the `compress`
+/// entry and its chunk loop, and the invoking module provides only `Lanes`.
 ///
 /// The invoking module provides the vector steps, all compiled for `$features`:
 /// * a trait `Lanes: Elem` with `const LANES: usize` and the unsafe methods `keep(mask:
@@ -40,7 +42,7 @@ pub(crate) fn ones(bits: u64) -> usize {
     allow(unused_macros)
 )]
 macro_rules! selection_loops {
-    ($name:literal, $features:literal) => {
+    (compress: $name:literal, $features:literal) => {
         /// Writes the rows of `x` whose `mask` byte is nonzero to the front of `dst` and
         /// returns their count. Panics unless `mask` has the rows of `x`, or when `dst` has no
         /// room for a predicated write of the survivors, see `predicated`.
@@ -72,6 +74,36 @@ macro_rules! selection_loops {
             let rest = x[i..].iter().zip(&mask[i..]).map(|(&v, &m)| (v, m != 0));
             k + $crate::kernels::scalar::select::predicated(rest, &mut dst[k..])
         }
+
+        #[doc = concat!(
+            "The ", $name,
+            " `compress` entry on rows of storage type `T` and type `tag::<T, BOOL>()`."
+        )]
+        // SAFETY: the caller guarantees that the CPU supports the features above, which
+        // `Dispatch` does by calling only entries that `resolve` installed after `select`
+        // found `features::runnable` true for the entry's level and declared features, and
+        // the invoking module compiles for exactly those. Memory safety does not depend on
+        // the caller: `compress_args` checks that the rows and the mask have the same
+        // length, and `compress_chunk` checks the lengths it relies on again.
+        #[target_feature(enable = $features)]
+        pub(super) unsafe fn compress<T: Lanes, const BOOL: bool>(
+            args: &[$crate::value::Arg],
+            _base: usize,
+            out: &mut $crate::value::ArrayBuilder,
+        ) -> Result<(), String> {
+            use $crate::kernels::scalar::select::{append_chunks, compress_args, count_nonzero};
+            let (x, mask) =
+                compress_args::<T>(args, $crate::kernels::scalar::elementwise::tag::<T, BOOL>())?;
+            // The count pass sizes the output exactly. It is the portable count, compiled for
+            // this ISA.
+            append_chunks(out, x.len(), count_nonzero(mask), |rows, dst| {
+                compress_chunk(&x[rows.clone()], &mask[rows], dst)
+            });
+            Ok(())
+        }
+    };
+    ($name:literal, $features:literal) => {
+        $crate::kernels::select_loops::selection_loops!(compress: $name, $features);
 
         /// The number of rows `v` of `x` with `v <cmp> c`, for comparison number `C` of
         /// `CMPS`, with the compares of `filter_chunk`.
@@ -147,32 +179,6 @@ macro_rules! selection_loops {
             let at = first + i64::try_from(i).expect("row index fits in i64");
             let rest = (at..).zip(&mask[i..]).map(|(r, &m)| (r, m != 0));
             k + $crate::kernels::scalar::select::predicated(rest, &mut dst[k..])
-        }
-
-        #[doc = concat!(
-            "The ", $name,
-            " `compress` entry on rows of storage type `T` and type `tag::<T, BOOL>()`."
-        )]
-        // SAFETY: the caller guarantees that the CPU supports the features above, which
-        // `Dispatch` does by calling only entries that `resolve` installed after
-        // `is_available` returned true. Memory safety does not depend on the caller:
-        // `compress_args` checks that the rows and the mask have the same length, and
-        // `compress_chunk` checks the lengths it relies on again.
-        #[target_feature(enable = $features)]
-        pub(super) unsafe fn compress<T: Lanes, const BOOL: bool>(
-            args: &[$crate::value::Arg],
-            _base: usize,
-            out: &mut $crate::value::ArrayBuilder,
-        ) -> Result<(), String> {
-            use $crate::kernels::scalar::select::{append_chunks, compress_args, count_nonzero};
-            let (x, mask) =
-                compress_args::<T>(args, $crate::kernels::scalar::elementwise::tag::<T, BOOL>())?;
-            // The count pass sizes the output exactly. It is the portable count, compiled for
-            // this ISA.
-            append_chunks(out, x.len(), count_nonzero(mask), |rows, dst| {
-                compress_chunk(&x[rows.clone()], &mask[rows], dst)
-            });
-            Ok(())
         }
 
         #[doc = concat!(

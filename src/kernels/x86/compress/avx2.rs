@@ -1,8 +1,8 @@
-//! AVX2 selection entries for 32- and 64-bit rows. The keep mask of a vector comes from a
-//! compare and `movemask` (`filter`) or from a byte compare of the bool mask (`compress`,
-//! `where`). It indexes a table of `vpermd` permutations that move the kept lanes to the
-//! front, and the permuted vector is stored whole. AVX2 has no byte permutation of this kind
-//! across 32 lanes, so `u8` and bool have no entry here.
+//! AVX2 selection entries for 32- and 64-bit rows, compiled for the x86-64-v3 level. The keep
+//! mask of a vector comes from a compare and `movemask` (`filter`) or from a byte compare of
+//! the bool mask (`compress`, `where`). It indexes a table of `vpermd` permutations that move
+//! the kept lanes to the front, and the permuted vector is stored whole. AVX2 has no byte
+//! permutation of this kind across 32 lanes, so `u8` and bool have no entry here.
 
 use std::arch::x86_64::*;
 
@@ -55,7 +55,7 @@ const fn perm4() -> [[u32; 8]; 16] {
 /// A row type that AVX2 selects `LANES` rows at a time, see the AVX-512 `Lanes`.
 ///
 /// The methods are `unsafe` because they read and write through raw pointers and need the
-/// AVX2 feature. Each states the memory its pointers must cover.
+/// features of the x86-64-v3 level. Each states the memory its pointers must cover.
 pub(super) trait Lanes: Elem {
     const LANES: usize;
 
@@ -83,7 +83,9 @@ pub(super) trait Compare: Lanes + PartialOrd {
 /// The bits of the zero bytes among the low `lanes` bytes of `v`, inverted: bit `j` is set
 /// when byte `j` is nonzero.
 #[inline]
-#[target_feature(enable = "avx2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 fn nonzero_bytes(v: __m128i, lanes: usize) -> u64 {
     let zero = _mm_movemask_epi8(_mm_cmpeq_epi8(v, _mm_setzero_si128()));
     let all = (1u64 << lanes) - 1;
@@ -94,9 +96,11 @@ fn nonzero_bytes(v: __m128i, lanes: usize) -> u64 {
 ///
 /// # Safety
 ///
-/// `dst` must be valid for writing 32 bytes, and the CPU must support AVX2.
+/// `dst` must be valid for writing 32 bytes, and the CPU must support the x86-64-v3 level.
 #[inline]
-#[target_feature(enable = "avx2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 unsafe fn permute_store<T>(v: __m256i, perm: &[u32; 8], dst: *mut T) {
     // SAFETY: `perm` is a reference to 32 readable bytes, the caller guarantees 32 writable
     // bytes at `dst`, and `loadu` and `storeu` have no alignment requirement.
@@ -106,38 +110,39 @@ unsafe fn permute_store<T>(v: __m256i, perm: &[u32; 8], dst: *mut T) {
     }
 }
 
-// SAFETY (all `Lanes` methods below): each method is compiled for, and needs, AVX2, which
-// its callers in this file have because they are compiled for the same feature. Pointer
-// requirements are the trait's, and the unsafe blocks rely on exactly those.
+// SAFETY (all `Lanes` methods below): each method is compiled for, and needs, the features of
+// the x86-64-v3 level, which its callers in this file have because they are compiled for the
+// same features. Pointer requirements are the trait's, and the unsafe blocks rely on exactly
+// those.
 macro_rules! lanes_64 {
     ($t:ty) => {
         impl Lanes for $t {
             const LANES: usize = 4;
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::keep`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::keep`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn keep(mask: *const u8) -> u64 {
                 // SAFETY: the caller guarantees 4 readable bytes at `mask`, and `loadu_si32`
                 // reads 4 bytes with no alignment requirement.
                 nonzero_bytes(unsafe { _mm_loadu_si32(mask.cast()) }, 4)
             }
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::load`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::load`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn load(src: *const $t) -> __m256i {
                 // SAFETY: the caller guarantees 4 readable rows (32 bytes) at `src`, and
                 // `loadu` has no alignment requirement.
                 unsafe { _mm256_loadu_si256(src.cast()) }
             }
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::compress`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::compress`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn compress(v: __m256i, keep: u64, dst: *mut $t) -> usize {
                 let m = keep & 0xf;
                 let perm = &PERM4[usize::try_from(m).expect("4 bits fit in usize")];
@@ -155,30 +160,30 @@ macro_rules! lanes_32 {
         impl Lanes for $t {
             const LANES: usize = 8;
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::keep`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::keep`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn keep(mask: *const u8) -> u64 {
                 // SAFETY: the caller guarantees 8 readable bytes at `mask`, and `loadl` reads
                 // 8 bytes with no alignment requirement.
                 nonzero_bytes(unsafe { _mm_loadl_epi64(mask.cast()) }, 8)
             }
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::load`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::load`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn load(src: *const $t) -> __m256i {
                 // SAFETY: the caller guarantees 8 readable rows (32 bytes) at `src`, and
                 // `loadu` has no alignment requirement.
                 unsafe { _mm256_loadu_si256(src.cast()) }
             }
 
-            // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Lanes::compress`
+            // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Lanes::compress`
             // states. Nothing assumes more than element alignment.
             #[inline]
-            #[target_feature(enable = "avx2")]
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
             unsafe fn compress(v: __m256i, keep: u64, dst: *mut $t) -> usize {
                 let m = keep & 0xff;
                 let perm = &PERM8[usize::try_from(m).expect("8 bits fit in usize")];
@@ -199,16 +204,20 @@ lanes_32!(i32);
 
 /// The `movemask` bits of a compare result, as a keep mask.
 #[inline]
-#[target_feature(enable = "avx2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 fn bits(movemask: i32) -> u64 {
     u64::from(movemask.cast_unsigned())
 }
 
 impl Compare for f64 {
-    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Compare::compare`
     // states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
     unsafe fn compare<const C: usize>(v: __m256i, c: f64) -> u64 {
         let (v, c) = (_mm256_castsi256_pd(v), _mm256_set1_pd(c));
         // Ordered predicates are false on NaN like `<`, and `!=` is the unordered NEQ, which
@@ -226,10 +235,12 @@ impl Compare for f64 {
 }
 
 impl Compare for f32 {
-    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Compare::compare`
     // states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
     unsafe fn compare<const C: usize>(v: __m256i, c: f32) -> u64 {
         let (v, c) = (_mm256_castsi256_ps(v), _mm256_set1_ps(c));
         // The predicates of the f64 case.
@@ -246,10 +257,12 @@ impl Compare for f32 {
 }
 
 impl Compare for i64 {
-    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Compare::compare`
     // states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
     unsafe fn compare<const C: usize>(v: __m256i, c: i64) -> u64 {
         let c = _mm256_set1_epi64x(c);
         let mask = |r: __m256i| bits(_mm256_movemask_pd(_mm256_castsi256_pd(r)));
@@ -267,10 +280,12 @@ impl Compare for i64 {
 }
 
 impl Compare for u64 {
-    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Compare::compare`
     // states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
     unsafe fn compare<const C: usize>(v: __m256i, c: u64) -> u64 {
         // AVX2 has no unsigned compare. Flipping bit 63 of both operands maps the unsigned
         // order onto the signed order, then the predicates are those of `i64`.
@@ -290,10 +305,12 @@ impl Compare for u64 {
 }
 
 impl Compare for i32 {
-    // SAFETY: the caller guarantees AVX2 and the pointer ranges that `Compare::compare`
+    // SAFETY: the caller guarantees x86-64-v3 and the pointer ranges that `Compare::compare`
     // states. Nothing assumes more than element alignment.
     #[inline]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
     unsafe fn compare<const C: usize>(v: __m256i, c: i32) -> u64 {
         let c = _mm256_set1_epi32(c);
         let mask = |r: __m256i| bits(_mm256_movemask_ps(_mm256_castsi256_ps(r)));
@@ -311,16 +328,23 @@ impl Compare for i32 {
 
 /// The `i64` rows `first + j` of lanes `j`, see `selection_loops`.
 #[inline]
-#[target_feature(enable = "avx2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 fn first_indices(first: i64) -> __m256i {
     _mm256_add_epi64(_mm256_set1_epi64x(first), _mm256_setr_epi64x(0, 1, 2, 3))
 }
 
 /// `idx` advanced by the 4 `i64` lanes of a vector, see `selection_loops`.
 #[inline]
-#[target_feature(enable = "avx2")]
+#[target_feature(
+    enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+)]
 fn next_indices(idx: __m256i) -> __m256i {
     _mm256_add_epi64(idx, _mm256_set1_epi64x(4))
 }
 
-selection_loops!("AVX2", "avx2");
+selection_loops!(
+    "AVX2",
+    "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+);

@@ -1,0 +1,50 @@
+base scalar                                      cast_f64_i64   n=5 min=   9.28 med=   9.87 max=  11.47
+base scalar                                      cast_f64_u64   n=5 min=  13.22 med=  13.27 max=  13.68
+base scalar                                      cast_i64_f64   n=5 min=   8.14 med=   8.35 max=   8.62
+base scalar                                      cast_u64_f64   n=5 min=   7.15 med=   7.71 max=   8.43
+base scalar                                      mul_i64        n=5 min=   7.60 med=   7.75 max=   7.91
+new scalar                                       cast_f64_i64   n=5 min=   8.99 med=   9.38 max=   9.47
+new scalar                                       cast_f64_u64   n=5 min=  13.13 med=  13.21 max=  13.47
+new scalar                                       cast_i64_f64   n=5 min=   7.76 med=   7.92 max=   8.36
+new scalar                                       cast_u64_f64   n=5 min=   7.34 med=   7.40 max=   7.44
+new scalar                                       mul_i64        n=5 min=   7.40 med=   7.63 max=   8.38
+base avx2                                        cast_f64_i64   n=5 min=   9.45 med=   9.68 max=   9.88
+base avx2                                        cast_f64_u64   n=5 min=  12.04 med=  12.43 max=  12.63
+base avx2                                        cast_i64_f64   n=5 min=   8.12 med=   8.15 max=   8.34
+base avx2                                        cast_u64_f64   n=5 min=   7.39 med=   7.56 max=   7.94
+base avx2                                        mul_i64        n=5 min=   7.28 med=   7.57 max=   7.72
+new x86-64-v3                                    cast_f64_i64   n=5 min=   9.16 med=   9.51 max=  10.31
+new x86-64-v3                                    cast_f64_u64   n=5 min=  11.82 med=  12.01 max=  13.36
+new x86-64-v3                                    cast_i64_f64   n=5 min=   7.35 med=   7.77 max=   7.84
+new x86-64-v3                                    cast_u64_f64   n=5 min=   7.14 med=   7.48 max=   7.60
+new x86-64-v3                                    mul_i64        n=5 min=   6.87 med=   7.14 max=   7.90
+base avx512                                      cast_f64_i64   n=5 min=   9.63 med=   9.91 max=  10.50
+base avx512                                      cast_f64_u64   n=5 min=  11.04 med=  11.11 max=  11.54
+base avx512                                      cast_i64_f64   n=5 min=   7.91 med=   8.31 max=   8.37
+base avx512                                      cast_u64_f64   n=5 min=   7.32 med=   7.50 max=   7.80
+base avx512                                      mul_i64        n=5 min=   6.96 med=   7.02 max=   7.78
+new x86-64-v4                                    cast_f64_i64   n=5 min=  10.59 med=  10.84 max=  12.03
+new x86-64-v4                                    cast_f64_u64   n=5 min=  11.83 med=  12.49 max=  14.53
+new x86-64-v4                                    cast_i64_f64   n=5 min=   7.03 med=   7.46 max=   7.72
+new x86-64-v4                                    cast_u64_f64   n=5 min=   6.92 med=   7.12 max=   7.88
+new x86-64-v4                                    mul_i64        n=5 min=   7.22 med=   7.36 max=   7.80
+compress base scalar                             compress_u8    n=5 min=  18.28 med=  18.78 max=  19.45
+compress new scalar                              compress_u8    n=5 min=  18.14 med=  18.55 max=  19.98
+compress base avx2                               compress_u8    n=5 min=  13.22 med=  13.78 max=  14.37
+compress new x86-64-v3                           compress_u8    n=5 min=  16.48 med=  17.16 max=  17.72
+compress base avx512                             compress_u8    n=5 min=   2.27 med=   2.43 max=   3.25
+compress new x86-64-v4                           compress_u8    n=5 min=   2.24 med=   3.07 max=   3.62
+compress new x86-64-v4 disable avx512vbmi2       compress_u8    n=5 min=  11.32 med=  11.85 max=  12.38
+base scalar distinct outputs: 1
+new scalar distinct outputs: 1
+base avx2 distinct outputs: 1
+new x86-64-v3 distinct outputs: 1
+base avx512 distinct outputs: 1
+new x86-64-v4 distinct outputs: 1
+compress base scalar distinct outputs: 1
+compress new scalar distinct outputs: 1
+compress base avx2 distinct outputs: 1
+compress new x86-64-v3 distinct outputs: 1
+compress base avx512 distinct outputs: 1
+compress new x86-64-v4 distinct outputs: 1
+compress new x86-64-v4 disable avx512vbmi2 distinct outputs: 1

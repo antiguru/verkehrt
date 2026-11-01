@@ -1,14 +1,15 @@
 //! x86-64 variants of the kernels. `auto` instantiates the shared auto backend macro to compile
-//! the portable bodies for AVX2 and AVX-512, `compress` holds the hand-written intrinsics
-//! entries of the selections, `gather` those of `gather` on 64-bit rows, and `scan` the
-//! AVX-512 entries of `scan_by_add` on 64-bit integers.
+//! the portable bodies for the x86-64-v3 and x86-64-v4 levels, `compress` holds the
+//! hand-written intrinsics entries of the selections, `gather` those of `gather` on 64-bit
+//! rows, and `scan` the x86-64-v4 entries of `scan_by_add` on 64-bit integers.
 //!
-//! The entries installed here run only after `Registry::resolve` checked `Isa::is_available`
-//! for their ISA, which is what makes calling them sound.
+//! Every entry is compiled for the full feature string of its level, plus the features it
+//! declares. The entries installed here run only after `Registry::resolve` checked
+//! `features::runnable` for them through `select`, which is what makes calling them sound.
 
 use crate::kernels::{
-    Backend, ElementwiseBody, Isa, KernelImpl, ReductionBody, ScanBody, SelectionBody, Variant,
-    WholeBody,
+    Backend, ElementwiseBody, Isa, KernelImpl, KernelTable, ReductionBody, ScanBody, SelectionBody,
+    Variant, WholeBody,
 };
 use crate::value::Elem;
 
@@ -20,93 +21,134 @@ mod scan;
 mod auto {
     use crate::kernels::auto::auto_backend;
 
-    auto_backend!(avx2, "AVX2", "avx2");
-    auto_backend!(avx512, "AVX-512", "avx512f,avx512bw,avx512vl,avx512vbmi2");
+    auto_backend!(
+        x86_64_v3,
+        "x86-64-v3",
+        "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    );
+    auto_backend!(
+        x86_64_v4,
+        "x86-64-v4",
+        "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    );
 }
 
-const AVX2_AUTO: Variant = Variant {
-    isa: Isa::Avx2,
+const V3_AUTO: Variant = Variant {
+    isa: Isa::X86_64V3,
     backend: Backend::Auto,
 };
 
-const AVX512_AUTO: Variant = Variant {
-    isa: Isa::Avx512,
+const V4_AUTO: Variant = Variant {
+    isa: Isa::X86_64V4,
     backend: Backend::Auto,
 };
 
-const AVX2_INTRINSICS: Variant = Variant {
-    isa: Isa::Avx2,
+const V3_INTRINSICS: Variant = Variant {
+    isa: Isa::X86_64V3,
     backend: Backend::Intrinsics,
 };
 
-const AVX512_INTRINSICS: Variant = Variant {
-    isa: Isa::Avx512,
+const V4_INTRINSICS: Variant = Variant {
+    isa: Isa::X86_64V4,
     backend: Backend::Intrinsics,
 };
 
-/// Adds the AVX2 and AVX-512 auto entries of an elementwise body to its table.
-pub(crate) fn add_elementwise<B: ElementwiseBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Elementwise(auto::avx2::elementwise::<B>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Elementwise(auto::avx512::elementwise::<B>));
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of an elementwise body to its table.
+pub(crate) fn add_elementwise<B: ElementwiseBody>(impls: &mut KernelTable) {
+    impls.set(
+        V3_AUTO,
+        KernelImpl::Elementwise(auto::x86_64_v3::elementwise::<B>),
+    );
+    impls.set(
+        V4_AUTO,
+        KernelImpl::Elementwise(auto::x86_64_v4::elementwise::<B>),
+    );
 }
 
-/// Adds the AVX2 and AVX-512 auto entries of a reduction body to its table.
-pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Reduction(auto::avx2::reducer::<R>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Reduction(auto::avx512::reducer::<R>));
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of a reduction body to its table.
+pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut KernelTable) {
+    impls.set(
+        V3_AUTO,
+        KernelImpl::Reduction(auto::x86_64_v3::reducer::<R>),
+    );
+    impls.set(
+        V4_AUTO,
+        KernelImpl::Reduction(auto::x86_64_v4::reducer::<R>),
+    );
 }
 
-/// Adds the AVX2 and AVX-512 auto entries of a selection body to its table.
-pub(crate) fn add_selection<S: SelectionBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Selection(auto::avx2::selection::<S>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Selection(auto::avx512::selection::<S>));
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of a selection body to its table.
+pub(crate) fn add_selection<S: SelectionBody>(impls: &mut KernelTable) {
+    impls.set(
+        V3_AUTO,
+        KernelImpl::Selection(auto::x86_64_v3::selection::<S>),
+    );
+    impls.set(
+        V4_AUTO,
+        KernelImpl::Selection(auto::x86_64_v4::selection::<S>),
+    );
 }
 
-/// Adds the AVX2 and AVX-512 auto entries of a scan body to its table.
-pub(crate) fn add_scan<S: ScanBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Scan(auto::avx2::scanner::<S>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Scan(auto::avx512::scanner::<S>));
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of a scan body to its table.
+pub(crate) fn add_scan<S: ScanBody>(impls: &mut KernelTable) {
+    impls.set(V3_AUTO, KernelImpl::Scan(auto::x86_64_v3::scanner::<S>));
+    impls.set(V4_AUTO, KernelImpl::Scan(auto::x86_64_v4::scanner::<S>));
 }
 
-/// Adds the AVX2 and AVX-512 auto entries of a whole body to its table.
-pub(crate) fn add_whole<W: WholeBody>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX2_AUTO.index()] = Some(KernelImpl::Whole(auto::avx2::whole::<W>));
-    impls[AVX512_AUTO.index()] = Some(KernelImpl::Whole(auto::avx512::whole::<W>));
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of a whole body to its table.
+pub(crate) fn add_whole<W: WholeBody>(impls: &mut KernelTable) {
+    impls.set(V3_AUTO, KernelImpl::Whole(auto::x86_64_v3::whole::<W>));
+    impls.set(V4_AUTO, KernelImpl::Whole(auto::x86_64_v4::whole::<W>));
 }
 
 /// Adds the intrinsics entries of `compress` on rows of storage type `T`, whose semantic type
-/// is `tag::<T, BOOL>()`. AVX2 has none for `u8` and bool.
-pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
-    let (avx2, avx512) = compress::compress_entries::<T, BOOL>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+/// is `tag::<T, BOOL>()`, with the features each declares. x86-64-v3 has none for `u8` and
+/// bool.
+pub(crate) fn add_compress<T: Elem, const BOOL: bool>(impls: &mut KernelTable) {
+    let (v3, v4) = compress::compress_entries::<T, BOOL>();
+    if let Some(entry) = v3 {
+        impls.set(V3_INTRINSICS, KernelImpl::Selection(entry));
+    }
+    if let Some((entry, declared)) = v4 {
+        impls.set_declared(V4_INTRINSICS, KernelImpl::Selection(entry), declared);
+    }
 }
 
 /// Adds the intrinsics entries of `where`.
-pub(crate) fn add_where(impls: &mut [Option<KernelImpl>]) {
-    let (avx2, avx512) = compress::where_entries();
-    impls[AVX2_INTRINSICS.index()] = Some(KernelImpl::Selection(avx2));
-    impls[AVX512_INTRINSICS.index()] = Some(KernelImpl::Selection(avx512));
+pub(crate) fn add_where(impls: &mut KernelTable) {
+    let (v3, v4) = compress::where_entries();
+    impls.set(V3_INTRINSICS, KernelImpl::Selection(v3));
+    impls.set(V4_INTRINSICS, KernelImpl::Selection(v4));
 }
 
 /// Adds the intrinsics entries of `filter_<cmp>` on rows of type `T`, for comparison number
 /// `C` of `CMPS`.
-pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut [Option<KernelImpl>]) {
-    let (avx2, avx512) = compress::filter_entries::<T, C>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Selection);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Selection);
+pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut KernelTable) {
+    let (v3, v4) = compress::filter_entries::<T, C>();
+    if let Some(entry) = v3 {
+        impls.set(V3_INTRINSICS, KernelImpl::Selection(entry));
+    }
+    if let Some(entry) = v4 {
+        impls.set(V4_INTRINSICS, KernelImpl::Selection(entry));
+    }
 }
 
 /// Adds the intrinsics entries of `gather` on rows of storage type `T`, whose semantic type is
 /// `tag::<T, BOOL>()`. Only 64-bit rows have them.
-pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut [Option<KernelImpl>]) {
-    let (avx2, avx512) = gather::gather_entries::<T, BOOL>();
-    impls[AVX2_INTRINSICS.index()] = avx2.map(KernelImpl::Whole);
-    impls[AVX512_INTRINSICS.index()] = avx512.map(KernelImpl::Whole);
+pub(crate) fn add_gather<T: Elem, const BOOL: bool>(impls: &mut KernelTable) {
+    let (v3, v4) = gather::gather_entries::<T, BOOL>();
+    if let Some(entry) = v3 {
+        impls.set(V3_INTRINSICS, KernelImpl::Whole(entry));
+    }
+    if let Some(entry) = v4 {
+        impls.set(V4_INTRINSICS, KernelImpl::Whole(entry));
+    }
 }
 
 /// Adds the intrinsics entries of `scan_by_add` on rows of storage type `T`, whose sum keeps
-/// the element type. Only `i64` and `u64` have one, and only on AVX-512.
-pub(crate) fn add_scan_by_add<T: Elem>(impls: &mut [Option<KernelImpl>]) {
-    impls[AVX512_INTRINSICS.index()] = scan::scan_by_add_entry::<T>().map(KernelImpl::Scan);
+/// the element type. Only `i64` and `u64` have one, and only on x86-64-v4.
+pub(crate) fn add_scan_by_add<T: Elem>(impls: &mut KernelTable) {
+    if let Some(entry) = scan::scan_by_add_entry::<T>() {
+        impls.set(V4_INTRINSICS, KernelImpl::Scan(entry));
+    }
 }

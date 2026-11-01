@@ -3,7 +3,7 @@
 use std::fs;
 
 use verkehrt::error::ErrorKind;
-use verkehrt::kernels::Isa;
+use verkehrt::kernels::{Feature, FeatureSet, Isa};
 use verkehrt::value::{Array, Value};
 use verkehrt::{Interpreter, Options, Prepared};
 
@@ -123,7 +123,7 @@ fn stats_total_per_kernel() {
 
 // An ISA of another architecture is never available on the host.
 #[cfg(target_arch = "aarch64")]
-const FOREIGN_ISA: Isa = Isa::Avx2;
+const FOREIGN_ISA: Isa = Isa::X86_64V3;
 #[cfg(not(target_arch = "aarch64"))]
 const FOREIGN_ISA: Isa = Isa::Neon;
 
@@ -136,6 +136,32 @@ fn unavailable_isa_is_a_usage_error() {
     .err()
     .expect("an ISA of another architecture is unavailable");
     assert_eq!(e.kind, ErrorKind::Usage);
+}
+
+#[test]
+fn disable_vbmi2_keeps_v4() {
+    if !Isa::X86_64V4.is_available() {
+        eprintln!("skipped: x86-64-v4 is not available on this CPU");
+        return;
+    }
+    let src = "let a = [1u8, 2u8, 3u8, 4u8];\nprint(compress(a, a > 2u8));\n";
+    let (scalar_result, expected, _) = run_with(scalar_opts(), src);
+    scalar_result.unwrap();
+    let (r, out, diag) = run_with(
+        Options {
+            disable: FeatureSet::of(&[Feature::Avx512vbmi2]),
+            trace: true,
+            ..Options::default()
+        },
+        src,
+    );
+    r.unwrap();
+    assert_eq!(out, expected);
+    let line = diag
+        .lines()
+        .find(|l| l.starts_with("trace compress_u8"))
+        .expect(&diag);
+    assert!(line.contains("isa=x86-64-v4 backend=auto"), "{line}");
 }
 
 #[test]

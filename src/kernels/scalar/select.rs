@@ -7,7 +7,7 @@ use std::ops::Range;
 use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{arity_error, rows_arg, tag};
 use crate::kernels::{
-    InputSpec, KernelClass, KernelDef, KernelImpl, Registry, SelectionBody, Variant,
+    InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, Registry, SelectionBody,
 };
 use crate::ops::Op;
 use crate::value::{Arg, Array, ArrayBuilder, Elem, ScalarType, ValueType};
@@ -219,14 +219,14 @@ fn compress<T: Elem, const BOOL: bool>(reg: &mut Registry) {
 
 /// The entries of `compress` on rows of storage type `T`: the scalar and auto entries of its
 /// body, plus intrinsics entries where they exist.
-fn compress_impls<T: Elem, const BOOL: bool>() -> [Option<KernelImpl>; Variant::COUNT] {
+fn compress_impls<T: Elem, const BOOL: bool>() -> KernelTable {
     let mut impls = KernelImpl::selection::<Compress<T, BOOL>>();
     crate::kernels::arch::add_compress::<T, BOOL>(&mut impls);
     impls
 }
 
 /// The entries of `where`, see `compress_impls`.
-fn where_impls() -> [Option<KernelImpl>; Variant::COUNT] {
+fn where_impls() -> KernelTable {
     let mut impls = KernelImpl::selection::<Where>();
     crate::kernels::arch::add_where(&mut impls);
     impls

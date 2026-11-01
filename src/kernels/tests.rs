@@ -25,7 +25,7 @@ fn call(reg: &Registry, name: &str, args: &[Value]) -> Result<Value, String> {
     let id = reg
         .by_name(name)
         .unwrap_or_else(|| panic!("no kernel {name}"));
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     assert_eq!(dispatch.variant_used(id), Variant::SCALAR);
     dispatch.call(reg, id, args)
 }
@@ -464,7 +464,7 @@ fn kernel_names_are_unique_valid_identifiers() {
             _ => KernelClass::Elementwise,
         };
         assert_eq!(def.class, expected, "{}", def.name);
-        assert!(def.impls[Variant::SCALAR.index()].is_some());
+        assert!(def.impls.get(Variant::SCALAR).is_some());
     }
 }
 
@@ -502,7 +502,11 @@ fn resolve_falls_back_to_scalar_without_variants() {
     let id = reg.by_name("add_f64_s").unwrap();
     for isa in Isa::ALL {
         for backend in [Backend::Auto, Backend::Intrinsics] {
-            assert_eq!(reg.resolve(isa, backend).variant_used(id), Variant::SCALAR);
+            assert_eq!(
+                reg.resolve(isa, backend, FeatureSet::EMPTY)
+                    .variant_used(id),
+                Variant::SCALAR
+            );
         }
     }
     // A kernel with ISA variants uses its scalar entry for `Isa::Scalar` and for an ISA
@@ -510,7 +514,11 @@ fn resolve_falls_back_to_scalar_without_variants() {
     let add = reg.by_name("add_f64").unwrap();
     for isa in [Isa::Scalar, Isa::Neon] {
         for backend in [Backend::Auto, Backend::Intrinsics] {
-            assert_eq!(reg.resolve(isa, backend).variant_used(add), Variant::SCALAR);
+            assert_eq!(
+                reg.resolve(isa, backend, FeatureSet::EMPTY)
+                    .variant_used(add),
+                Variant::SCALAR
+            );
         }
     }
 }
@@ -530,11 +538,11 @@ fn variant_index_and_display() {
     indexes.sort_unstable();
     assert_eq!(indexes, (0..Variant::COUNT).collect::<Vec<_>>());
     assert_eq!(Variant::SCALAR.to_string(), "isa=scalar");
-    let avx2 = Variant {
-        isa: Isa::Avx2,
+    let v3 = Variant {
+        isa: Isa::X86_64V3,
         backend: Backend::Auto,
     };
-    assert_eq!(avx2.to_string(), "isa=avx2 backend=auto");
+    assert_eq!(v3.to_string(), "isa=x86-64-v3 backend=auto");
     assert_eq!(Backend::default(), Backend::Intrinsics);
 }
 
@@ -556,6 +564,12 @@ fn add_rejects_entries_of_another_class() {
         pattern: None,
         impls: KernelImpl::Elementwise(entry).scalar_only(),
     });
+}
+
+#[test]
+fn new_isa_names_parse() {
+    assert_eq!(Isa::from_name("x86-64-v3"), Some(Isa::X86_64V3));
+    assert_eq!(Isa::from_name("x86-64-v4"), Some(Isa::X86_64V4));
 }
 
 #[test]
@@ -914,7 +928,7 @@ fn compress_and_where() {
 fn selections_span_chunks() {
     use super::scalar::select::CHUNK;
     let reg = Registry::new();
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto);
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     for n in [CHUNK - 1, CHUNK, CHUNK + 1, 3 * CHUNK + 5] {
         let xs: Vec<f64> = (0..n)
             .map(|i| f64::from(u32::try_from(i).unwrap()))
@@ -1020,12 +1034,12 @@ fn selections_with_a_dense_prefix_and_an_empty_suffix() {
     let mask: Vec<bool> = (0..n).map(|i| i < prefix).collect();
     let idx: Vec<i64> = (0..prefix).map(|i| i64::try_from(i).unwrap()).collect();
     let mut checked = 0;
-    for isa in [Isa::Scalar, Isa::Avx2, Isa::Avx512] {
+    for isa in [Isa::Scalar, Isa::X86_64V3, Isa::X86_64V4] {
         if !isa.is_available() {
             continue;
         }
         for backend in [Backend::Auto, Backend::Intrinsics] {
-            let dispatch = reg.resolve(isa, backend);
+            let dispatch = reg.resolve(isa, backend, FeatureSet::EMPTY);
             let run = |name: &str, args: &[Value]| {
                 let id = reg.by_name(name).unwrap();
                 arr(dispatch.call(&reg, id, args).unwrap())
@@ -1110,18 +1124,19 @@ impl WholeBody for Echo {
 #[test]
 fn whole_tables_have_scalar_and_auto_entries() {
     let impls = KernelImpl::whole::<Echo>();
-    assert!(impls[Variant::SCALAR.index()].is_some());
+    assert!(impls.get(Variant::SCALAR).is_some());
     let auto = |isa| Variant {
         isa,
         backend: Backend::Auto,
     };
     let x86 = cfg!(target_arch = "x86_64");
-    assert_eq!(impls[auto(Isa::Avx2).index()].is_some(), x86);
-    assert_eq!(impls[auto(Isa::Avx512).index()].is_some(), x86);
+    assert_eq!(impls.get(auto(Isa::X86_64V3)).is_some(), x86);
+    assert_eq!(impls.get(auto(Isa::X86_64V4)).is_some(), x86);
     let isa = Isa::detect();
-    if let Some(KernelImpl::Whole(f)) = impls[auto(isa).index()] {
+    if let Some(KernelImpl::Whole(f)) = impls.get(auto(isa)) {
         let args = [i64_s(5)];
-        // SAFETY: `Isa::detect` returned an ISA this CPU supports, and the body is safe Rust.
+        // SAFETY: `f` is the auto entry of `Isa::detect()`, whose level `features::runnable`
+        // approved for this CPU, and the body is safe Rust.
         let got = unsafe { f(&args) };
         assert_eq!(scalar(got), Scalar::I64(5));
     }
@@ -1223,11 +1238,11 @@ fn variant_entry_counts_are_stable() {
     let reg = Registry::new();
     let mut counts = [0usize; Variant::COUNT];
     for (_, def) in reg.iter() {
-        for (slot, count) in counts.iter_mut().enumerate() {
-            *count += usize::from(def.impls[slot].is_some());
+        for v in all_variants() {
+            counts[v.index()] += usize::from(def.impls.get(v).is_some());
         }
     }
-    // Scalar, then auto and intrinsics for AVX2, AVX-512, and NEON. The x86 literals were
+    // Scalar, then auto and intrinsics for x86-64-v3, x86-64-v4, and NEON. The x86 literals were
     // recorded before the architecture layer existed. The `u64` kernels added 56 scalar and
     // 52 auto entries per x86 ISA, and 7 intrinsics entries per ISA (`compress_u64` and the
     // six `filter_<cmp>_u64`). The bitwise kernels on four integer types and `xor_bool`
@@ -1240,7 +1255,7 @@ fn variant_entry_counts_are_stable() {
     // The 4 `div_const_<t>` and 4 `argsort_<t>` kernels added 12 scalar entries (the array and
     // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
     // `gather_i64`, `gather_u64`, and `gather_f64` added 3 intrinsics entries per x86 ISA.
-    // `scan_by_add_i64` and `scan_by_add_u64` added 2 AVX-512 intrinsics entries.
+    // `scan_by_add_i64` and `scan_by_add_u64` added 2 x86-64-v4 intrinsics entries.
     #[cfg(target_arch = "x86_64")]
     assert_eq!(counts, [749, 439, 39, 439, 43, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
@@ -1810,4 +1825,91 @@ fn argsort_is_stable() {
     assert_eq!(r64.as_slice::<i64>(), &[3, 1, 0, 2]);
     let r8 = run_arr("argsort_u8", &[u8s(&[200, 5, 200, 5, 0])]);
     assert_eq!(r8.as_slice::<i64>(), &[4, 1, 3, 0, 2]);
+}
+
+/// Every slot of a `KernelTable`, scalar first.
+fn all_variants() -> Vec<Variant> {
+    let mut all = vec![Variant::SCALAR];
+    for isa in [Isa::X86_64V3, Isa::X86_64V4, Isa::Neon] {
+        for backend in [Backend::Auto, Backend::Intrinsics] {
+            all.push(Variant { isa, backend });
+        }
+    }
+    all
+}
+
+#[test]
+fn select_falls_back_by_declared_feature() {
+    fn entry(_: &[Arg], _: &mut [u8]) -> Result<(), String> {
+        Ok(())
+    }
+    let imp = KernelImpl::Elementwise(entry);
+    let v4_auto = Variant {
+        isa: Isa::X86_64V4,
+        backend: Backend::Auto,
+    };
+    let v4_intrinsics = Variant {
+        isa: Isa::X86_64V4,
+        backend: Backend::Intrinsics,
+    };
+    let vbmi2 = FeatureSet::of(&[Feature::Avx512vbmi2]);
+    let mut table = KernelTable::scalar_only(imp);
+    table.set(v4_auto, imp);
+    table.set_declared(v4_intrinsics, imp, vbmi2);
+    let all = FeatureSet::of(&Feature::ALL);
+    let pick = |backend, available| select(&table, Isa::X86_64V4, backend, available);
+    assert_eq!(pick(Backend::Intrinsics, all), v4_intrinsics);
+    assert_eq!(pick(Backend::Intrinsics, all.minus(vbmi2)), v4_auto);
+    assert_eq!(pick(Backend::Auto, all), v4_auto);
+    let no_dq = all.minus(FeatureSet::of(&[Feature::Avx512dq]));
+    assert_eq!(pick(Backend::Intrinsics, no_dq), Variant::SCALAR);
+    assert_eq!(
+        pick(Backend::Intrinsics, FeatureSet::EMPTY),
+        Variant::SCALAR
+    );
+    // The scalar level resolves to the scalar slot, whatever the backend.
+    for backend in [Backend::Auto, Backend::Intrinsics] {
+        assert_eq!(select(&table, Isa::Scalar, backend, all), Variant::SCALAR);
+    }
+}
+
+#[test]
+fn detected_level_is_available() {
+    assert!(Isa::detect().is_available());
+    assert_eq!(Isa::detect(), features::best_level(FeatureSet::detect()));
+}
+
+/// Only the x86-64-v4 byte `compress` entries declare a feature beyond their level, and they
+/// have an auto entry of the same level to fall back to.
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn byte_compress_declares_vbmi2() {
+    let reg = Registry::new();
+    let v4_auto = Variant {
+        isa: Isa::X86_64V4,
+        backend: Backend::Auto,
+    };
+    let v4_intrinsics = Variant {
+        isa: Isa::X86_64V4,
+        backend: Backend::Intrinsics,
+    };
+    let vbmi2 = FeatureSet::of(&[Feature::Avx512vbmi2]);
+    let mut declaring = 0;
+    for (_, def) in reg.iter() {
+        let byte = def.name == "compress_u8" || def.name == "compress_bool";
+        for v in all_variants() {
+            let want = if byte && v == v4_intrinsics {
+                vbmi2
+            } else {
+                FeatureSet::EMPTY
+            };
+            assert_eq!(def.impls.declared(v), want, "{} {v}", def.name);
+        }
+        if byte {
+            assert!(def.impls.get(v4_intrinsics).is_some(), "{}", def.name);
+            assert!(def.impls.get(v4_auto).is_some(), "{}", def.name);
+            declaring += 1;
+        }
+    }
+    assert_eq!(declaring, 2);
 }

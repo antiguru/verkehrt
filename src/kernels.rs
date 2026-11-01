@@ -13,12 +13,14 @@ mod aarch64;
 mod arch;
 mod auto;
 pub mod dispatch;
+pub mod features;
 pub mod scalar;
 mod select_loops;
 #[cfg(target_arch = "x86_64")]
 mod x86;
 
 pub use dispatch::Dispatch;
+pub use features::{Feature, FeatureSet};
 
 #[cfg(test)]
 mod tests;
@@ -172,10 +174,8 @@ impl KernelImpl {
     }
 
     /// A table with only the scalar slot set.
-    pub fn scalar_only(self) -> [Option<KernelImpl>; Variant::COUNT] {
-        let mut impls = [None; Variant::COUNT];
-        impls[Variant::SCALAR.index()] = Some(self);
-        impls
+    pub fn scalar_only(self) -> KernelTable {
+        KernelTable::scalar_only(self)
     }
 
     /// The scalar entry of an elementwise body.
@@ -185,28 +185,28 @@ impl KernelImpl {
 
     /// The table of an elementwise body: its scalar entry, and its ISA variants on targets
     /// that compile them.
-    pub(crate) fn elementwise<B: ElementwiseBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn elementwise<B: ElementwiseBody>() -> KernelTable {
         let mut impls = KernelImpl::elementwise_scalar::<B>().scalar_only();
         arch::add_elementwise::<B>(&mut impls);
         impls
     }
 
     /// The table of a reduction body, see `elementwise`.
-    pub(crate) fn reduction<R: ReductionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn reduction<R: ReductionBody>() -> KernelTable {
         let mut impls = KernelImpl::Reduction(scalar_reducer::<R>).scalar_only();
         arch::add_reduction::<R>(&mut impls);
         impls
     }
 
     /// The table of a selection body, see `elementwise`.
-    pub(crate) fn selection<S: SelectionBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn selection<S: SelectionBody>() -> KernelTable {
         let mut impls = KernelImpl::Selection(scalar_selection::<S>).scalar_only();
         arch::add_selection::<S>(&mut impls);
         impls
     }
 
     /// The table of a scan body, see `elementwise`.
-    pub(crate) fn scan<S: ScanBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn scan<S: ScanBody>() -> KernelTable {
         let mut impls = KernelImpl::Scan(scalar_scanner::<S>).scalar_only();
         arch::add_scan::<S>(&mut impls);
         impls
@@ -215,7 +215,7 @@ impl KernelImpl {
     /// The table of a whole body, see `elementwise`. A whole kernel whose body is a loop over
     /// its arguments gets auto variants this way, and one that only forwards to other kernels
     /// stays `scalar_only`.
-    pub(crate) fn whole<W: WholeBody>() -> [Option<KernelImpl>; Variant::COUNT] {
+    pub(crate) fn whole<W: WholeBody>() -> KernelTable {
         let mut impls = KernelImpl::Whole(scalar_whole::<W>).scalar_only();
         arch::add_whole::<W>(&mut impls);
         impls
@@ -250,12 +250,12 @@ impl Variant {
     };
 
     /// Position in a `KernelDef::impls` table: scalar, then auto and intrinsics for each of
-    /// AVX2, AVX-512, and NEON.
+    /// `x86-64-v3`, `x86-64-v4`, and NEON.
     pub fn index(self) -> usize {
         let base = match self.isa {
             Isa::Scalar => return 0,
-            Isa::Avx2 => 1,
-            Isa::Avx512 => 3,
+            Isa::X86_64V3 => 1,
+            Isa::X86_64V4 => 3,
             Isa::Neon => 5,
         };
         base + match self.backend {
@@ -266,7 +266,7 @@ impl Variant {
 }
 
 impl std::fmt::Display for Variant {
-    /// `isa=scalar`, or `isa=avx2 backend=auto`.
+    /// `isa=scalar`, or `isa=x86-64-v3 backend=auto`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "isa={}", self.isa.name())?;
         if self.isa != Isa::Scalar {
@@ -278,6 +278,77 @@ impl std::fmt::Display for Variant {
         }
         Ok(())
     }
+}
+
+/// The entries of a kernel by variant. Each slot holds an entry and the features it declares
+/// beyond the level of its ISA, which only intrinsics entries may declare.
+#[derive(Clone, Copy)]
+pub struct KernelTable([Option<(KernelImpl, FeatureSet)>; Variant::COUNT]);
+
+impl KernelTable {
+    /// A table with only the scalar slot set.
+    pub fn scalar_only(imp: KernelImpl) -> KernelTable {
+        let mut table = KernelTable([None; Variant::COUNT]);
+        table.set(Variant::SCALAR, imp);
+        table
+    }
+
+    /// The entry of variant `v`, if it has one.
+    pub fn get(&self, v: Variant) -> Option<KernelImpl> {
+        self.0[v.index()].map(|(imp, _)| imp)
+    }
+
+    /// The features that the entry of `v` declares beyond its level, empty for an unset slot.
+    pub fn declared(&self, v: Variant) -> FeatureSet {
+        self.0[v.index()].map_or(FeatureSet::EMPTY, |(_, declared)| declared)
+    }
+
+    /// Sets the entry of `v`, declaring no feature beyond its level.
+    pub(crate) fn set(&mut self, v: Variant, imp: KernelImpl) {
+        self.set_declared(v, imp, FeatureSet::EMPTY);
+    }
+
+    /// Sets the entry of `v`, which needs `declared` beyond the level of `v.isa`.
+    pub(crate) fn set_declared(&mut self, v: Variant, imp: KernelImpl, declared: FeatureSet) {
+        self.0[v.index()] = Some((imp, declared));
+    }
+
+    /// Every entry that is set, in `Variant::index` order.
+    pub fn entries(&self) -> impl Iterator<Item = KernelImpl> {
+        self.0.into_iter().flatten().map(|(imp, _)| imp)
+    }
+}
+
+/// The variant of `table` that `Registry::resolve` installs for `isa` and `backend` when the
+/// CPU supports `available`: the intrinsics entry when `backend` is `Intrinsics` and
+/// `features::runnable` holds for its level and declared features, else the auto entry when
+/// `runnable` holds for its level, else `Variant::SCALAR`. It installs nothing.
+pub fn select(table: &KernelTable, isa: Isa, backend: Backend, available: FeatureSet) -> Variant {
+    // Both backends of the scalar level index the scalar slot, and its variant is
+    // `Variant::SCALAR` whatever the backend.
+    if isa == Isa::Scalar {
+        return Variant::SCALAR;
+    }
+    let intrinsics = Variant {
+        isa,
+        backend: Backend::Intrinsics,
+    };
+    if backend == Backend::Intrinsics
+        && table.get(intrinsics).is_some()
+        && features::runnable(isa, table.declared(intrinsics), available)
+    {
+        return intrinsics;
+    }
+    let auto = Variant {
+        isa,
+        backend: Backend::Auto,
+    };
+    // `Registry::add` rejects an auto entry that declares a feature, so this is the level
+    // check. Passing the declared set keeps it sound for a table that bypassed `add`.
+    if table.get(auto).is_some() && features::runnable(isa, table.declared(auto), available) {
+        return auto;
+    }
+    Variant::SCALAR
 }
 
 /// The expression a fused kernel implements, as an egglog pattern over single-op kernel names.
@@ -331,8 +402,8 @@ pub struct KernelDef {
     pub cost: u64,
     pub commutative: bool,
     pub pattern: Option<FusedPattern>,
-    /// Indexed by `Variant::index`. The scalar entry is always `Some`.
-    pub impls: [Option<KernelImpl>; Variant::COUNT],
+    /// The entries by variant. The scalar entry is always set.
+    pub impls: KernelTable,
 }
 
 impl KernelDef {
@@ -400,18 +471,31 @@ impl Registry {
         }
     }
 
-    /// Adds a kernel. Panics on a duplicate name, a missing scalar implementation, or an
-    /// entry that does not match the class, because all are bugs in the kernel tables.
+    /// Adds a kernel. Panics on a duplicate name, a missing scalar implementation, an entry
+    /// that does not match the class, or a scalar or auto entry that declares a feature,
+    /// because all are bugs in the kernel tables.
     pub(crate) fn add(&mut self, def: KernelDef) -> KernelId {
         assert!(
-            def.impls[Variant::SCALAR.index()].is_some(),
+            def.impls.get(Variant::SCALAR).is_some(),
             "kernel {} lacks a scalar impl",
             def.name
         );
-        for imp in def.impls.iter().flatten() {
+        for imp in def.impls.entries() {
             assert!(
                 imp.fits(def.class),
                 "kernel {} has an entry that does not fit its class",
+                def.name
+            );
+        }
+        for isa in Isa::ALL {
+            let auto = Variant {
+                isa,
+                backend: Backend::Auto,
+            };
+            assert_eq!(
+                def.impls.declared(auto),
+                FeatureSet::EMPTY,
+                "kernel {} has a scalar or auto entry that declares features",
                 def.name
             );
         }
@@ -514,32 +598,19 @@ impl Registry {
         })
     }
 
-    /// Picks one entry per kernel for `isa` and `backend` and records the variant picked.
-    /// With `Intrinsics` a kernel uses its intrinsics entry, else its auto entry, else scalar.
-    /// With `Auto` it uses its auto entry, else scalar. ISA entries are installed only when
-    /// the CPU supports the ISA, and feature detection runs once here.
-    pub fn resolve(&self, isa: Isa, backend: Backend) -> Dispatch {
-        let usable = isa != Isa::Scalar && isa.is_available();
-        let preference: &[Backend] = match backend {
-            Backend::Intrinsics => &[Backend::Intrinsics, Backend::Auto],
-            Backend::Auto => &[Backend::Auto],
-        };
+    /// Picks one entry per kernel for `isa` and `backend` with `select` and records the
+    /// variant picked. The available features are what `FeatureSet::detect` reports minus
+    /// `disable`, so an entry is installed only when `features::runnable` holds for it on this
+    /// CPU. Feature detection runs once here.
+    pub fn resolve(&self, isa: Isa, backend: Backend, disable: FeatureSet) -> Dispatch {
+        let available = FeatureSet::detect().minus(disable);
         let entries = self
             .defs
             .iter()
             .map(|def| {
-                let picked = usable
-                    .then(|| {
-                        preference.iter().find_map(|&b| {
-                            let variant = Variant { isa, backend: b };
-                            def.impls[variant.index()].map(|imp| (imp, variant))
-                        })
-                    })
-                    .flatten();
-                picked.unwrap_or_else(|| {
-                    let imp = def.impls[Variant::SCALAR.index()].expect("checked in add");
-                    (imp, Variant::SCALAR)
-                })
+                let variant = select(&def.impls, isa, backend, available);
+                let imp = def.impls.get(variant).expect("select picks a set slot");
+                (imp, variant)
             })
             .collect();
         Dispatch::new(Arc::clone(&self.token), entries)

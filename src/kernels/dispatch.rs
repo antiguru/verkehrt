@@ -1,9 +1,9 @@
 //! The dispatch table, resolved once per interpreter, and the whole-array driver that runs a
 //! kernel entry over complete arguments.
 //!
-//! `unsafe` lives here and in the x86 kernel modules only. Here it is the call of a resolved
-//! entry, which is sound because `Registry::resolve` installs an ISA entry only for an ISA
-//! whose `is_available` returned true.
+//! `unsafe` lives here and in the ISA kernel modules only. Here it is the call of a resolved
+//! entry, which is sound because `Registry::resolve` installs an entry only when `select`
+//! found `features::runnable` true for the entry's level and declared features on this CPU.
 
 use std::sync::Arc;
 
@@ -58,8 +58,8 @@ impl Dispatch {
         let def = reg.get(id);
         match self.entry(id) {
             // Whole kernels check their own arguments.
-            // SAFETY: resolve installs an entry only for an ISA whose is_available()
-            // returned true.
+            // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
+            // for it on this CPU.
             KernelImpl::Whole(f) => unsafe { f(args) },
             KernelImpl::Elementwise(f) => {
                 let (call_args, rows) = prepare(def, args)?;
@@ -67,9 +67,9 @@ impl Dispatch {
                     ValueType::Array(t) => {
                         let n = rows.ok_or("an array kernel needs an array operand")?;
                         Array::build_bytes(n, t, |out| {
-                            // SAFETY: resolve installs an entry only for an ISA whose
-                            // is_available() returned true. `out` holds n rows of the output
-                            // type and prepare unified every `Rows` argument to n rows.
+                            // SAFETY: resolve installs an entry only when `select` found
+                            // `features::runnable` true for it on this CPU. `out` holds n rows of
+                            // the output type and prepare unified every `Rows` argument to n rows.
                             unsafe { f(&call_args, out) }
                         })
                         .map(Value::Array)
@@ -81,9 +81,9 @@ impl Dispatch {
                         // A u64 gives the one-row destination the alignment of any element.
                         let mut one = 0u64;
                         let out = &mut bytemuck::bytes_of_mut(&mut one)[..t.width()];
-                        // SAFETY: resolve installs an entry only for an ISA whose
-                        // is_available() returned true. `out` is one row of the output type
-                        // and every argument is a `Splat`.
+                        // SAFETY: resolve installs an entry only when `select` found
+                        // `features::runnable` true for it on this CPU. `out` is one row of the
+                        // output type and every argument is a `Splat`.
                         unsafe { f(&call_args, out) }?;
                         Ok(Value::Scalar(Scalar::from_bytes(t, out)))
                     }
@@ -93,8 +93,8 @@ impl Dispatch {
             KernelImpl::Reduction(make) => {
                 let (call_args, rows) = prepare(def, args)?;
                 let n = rows.ok_or("a reduction needs an array operand")?;
-                // SAFETY: resolve installs an entry only for an ISA whose is_available()
-                // returned true.
+                // SAFETY: resolve installs an entry only when `select` found `features::runnable`
+                // true for it on this CPU.
                 let mut reducer = unsafe { make() };
                 if n > 0 {
                     reducer.update(&call_args)?;
@@ -107,8 +107,8 @@ impl Dispatch {
                 let ValueType::Array(t) = def.output else {
                     return Err("a scan must produce an array".into());
                 };
-                // SAFETY: resolve installs an entry only for an ISA whose is_available()
-                // returned true.
+                // SAFETY: resolve installs an entry only when `select` found `features::runnable`
+                // true for it on this CPU.
                 let mut scanner = unsafe { make() };
                 Array::build_bytes(n, t, |out| {
                     if n > 0 {
@@ -124,8 +124,8 @@ impl Dispatch {
                     return Err("a selection kernel must produce an array".into());
                 };
                 let mut out = ArrayBuilder::new(t);
-                // SAFETY: resolve installs an entry only for an ISA whose is_available()
-                // returned true. The one tile is the whole array, so its base is 0.
+                // SAFETY: resolve installs an entry only when `select` found `features::runnable`
+                // true for it on this CPU. The one tile is the whole array, so its base is 0.
                 unsafe { f(&call_args, 0, &mut out) }?;
                 Ok(Value::Array(out.finish()))
             }
@@ -148,8 +148,8 @@ impl Dispatch {
     pub fn reducer(&self, reg: &Registry, id: KernelId) -> Result<Box<dyn Reducer>, String> {
         self.check_registry(reg)?;
         match self.entry(id) {
-            // SAFETY: resolve installs an entry only for an ISA whose is_available()
-            // returned true.
+            // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
+            // for it on this CPU.
             KernelImpl::Reduction(make) => Ok(unsafe { make() }),
             _ => Err(format!("{} is not a reduction", reg.get(id).name)),
         }
@@ -160,8 +160,8 @@ impl Dispatch {
     pub fn scanner(&self, reg: &Registry, id: KernelId) -> Result<Box<dyn Scanner>, String> {
         self.check_registry(reg)?;
         match self.entry(id) {
-            // SAFETY: resolve installs an entry only for an ISA whose is_available()
-            // returned true.
+            // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
+            // for it on this CPU.
             KernelImpl::Scan(make) => Ok(unsafe { make() }),
             _ => Err(format!("{} is not a scan", reg.get(id).name)),
         }
@@ -203,10 +203,10 @@ impl Dispatch {
             Some(n) if n != want => Err(format!(
                 "length mismatch: {n} rows for a destination of {want} rows"
             )),
-            // SAFETY: resolve installs an entry only for an ISA whose is_available()
-            // returned true. `out` holds `want` rows of the output type, aligned for it, and
-            // `check_tile_args` checked the argument kinds and that every `Rows` argument
-            // has `want` rows.
+            // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
+            // for it on this CPU. `out` holds `want` rows of the output type, aligned for it, and
+            // `check_tile_args` checked the argument kinds and that every `Rows` argument has
+            // `want` rows.
             Some(_) => unsafe { f(args, out) },
         }
     }
@@ -241,8 +241,8 @@ impl Dispatch {
             ));
         }
         check_tile_args(def, args)?;
-        // SAFETY: resolve installs an entry only for an ISA whose is_available() returned
-        // true. `check_tile_args` checked the argument kinds and unified the row counts.
+        // SAFETY: resolve installs an entry only when `select` found `features::runnable` true for
+        // it on this CPU. `check_tile_args` checked the argument kinds and unified the row counts.
         unsafe { f(args, base, out) }
     }
 }

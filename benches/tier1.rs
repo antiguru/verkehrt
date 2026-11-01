@@ -25,9 +25,9 @@ enum Native {
     /// Baseline target, comparable with the scalar kernels.
     Base,
     #[cfg(target_arch = "x86_64")]
-    Avx2,
+    X86_64V3,
     #[cfg(target_arch = "x86_64")]
-    Avx512,
+    X86_64V4,
 }
 
 impl Native {
@@ -35,9 +35,9 @@ impl Native {
         match self {
             Native::Base => "native-base",
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => "native-avx2",
+            Native::X86_64V3 => "native-x86-64-v3",
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => "native-avx512",
+            Native::X86_64V4 => "native-x86-64-v4",
         }
     }
 
@@ -45,9 +45,9 @@ impl Native {
         match self {
             Native::Base => true,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => Isa::Avx2.is_available(),
+            Native::X86_64V3 => Isa::X86_64V3.is_available(),
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => Isa::Avx512.is_available(),
+            Native::X86_64V4 => Isa::X86_64V4.is_available(),
         }
     }
 
@@ -56,9 +56,9 @@ impl Native {
         vec![
             Native::Base,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2,
+            Native::X86_64V3,
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512,
+            Native::X86_64V4,
         ]
     }
 }
@@ -208,8 +208,9 @@ fn argmin_body(x: &[f64]) -> i64 {
     i64::try_from(best.1).unwrap()
 }
 
-/// Defines a module with `base`, `avx2`, and `avx512` functions around one shared body. The
-/// `avx2` and `avx512` functions exist on x86-64 only.
+/// Defines a module with `base`, `v3`, and `v4` functions around one shared body. The
+/// `v3` and `v4` functions are compiled for the x86-64-v3 and x86-64-v4 levels and
+/// exist on x86-64 only.
 macro_rules! native_fns {
     ($name:ident, $body:ident, ($($arg:ident: $ty:ty),*) -> $ret:ty) => {
         mod $name {
@@ -218,13 +219,13 @@ macro_rules! native_fns {
                 $body($($arg),*)
             }
             #[cfg(target_arch = "x86_64")]
-            #[target_feature(enable = "avx2")]
-            pub fn avx2($($arg: $ty),*) -> $ret {
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3")]
+            pub fn v3($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
             #[cfg(target_arch = "x86_64")]
-            #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
-            pub fn avx512($($arg: $ty),*) -> $ret {
+            #[target_feature(enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl")]
+            pub fn v4($($arg: $ty),*) -> $ret {
                 $body($($arg),*)
             }
         }
@@ -249,15 +250,15 @@ macro_rules! call_native {
         match checked.native() {
             Native::Base => $m::base($($arg),*),
             // SAFETY: a `Checked` comes only from `Native::check`, which returned it because
-            // `available` detected avx2. The arguments are ordinary safe references, so only
-            // the CPU feature is required.
+            // `available` found the x86-64-v3 level through `features::runnable`. The
+            // arguments are ordinary safe references, so only the CPU features are required.
             #[cfg(target_arch = "x86_64")]
-            Native::Avx2 => unsafe { $m::avx2($($arg),*) },
+            Native::X86_64V3 => unsafe { $m::v3($($arg),*) },
             // SAFETY: as above, `Native::check` returned the `Checked` because `available`
-            // detected avx512f, avx512bw, avx512vl, and avx512vbmi2. The arguments are
+            // found the x86-64-v4 level through `features::runnable`. The arguments are
             // ordinary safe references.
             #[cfg(target_arch = "x86_64")]
-            Native::Avx512 => unsafe { $m::avx512($($arg),*) },
+            Native::X86_64V4 => unsafe { $m::v4($($arg),*) },
         }
     }};
 }
@@ -267,7 +268,7 @@ struct Interp {
     label: String,
     interp: Interpreter,
     /// Whether it uses the intrinsics backend. On x86-64 the selections, the 64-bit
-    /// `gather`s, and the AVX-512 `scan_by_add` on 64-bit integers have intrinsics entries,
+    /// `gather`s, and the `x86-64-v4` `scan_by_add` on 64-bit integers have intrinsics entries,
     /// so only the `filter`, `gather`, and `scan_by` groups measure these variants. On
     /// aarch64 the selections and the float extremes (`min`, `argmin`) have them. Elsewhere
     /// the intrinsics backend resolves to the scalar entries, so those groups skip it.
@@ -285,7 +286,7 @@ fn interpreters() -> Vec<Interp> {
         .unwrap(),
         intrinsics: false,
     }];
-    for (isa, name) in [(Isa::Avx2, "avx2"), (Isa::Avx512, "avx512")] {
+    for (isa, name) in [(Isa::X86_64V3, "x86-64-v3"), (Isa::X86_64V4, "x86-64-v4")] {
         if !isa.is_available() {
             continue;
         }
@@ -723,8 +724,8 @@ fn indices_in_range(idx: &[i64], n: usize) -> bool {
 }
 
 /// `gather` with the same bounds pass as the kernel. The baseline target uses indexed loads,
-/// the ISA flavors use the hardware gathers, four rows per `vpgatherqq` on AVX2 and eight on
-/// AVX-512, so they are not the shared portable body.
+/// the ISA flavors use the hardware gathers, four rows per `vpgatherqq` at `x86-64-v3` and eight
+/// at `x86-64-v4`, so they are not the shared portable body.
 mod n_gather {
     use super::indices_in_range;
 
@@ -734,8 +735,10 @@ mod n_gather {
     }
 
     #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx2")]
-    pub fn avx2(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3"
+    )]
+    pub fn v3(xs: &[i64], idx: &[i64]) -> Vec<i64> {
         use std::arch::x86_64::{
             __m256i, _mm256_i64gather_epi64, _mm256_loadu_si256, _mm256_storeu_si256,
         };
@@ -744,7 +747,7 @@ mod n_gather {
         let (ic, it) = idx.as_chunks::<4>();
         let (oc, ot) = out.as_chunks_mut::<4>();
         for (i, o) in ic.iter().zip(oc.iter_mut()) {
-            // SAFETY: the function is compiled with avx2, which its caller checked. The load
+            // SAFETY: the function is compiled for x86-64-v3, which its caller checked. The load
             // and store touch exactly the four `i64` of `i` and `o`, unaligned accesses are
             // allowed. Every index lies in `0..xs.len()` by the assertion above, so each
             // gathered address `xs + 8 * i` is a row of `xs`.
@@ -761,15 +764,17 @@ mod n_gather {
     }
 
     #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi2")]
-    pub fn avx512(xs: &[i64], idx: &[i64]) -> Vec<i64> {
+    #[target_feature(
+        enable = "avx,avx2,bmi1,bmi2,f16c,fma,lzcnt,movbe,xsave,cmpxchg16b,popcnt,sse3,sse4.1,sse4.2,ssse3,avx512f,avx512bw,avx512cd,avx512dq,avx512vl"
+    )]
+    pub fn v4(xs: &[i64], idx: &[i64]) -> Vec<i64> {
         use std::arch::x86_64::{_mm512_i64gather_epi64, _mm512_loadu_si512, _mm512_storeu_si512};
         assert!(indices_in_range(idx, xs.len()), "gather index out of range");
         let mut out = vec![0i64; idx.len()];
         let (ic, it) = idx.as_chunks::<8>();
         let (oc, ot) = out.as_chunks_mut::<8>();
         for (i, o) in ic.iter().zip(oc.iter_mut()) {
-            // SAFETY: the function is compiled with avx512f, which its caller checked. The
+            // SAFETY: the function is compiled for x86-64-v4, which its caller checked. The
             // load and store touch exactly the eight `i64` of `i` and `o`, unaligned accesses
             // are allowed. Every index lies in `0..xs.len()` by the assertion above, so each
             // gathered address `xs + 8 * i` is a row of `xs`.
@@ -817,14 +822,14 @@ fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
 fn tier2(c: &mut Criterion) {
     let all_interps = interpreters();
-    // Among the tier 2 kernels only `gather` and, on AVX-512, `scan_by_add` have intrinsics
-    // entries on x86-64, so only their groups measure them. AVX2 `scan_by_add` has none, so
+    // Among the tier 2 kernels only `gather` and, at `x86-64-v4`, `scan_by_add` have intrinsics
+    // entries on x86-64, so only their groups measure them. `x86-64-v3` `scan_by_add` has none, so
     // its intrinsics variant would rerun the auto entry and is left out.
     let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
     let all: Vec<&Interp> = all_interps.iter().collect();
     let scan_by: Vec<&Interp> = all_interps
         .iter()
-        .filter(|it| !it.intrinsics || it.label == "avx512-intrinsics")
+        .filter(|it| !it.intrinsics || it.label == "x86-64-v4-intrinsics")
         .collect();
     let nats = natives();
     let bytes = u64::try_from(N * size_of::<i64>()).unwrap();
@@ -1074,16 +1079,16 @@ fn crossover(_c: &mut Criterion) {
 }
 
 /// The ISA and backend of the interpreter in the sweep and the native flavor it is compared
-/// with. On x86-64 that is the best of AVX-512 and AVX2 with the `auto` backend.
+/// with. On x86-64 that is the best of x86-64-v4 and x86-64-v3 with the `auto` backend.
 #[cfg(target_arch = "x86_64")]
 fn crossover_target() -> (Isa, Backend, Checked) {
-    let (best, nat) = if Isa::Avx512.is_available() {
-        (Isa::Avx512, Native::Avx512)
+    let (best, nat) = if Isa::X86_64V4.is_available() {
+        (Isa::X86_64V4, Native::X86_64V4)
     } else {
-        (Isa::Avx2, Native::Avx2)
+        (Isa::X86_64V3, Native::X86_64V3)
     };
-    assert!(best.is_available(), "the benchmark needs avx2");
-    let nat = nat.check().expect("the benchmark needs avx2");
+    assert!(best.is_available(), "the benchmark needs x86-64-v3");
+    let nat = nat.check().expect("the benchmark needs x86-64-v3");
     (best, Backend::Auto, nat)
 }
 

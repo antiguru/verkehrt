@@ -1,0 +1,633 @@
+# base crossover a start 21:48:41 load 4.18 3.47 3.89
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking crossover/sum/interp/16
+Benchmarking crossover/sum/interp/16: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/16: Collecting 20 samples in estimated 300.00 ms (1.1M iterations)
+Benchmarking crossover/sum/interp/16: Analyzing
+crossover/sum/interp/16 time:   [272.97 ns 273.96 ns 274.78 ns]
+                        thrpt:  [444.25 MiB/s 445.58 MiB/s 447.19 MiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/sum/native/16
+Benchmarking crossover/sum/native/16: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/16: Collecting 20 samples in estimated 300.00 ms (110M iterations)
+Benchmarking crossover/sum/native/16: Analyzing
+crossover/sum/native/16 time:   [2.6972 ns 2.7060 ns 2.7187 ns]
+                        thrpt:  [43.848 GiB/s 44.054 GiB/s 44.197 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+
+Benchmarking crossover/mul/interp/16
+Benchmarking crossover/mul/interp/16: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/16: Collecting 20 samples in estimated 300.03 ms (849k iterations)
+Benchmarking crossover/mul/interp/16: Analyzing
+crossover/mul/interp/16 time:   [355.85 ns 357.76 ns 359.47 ns]
+                        thrpt:  [679.17 MiB/s 682.41 MiB/s 686.07 MiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/mul/native/16
+Benchmarking crossover/mul/native/16: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/16: Collecting 20 samples in estimated 300.00 ms (23M iterations)
+Benchmarking crossover/mul/native/16: Analyzing
+crossover/mul/native/16 time:   [13.099 ns 13.189 ns 13.286 ns]
+                        thrpt:  [17.945 GiB/s 18.078 GiB/s 18.201 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking crossover/sum/interp/32
+Benchmarking crossover/sum/interp/32: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/32: Collecting 20 samples in estimated 300.04 ms (1.0M iterations)
+Benchmarking crossover/sum/interp/32: Analyzing
+crossover/sum/interp/32 time:   [275.57 ns 276.56 ns 277.38 ns]
+                        thrpt:  [880.15 MiB/s 882.79 MiB/s 885.96 MiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/32
+Benchmarking crossover/sum/native/32: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/32: Collecting 20 samples in estimated 300.00 ms (90M iterations)
+Benchmarking crossover/sum/native/32: Analyzing
+crossover/sum/native/32 time:   [3.2858 ns 3.3006 ns 3.3219 ns]
+                        thrpt:  [71.771 GiB/s 72.234 GiB/s 72.560 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+
+Benchmarking crossover/mul/interp/32
+Benchmarking crossover/mul/interp/32: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/32: Collecting 20 samples in estimated 300.01 ms (848k iterations)
+Benchmarking crossover/mul/interp/32: Analyzing
+crossover/mul/interp/32 time:   [353.35 ns 353.97 ns 354.65 ns]
+                        thrpt:  [1.3445 GiB/s 1.3471 GiB/s 1.3495 GiB/s]
+Benchmarking crossover/mul/native/32
+Benchmarking crossover/mul/native/32: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/32: Collecting 20 samples in estimated 300.00 ms (18M iterations)
+Benchmarking crossover/mul/native/32: Analyzing
+crossover/mul/native/32 time:   [16.506 ns 16.553 ns 16.637 ns]
+                        thrpt:  [28.661 GiB/s 28.806 GiB/s 28.889 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking crossover/sum/interp/64
+Benchmarking crossover/sum/interp/64: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/64: Collecting 20 samples in estimated 300.05 ms (1.1M iterations)
+Benchmarking crossover/sum/interp/64: Analyzing
+crossover/sum/interp/64 time:   [263.22 ns 263.67 ns 264.08 ns]
+                        thrpt:  [1.8057 GiB/s 1.8084 GiB/s 1.8115 GiB/s]
+Benchmarking crossover/sum/native/64
+Benchmarking crossover/sum/native/64: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/64: Collecting 20 samples in estimated 300.00 ms (74M iterations)
+Benchmarking crossover/sum/native/64: Analyzing
+crossover/sum/native/64 time:   [4.0093 ns 4.0234 ns 4.0375 ns]
+                        thrpt:  [118.10 GiB/s 118.52 GiB/s 118.93 GiB/s]
+
+Benchmarking crossover/mul/interp/64
+Benchmarking crossover/mul/interp/64: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/64: Collecting 20 samples in estimated 300.02 ms (848k iterations)
+Benchmarking crossover/mul/interp/64: Analyzing
+crossover/mul/interp/64 time:   [350.97 ns 352.06 ns 353.82 ns]
+                        thrpt:  [2.6953 GiB/s 2.7089 GiB/s 2.7173 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/mul/native/64
+Benchmarking crossover/mul/native/64: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/64: Collecting 20 samples in estimated 300.00 ms (13M iterations)
+Benchmarking crossover/mul/native/64: Analyzing
+crossover/mul/native/64 time:   [22.880 ns 22.954 ns 23.019 ns]
+                        thrpt:  [41.430 GiB/s 41.548 GiB/s 41.681 GiB/s]
+
+Benchmarking crossover/sum/interp/128
+Benchmarking crossover/sum/interp/128: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/128: Collecting 20 samples in estimated 300.04 ms (1.1M iterations)
+Benchmarking crossover/sum/interp/128: Analyzing
+crossover/sum/interp/128
+                        time:   [267.01 ns 267.88 ns 269.39 ns]
+                        thrpt:  [3.5402 GiB/s 3.5601 GiB/s 3.5716 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/128
+Benchmarking crossover/sum/native/128: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/128: Collecting 20 samples in estimated 300.00 ms (53M iterations)
+Benchmarking crossover/sum/native/128: Analyzing
+crossover/sum/native/128
+                        time:   [5.6441 ns 5.6767 ns 5.7210 ns]
+                        thrpt:  [166.70 GiB/s 168.00 GiB/s 168.97 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking crossover/mul/interp/128
+Benchmarking crossover/mul/interp/128: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/128: Collecting 20 samples in estimated 300.07 ms (830k iterations)
+Benchmarking crossover/mul/interp/128: Analyzing
+crossover/mul/interp/128
+                        time:   [361.60 ns 363.83 ns 366.84 ns]
+                        thrpt:  [5.1994 GiB/s 5.2424 GiB/s 5.2747 GiB/s]
+Found 4 outliers among 20 measurements (20.00%)
+  2 (10.00%) low severe
+  1 (5.00%) low mild
+  1 (5.00%) high severe
+Benchmarking crossover/mul/native/128
+Benchmarking crossover/mul/native/128: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/128: Collecting 20 samples in estimated 300.00 ms (8.2M iterations)
+Benchmarking crossover/mul/native/128: Analyzing
+crossover/mul/native/128
+                        time:   [36.889 ns 37.169 ns 37.538 ns]
+                        thrpt:  [50.811 GiB/s 51.315 GiB/s 51.706 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low severe
+  2 (10.00%) low mild
+
+Benchmarking crossover/sum/interp/256
+Benchmarking crossover/sum/interp/256: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/256: Collecting 20 samples in estimated 300.02 ms (1.1M iterations)
+Benchmarking crossover/sum/interp/256: Analyzing
+crossover/sum/interp/256
+                        time:   [275.34 ns 275.72 ns 276.07 ns]
+                        thrpt:  [6.9088 GiB/s 6.9178 GiB/s 6.9271 GiB/s]
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) low mild
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/256
+Benchmarking crossover/sum/native/256: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/256: Collecting 20 samples in estimated 300.00 ms (32M iterations)
+Benchmarking crossover/sum/native/256: Analyzing
+crossover/sum/native/256
+                        time:   [9.4220 ns 9.4291 ns 9.4363 ns]
+                        thrpt:  [202.13 GiB/s 202.28 GiB/s 202.44 GiB/s]
+
+Benchmarking crossover/mul/interp/256
+Benchmarking crossover/mul/interp/256: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/256: Collecting 20 samples in estimated 300.03 ms (696k iterations)
+Benchmarking crossover/mul/interp/256: Analyzing
+crossover/mul/interp/256
+                        time:   [424.70 ns 426.65 ns 430.55 ns]
+                        thrpt:  [8.8600 GiB/s 8.9410 GiB/s 8.9820 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/mul/native/256
+Benchmarking crossover/mul/native/256: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/256: Collecting 20 samples in estimated 300.01 ms (4.0M iterations)
+Benchmarking crossover/mul/native/256: Analyzing
+crossover/mul/native/256
+                        time:   [74.987 ns 75.167 ns 75.329 ns]
+                        thrpt:  [50.640 GiB/s 50.750 GiB/s 50.871 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking crossover/sum/interp/512
+Benchmarking crossover/sum/interp/512: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/512: Collecting 20 samples in estimated 300.03 ms (1.0M iterations)
+Benchmarking crossover/sum/interp/512: Analyzing
+crossover/sum/interp/512
+                        time:   [287.81 ns 288.95 ns 290.46 ns]
+                        thrpt:  [13.133 GiB/s 13.202 GiB/s 13.254 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/512
+Benchmarking crossover/sum/native/512: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/512: Collecting 20 samples in estimated 300.00 ms (18M iterations)
+Benchmarking crossover/sum/native/512: Analyzing
+crossover/sum/native/512
+                        time:   [16.598 ns 16.640 ns 16.683 ns]
+                        thrpt:  [228.65 GiB/s 229.25 GiB/s 229.82 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) low mild
+
+Benchmarking crossover/mul/interp/512
+Benchmarking crossover/mul/interp/512: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/512: Collecting 20 samples in estimated 300.02 ms (623k iterations)
+Benchmarking crossover/mul/interp/512: Analyzing
+crossover/mul/interp/512
+                        time:   [510.28 ns 512.04 ns 513.56 ns]
+                        thrpt:  [14.856 GiB/s 14.900 GiB/s 14.951 GiB/s]
+Benchmarking crossover/mul/native/512
+Benchmarking crossover/mul/native/512: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/512: Collecting 20 samples in estimated 300.01 ms (2.3M iterations)
+Benchmarking crossover/mul/native/512: Analyzing
+crossover/mul/native/512
+                        time:   [129.37 ns 129.76 ns 130.45 ns]
+                        thrpt:  [58.487 GiB/s 58.798 GiB/s 58.973 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+
+Benchmarking crossover/sum/interp/1024
+Benchmarking crossover/sum/interp/1024: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/1024: Collecting 20 samples in estimated 300.03 ms (996k iterations)
+Benchmarking crossover/sum/interp/1024: Analyzing
+crossover/sum/interp/1024
+                        time:   [303.12 ns 305.84 ns 309.59 ns]
+                        thrpt:  [24.644 GiB/s 24.946 GiB/s 25.169 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking crossover/sum/native/1024
+Benchmarking crossover/sum/native/1024: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/1024: Collecting 20 samples in estimated 300.00 ms (8.3M iterations)
+Benchmarking crossover/sum/native/1024: Analyzing
+crossover/sum/native/1024
+                        time:   [35.680 ns 35.929 ns 36.151 ns]
+                        thrpt:  [211.04 GiB/s 212.35 GiB/s 213.83 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking crossover/mul/interp/1024
+Benchmarking crossover/mul/interp/1024: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/1024: Collecting 20 samples in estimated 300.06 ms (488k iterations)
+Benchmarking crossover/mul/interp/1024: Analyzing
+crossover/mul/interp/1024
+                        time:   [603.73 ns 607.43 ns 611.58 ns]
+                        thrpt:  [24.950 GiB/s 25.120 GiB/s 25.274 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking crossover/mul/native/1024
+Benchmarking crossover/mul/native/1024: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/1024: Collecting 20 samples in estimated 300.03 ms (1.1M iterations)
+Benchmarking crossover/mul/native/1024: Analyzing
+crossover/mul/native/1024
+                        time:   [265.44 ns 271.72 ns 279.95 ns]
+                        thrpt:  [54.505 GiB/s 56.157 GiB/s 57.484 GiB/s]
+Found 4 outliers among 20 measurements (20.00%)
+  4 (20.00%) low severe
+
+Benchmarking crossover/sum/interp/2048
+Benchmarking crossover/sum/interp/2048: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/2048: Collecting 20 samples in estimated 300.03 ms (856k iterations)
+Benchmarking crossover/sum/interp/2048: Analyzing
+crossover/sum/interp/2048
+                        time:   [344.22 ns 344.90 ns 345.67 ns]
+                        thrpt:  [44.142 GiB/s 44.242 GiB/s 44.329 GiB/s]
+Benchmarking crossover/sum/native/2048
+Benchmarking crossover/sum/native/2048: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/2048: Collecting 20 samples in estimated 300.01 ms (3.8M iterations)
+Benchmarking crossover/sum/native/2048: Analyzing
+crossover/sum/native/2048
+                        time:   [79.265 ns 79.485 ns 79.860 ns]
+                        thrpt:  [191.07 GiB/s 191.97 GiB/s 192.50 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking crossover/mul/interp/2048
+Benchmarking crossover/mul/interp/2048: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/2048: Collecting 20 samples in estimated 300.29 ms (193k iterations)
+Benchmarking crossover/mul/interp/2048: Analyzing
+crossover/mul/interp/2048
+                        time:   [1.5432 µs 1.5500 µs 1.5580 µs]
+                        thrpt:  [19.588 GiB/s 19.689 GiB/s 19.775 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking crossover/mul/native/2048
+Benchmarking crossover/mul/native/2048: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/2048: Collecting 20 samples in estimated 300.08 ms (248k iterations)
+Benchmarking crossover/mul/native/2048: Analyzing
+crossover/mul/native/2048
+                        time:   [1.2027 µs 1.2040 µs 1.2063 µs]
+                        thrpt:  [25.299 GiB/s 25.347 GiB/s 25.373 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking crossover/sum/interp/4096
+Benchmarking crossover/sum/interp/4096: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/4096: Collecting 20 samples in estimated 300.01 ms (694k iterations)
+Benchmarking crossover/sum/interp/4096: Analyzing
+crossover/sum/interp/4096
+                        time:   [431.16 ns 431.96 ns 432.87 ns]
+                        thrpt:  [70.500 GiB/s 70.650 GiB/s 70.781 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high mild
+Benchmarking crossover/sum/native/4096
+Benchmarking crossover/sum/native/4096: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/4096: Collecting 20 samples in estimated 300.03 ms (1.8M iterations)
+Benchmarking crossover/sum/native/4096: Analyzing
+crossover/sum/native/4096
+                        time:   [165.47 ns 165.54 ns 165.62 ns]
+                        thrpt:  [184.26 GiB/s 184.35 GiB/s 184.43 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high severe
+
+Benchmarking crossover/mul/interp/4096
+Benchmarking crossover/mul/interp/4096: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/4096: Collecting 20 samples in estimated 300.25 ms (194k iterations)
+Benchmarking crossover/mul/interp/4096: Analyzing
+crossover/mul/interp/4096
+                        time:   [1.5396 µs 1.5454 µs 1.5523 µs]
+                        thrpt:  [39.320 GiB/s 39.496 GiB/s 39.644 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high severe
+Benchmarking crossover/mul/native/4096
+Benchmarking crossover/mul/native/4096: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/4096: Collecting 20 samples in estimated 300.19 ms (307k iterations)
+Benchmarking crossover/mul/native/4096: Analyzing
+crossover/mul/native/4096
+                        time:   [970.53 ns 971.54 ns 973.29 ns]
+                        thrpt:  [62.710 GiB/s 62.823 GiB/s 62.888 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking crossover/sum/interp/8192
+Benchmarking crossover/sum/interp/8192: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/8192: Collecting 20 samples in estimated 300.15 ms (377k iterations)
+Benchmarking crossover/sum/interp/8192: Analyzing
+crossover/sum/interp/8192
+                        time:   [809.24 ns 819.84 ns 834.24 ns]
+                        thrpt:  [73.163 GiB/s 74.448 GiB/s 75.422 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) low mild
+Benchmarking crossover/sum/native/8192
+Benchmarking crossover/sum/native/8192: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/8192: Collecting 20 samples in estimated 300.08 ms (651k iterations)
+Benchmarking crossover/sum/native/8192: Analyzing
+crossover/sum/native/8192
+                        time:   [464.38 ns 465.17 ns 465.84 ns]
+                        thrpt:  [131.02 GiB/s 131.21 GiB/s 131.43 GiB/s]
+
+Benchmarking crossover/mul/interp/8192
+Benchmarking crossover/mul/interp/8192: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/8192: Collecting 20 samples in estimated 300.06 ms (108k iterations)
+Benchmarking crossover/mul/interp/8192: Analyzing
+crossover/mul/interp/8192
+                        time:   [2.7708 µs 2.7783 µs 2.7830 µs]
+                        thrpt:  [43.863 GiB/s 43.937 GiB/s 44.056 GiB/s]
+Benchmarking crossover/mul/native/8192
+Benchmarking crossover/mul/native/8192: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/8192: Collecting 20 samples in estimated 300.35 ms (169k iterations)
+Benchmarking crossover/mul/native/8192: Analyzing
+crossover/mul/native/8192
+                        time:   [1.7768 µs 1.7793 µs 1.7816 µs]
+                        thrpt:  [68.515 GiB/s 68.604 GiB/s 68.704 GiB/s]
+
+Benchmarking crossover/sum/interp/16384
+Benchmarking crossover/sum/interp/16384: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/16384: Collecting 20 samples in estimated 300.23 ms (229k iterations)
+Benchmarking crossover/sum/interp/16384: Analyzing
+crossover/sum/interp/16384
+                        time:   [1.2915 µs 1.2949 µs 1.2978 µs]
+                        thrpt:  [94.062 GiB/s 94.269 GiB/s 94.522 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low severe
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/16384
+Benchmarking crossover/sum/native/16384: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/16384: Collecting 20 samples in estimated 300.17 ms (322k iterations)
+Benchmarking crossover/sum/native/16384: Analyzing
+crossover/sum/native/16384
+                        time:   [923.41 ns 924.59 ns 925.57 ns]
+                        thrpt:  [131.89 GiB/s 132.03 GiB/s 132.19 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) low mild
+
+Benchmarking crossover/mul/interp/16384
+Benchmarking crossover/mul/interp/16384: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/16384: Collecting 20 samples in estimated 300.57 ms (64k iterations)
+Benchmarking crossover/mul/interp/16384: Analyzing
+crossover/mul/interp/16384
+                        time:   [4.6286 µs 4.6364 µs 4.6467 µs]
+                        thrpt:  [52.541 GiB/s 52.658 GiB/s 52.746 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low mild
+  2 (10.00%) high mild
+Benchmarking crossover/mul/native/16384
+Benchmarking crossover/mul/native/16384: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/16384: Collecting 20 samples in estimated 300.01 ms (83k iterations)
+Benchmarking crossover/mul/native/16384: Analyzing
+crossover/mul/native/16384
+                        time:   [3.6185 µs 3.6370 µs 3.6755 µs]
+                        thrpt:  [66.423 GiB/s 67.127 GiB/s 67.470 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking crossover/sum/interp/32768
+Benchmarking crossover/sum/interp/32768: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/32768: Collecting 20 samples in estimated 300.19 ms (138k iterations)
+Benchmarking crossover/sum/interp/32768: Analyzing
+crossover/sum/interp/32768
+                        time:   [2.2225 µs 2.2238 µs 2.2251 µs]
+                        thrpt:  [109.72 GiB/s 109.79 GiB/s 109.85 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low severe
+Benchmarking crossover/sum/native/32768
+Benchmarking crossover/sum/native/32768: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/32768: Collecting 20 samples in estimated 300.26 ms (162k iterations)
+Benchmarking crossover/sum/native/32768: Analyzing
+crossover/sum/native/32768
+                        time:   [1.8404 µs 1.8470 µs 1.8588 µs]
+                        thrpt:  [131.34 GiB/s 132.18 GiB/s 132.65 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking crossover/mul/interp/32768
+Benchmarking crossover/mul/interp/32768: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/32768: Collecting 20 samples in estimated 300.22 ms (32k iterations)
+Benchmarking crossover/mul/interp/32768: Analyzing
+crossover/mul/interp/32768
+                        time:   [9.3752 µs 9.3969 µs 9.4153 µs]
+                        thrpt:  [51.861 GiB/s 51.962 GiB/s 52.082 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/mul/native/32768
+Benchmarking crossover/mul/native/32768: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/32768: Collecting 20 samples in estimated 300.87 ms (41k iterations)
+Benchmarking crossover/mul/native/32768: Analyzing
+crossover/mul/native/32768
+                        time:   [7.1916 µs 7.1987 µs 7.2047 µs]
+                        thrpt:  [67.773 GiB/s 67.829 GiB/s 67.896 GiB/s]
+
+Benchmarking crossover/sum/interp/65536
+Benchmarking crossover/sum/interp/65536: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/65536: Collecting 20 samples in estimated 300.46 ms (70k iterations)
+Benchmarking crossover/sum/interp/65536: Analyzing
+crossover/sum/interp/65536
+                        time:   [4.3044 µs 4.3165 µs 4.3293 µs]
+                        thrpt:  [112.78 GiB/s 113.12 GiB/s 113.44 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/sum/native/65536
+Benchmarking crossover/sum/native/65536: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/65536: Collecting 20 samples in estimated 300.15 ms (106k iterations)
+Benchmarking crossover/sum/native/65536: Analyzing
+crossover/sum/native/65536
+                        time:   [2.8349 µs 2.8628 µs 2.8982 µs]
+                        thrpt:  [168.48 GiB/s 170.56 GiB/s 172.24 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking crossover/mul/interp/65536
+Benchmarking crossover/mul/interp/65536: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/65536: Collecting 20 samples in estimated 301.64 ms (12k iterations)
+Benchmarking crossover/mul/interp/65536: Analyzing
+crossover/mul/interp/65536
+                        time:   [25.764 µs 25.849 µs 25.916 µs]
+                        thrpt:  [37.681 GiB/s 37.780 GiB/s 37.904 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking crossover/mul/native/65536
+Benchmarking crossover/mul/native/65536: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/65536: Collecting 20 samples in estimated 300.94 ms (16k iterations)
+Benchmarking crossover/mul/native/65536: Analyzing
+crossover/mul/native/65536
+                        time:   [19.234 µs 19.276 µs 19.326 µs]
+                        thrpt:  [50.532 GiB/s 50.662 GiB/s 50.773 GiB/s]
+Found 4 outliers among 20 measurements (20.00%)
+  2 (10.00%) low mild
+  2 (10.00%) high mild
+
+Benchmarking crossover/sum/interp/131072
+Benchmarking crossover/sum/interp/131072: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/131072: Collecting 20 samples in estimated 301.51 ms (29k iterations)
+Benchmarking crossover/sum/interp/131072: Analyzing
+crossover/sum/interp/131072
+                        time:   [10.405 µs 10.428 µs 10.463 µs]
+                        thrpt:  [93.339 GiB/s 93.652 GiB/s 93.858 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/sum/native/131072
+Benchmarking crossover/sum/native/131072: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/131072: Collecting 20 samples in estimated 300.58 ms (31k iterations)
+Benchmarking crossover/sum/native/131072: Analyzing
+crossover/sum/native/131072
+                        time:   [9.7106 µs 9.7294 µs 9.7486 µs]
+                        thrpt:  [100.17 GiB/s 100.37 GiB/s 100.57 GiB/s]
+
+Benchmarking crossover/mul/interp/131072
+Benchmarking crossover/mul/interp/131072: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/131072: Collecting 20 samples in estimated 307.44 ms (5460 iterations)
+Benchmarking crossover/mul/interp/131072: Analyzing
+crossover/mul/interp/131072
+                        time:   [56.067 µs 56.159 µs 56.243 µs]
+                        thrpt:  [34.726 GiB/s 34.779 GiB/s 34.836 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking crossover/mul/native/131072
+Benchmarking crossover/mul/native/131072: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/131072: Collecting 20 samples in estimated 307.16 ms (7350 iterations)
+Benchmarking crossover/mul/native/131072: Analyzing
+crossover/mul/native/131072
+                        time:   [41.898 µs 41.962 µs 42.025 µs]
+                        thrpt:  [46.476 GiB/s 46.545 GiB/s 46.616 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+
+Benchmarking crossover/sum/interp/262144
+Benchmarking crossover/sum/interp/262144: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/262144: Collecting 20 samples in estimated 304.92 ms (11k iterations)
+Benchmarking crossover/sum/interp/262144: Analyzing
+crossover/sum/interp/262144
+                        time:   [27.608 µs 27.684 µs 27.761 µs]
+                        thrpt:  [70.354 GiB/s 70.552 GiB/s 70.744 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/sum/native/262144
+Benchmarking crossover/sum/native/262144: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/262144: Collecting 20 samples in estimated 303.71 ms (12k iterations)
+Benchmarking crossover/sum/native/262144: Analyzing
+crossover/sum/native/262144
+                        time:   [25.813 µs 25.843 µs 25.870 µs]
+                        thrpt:  [75.498 GiB/s 75.575 GiB/s 75.664 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+
+Benchmarking crossover/mul/interp/262144
+Benchmarking crossover/mul/interp/262144: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/262144: Collecting 20 samples in estimated 310.36 ms (2730 iterations)
+Benchmarking crossover/mul/interp/262144: Analyzing
+crossover/mul/interp/262144
+                        time:   [113.69 µs 114.41 µs 115.25 µs]
+                        thrpt:  [33.895 GiB/s 34.143 GiB/s 34.358 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking crossover/mul/native/262144
+Benchmarking crossover/mul/native/262144: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/262144: Collecting 20 samples in estimated 300.86 ms (3360 iterations)
+Benchmarking crossover/mul/native/262144: Analyzing
+crossover/mul/native/262144
+                        time:   [92.427 µs 92.539 µs 92.647 µs]
+                        thrpt:  [42.163 GiB/s 42.212 GiB/s 42.263 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+
+Benchmarking crossover/sum/interp/524288
+Benchmarking crossover/sum/interp/524288: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/524288: Collecting 20 samples in estimated 303.51 ms (5880 iterations)
+Benchmarking crossover/sum/interp/524288: Analyzing
+crossover/sum/interp/524288
+                        time:   [51.438 µs 51.588 µs 51.788 µs]
+                        thrpt:  [75.427 GiB/s 75.720 GiB/s 75.940 GiB/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking crossover/sum/native/524288
+Benchmarking crossover/sum/native/524288: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/524288: Collecting 20 samples in estimated 308.77 ms (6090 iterations)
+Benchmarking crossover/sum/native/524288: Analyzing
+crossover/sum/native/524288
+                        time:   [51.050 µs 51.157 µs 51.265 µs]
+                        thrpt:  [76.198 GiB/s 76.358 GiB/s 76.519 GiB/s]
+
+Benchmarking crossover/mul/interp/524288
+Benchmarking crossover/mul/interp/524288: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/524288: Collecting 20 samples in estimated 337.30 ms (1680 iterations)
+Benchmarking crossover/mul/interp/524288: Analyzing
+crossover/mul/interp/524288
+                        time:   [201.07 µs 201.53 µs 202.14 µs]
+                        thrpt:  [38.650 GiB/s 38.766 GiB/s 38.855 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking crossover/mul/native/524288
+Benchmarking crossover/mul/native/524288: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/524288: Collecting 20 samples in estimated 316.27 ms (1890 iterations)
+Benchmarking crossover/mul/native/524288: Analyzing
+crossover/mul/native/524288
+                        time:   [172.28 µs 173.38 µs 174.34 µs]
+                        thrpt:  [44.811 GiB/s 45.061 GiB/s 45.347 GiB/s]
+
+Benchmarking crossover/sum/interp/1048576
+Benchmarking crossover/sum/interp/1048576: Warming up for 100.00 ms
+Benchmarking crossover/sum/interp/1048576: Collecting 20 samples in estimated 309.31 ms (2940 iterations)
+Benchmarking crossover/sum/interp/1048576: Analyzing
+crossover/sum/interp/1048576
+                        time:   [106.02 µs 106.23 µs 106.43 µs]
+                        thrpt:  [73.408 GiB/s 73.543 GiB/s 73.689 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking crossover/sum/native/1048576
+Benchmarking crossover/sum/native/1048576: Warming up for 100.00 ms
+Benchmarking crossover/sum/native/1048576: Collecting 20 samples in estimated 302.29 ms (3150 iterations)
+Benchmarking crossover/sum/native/1048576: Analyzing
+crossover/sum/native/1048576
+                        time:   [96.076 µs 96.442 µs 96.809 µs]
+                        thrpt:  [80.700 GiB/s 81.007 GiB/s 81.316 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking crossover/mul/interp/1048576
+Benchmarking crossover/mul/interp/1048576: Warming up for 100.00 ms
+Benchmarking crossover/mul/interp/1048576: Collecting 20 samples in estimated 351.97 ms (840 iterations)
+Benchmarking crossover/mul/interp/1048576: Analyzing
+crossover/mul/interp/1048576
+                        time:   [415.81 µs 418.10 µs 420.67 µs]
+                        thrpt:  [37.143 GiB/s 37.372 GiB/s 37.577 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking crossover/mul/native/1048576
+Benchmarking crossover/mul/native/1048576: Warming up for 100.00 ms
+Benchmarking crossover/mul/native/1048576: Collecting 20 samples in estimated 306.57 ms (840 iterations)
+Benchmarking crossover/mul/native/1048576: Analyzing
+crossover/mul/native/1048576
+                        time:   [359.12 µs 363.32 µs 367.99 µs]
+                        thrpt:  [42.461 GiB/s 43.006 GiB/s 43.509 GiB/s]
+
+# end 21:49:37 load 7.85 4.40 4.17

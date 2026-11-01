@@ -1,0 +1,241 @@
+# base acceptance a start 21:38:17 load 3.03 3.78 4.50
+Benchmarking acceptance/clickbench/q01/scalar
+Benchmarking acceptance/clickbench/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/scalar: Collecting 10 samples in estimated 3.0037 s (13k iterations)
+Benchmarking acceptance/clickbench/q01/scalar: Analyzing
+acceptance/clickbench/q01/scalar
+                        time:   [223.53 µs 223.68 µs 223.87 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q01/avx2-auto
+Benchmarking acceptance/clickbench/q01/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/avx2-auto: Collecting 10 samples in estimated 3.0014 s (29k iterations)
+Benchmarking acceptance/clickbench/q01/avx2-auto: Analyzing
+acceptance/clickbench/q01/avx2-auto
+                        time:   [101.39 µs 102.35 µs 103.54 µs]
+Benchmarking acceptance/clickbench/q01/avx2-intrinsics
+Benchmarking acceptance/clickbench/q01/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/avx2-intrinsics: Collecting 10 samples in estimated 3.0041 s (29k iterations)
+Benchmarking acceptance/clickbench/q01/avx2-intrinsics: Analyzing
+acceptance/clickbench/q01/avx2-intrinsics
+                        time:   [101.59 µs 101.69 µs 101.77 µs]
+Benchmarking acceptance/clickbench/q01/avx512-auto
+Benchmarking acceptance/clickbench/q01/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/avx512-auto: Collecting 10 samples in estimated 3.0023 s (31k iterations)
+Benchmarking acceptance/clickbench/q01/avx512-auto: Analyzing
+acceptance/clickbench/q01/avx512-auto
+                        time:   [99.196 µs 99.706 µs 99.952 µs]
+Benchmarking acceptance/clickbench/q01/avx512-intrinsics
+Benchmarking acceptance/clickbench/q01/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/avx512-intrinsics: Collecting 10 samples in estimated 3.0000 s (30k iterations)
+Benchmarking acceptance/clickbench/q01/avx512-intrinsics: Analyzing
+acceptance/clickbench/q01/avx512-intrinsics
+                        time:   [98.313 µs 98.682 µs 99.209 µs]
+
+Benchmarking acceptance/clickbench/q02/scalar
+Benchmarking acceptance/clickbench/q02/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/scalar: Collecting 10 samples in estimated 3.0036 s (8800 iterations)
+Benchmarking acceptance/clickbench/q02/scalar: Analyzing
+acceptance/clickbench/q02/scalar
+                        time:   [341.09 µs 341.45 µs 341.90 µs]
+Benchmarking acceptance/clickbench/q02/avx2-auto
+Benchmarking acceptance/clickbench/q02/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/avx2-auto: Collecting 10 samples in estimated 3.0018 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/avx2-auto: Analyzing
+acceptance/clickbench/q02/avx2-auto
+                        time:   [192.90 µs 193.02 µs 193.10 µs]
+Benchmarking acceptance/clickbench/q02/avx2-intrinsics
+Benchmarking acceptance/clickbench/q02/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/avx2-intrinsics: Collecting 10 samples in estimated 3.0057 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/avx2-intrinsics: Analyzing
+acceptance/clickbench/q02/avx2-intrinsics
+                        time:   [192.35 µs 192.75 µs 193.16 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q02/avx512-auto
+Benchmarking acceptance/clickbench/q02/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/avx512-auto: Collecting 10 samples in estimated 3.0033 s (17k iterations)
+Benchmarking acceptance/clickbench/q02/avx512-auto: Analyzing
+acceptance/clickbench/q02/avx512-auto
+                        time:   [175.28 µs 175.40 µs 175.59 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q02/avx512-intrinsics
+Benchmarking acceptance/clickbench/q02/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/avx512-intrinsics: Collecting 10 samples in estimated 3.0014 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/avx512-intrinsics: Analyzing
+acceptance/clickbench/q02/avx512-intrinsics
+                        time:   [176.71 µs 179.02 µs 184.48 µs]
+
+Benchmarking acceptance/clickbench/q06/scalar
+Benchmarking acceptance/clickbench/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/scalar: Collecting 10 samples in estimated 3.0127 s (5720 iterations)
+Benchmarking acceptance/clickbench/q06/scalar: Analyzing
+acceptance/clickbench/q06/scalar
+                        time:   [525.25 µs 525.74 µs 526.33 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q06/avx2-auto
+Benchmarking acceptance/clickbench/q06/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/avx2-auto: Collecting 10 samples in estimated 3.0025 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/avx2-auto: Analyzing
+acceptance/clickbench/q06/avx2-auto
+                        time:   [202.68 µs 202.92 µs 203.15 µs]
+Benchmarking acceptance/clickbench/q06/avx2-intrinsics
+Benchmarking acceptance/clickbench/q06/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/avx2-intrinsics: Collecting 10 samples in estimated 3.0095 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/avx2-intrinsics: Analyzing
+acceptance/clickbench/q06/avx2-intrinsics
+                        time:   [204.92 µs 205.10 µs 205.30 µs]
+Benchmarking acceptance/clickbench/q06/avx512-auto
+Benchmarking acceptance/clickbench/q06/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/avx512-auto: Collecting 10 samples in estimated 3.0071 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/avx512-auto: Analyzing
+acceptance/clickbench/q06/avx512-auto
+                        time:   [201.14 µs 201.46 µs 201.65 µs]
+Benchmarking acceptance/clickbench/q06/avx512-intrinsics
+Benchmarking acceptance/clickbench/q06/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/avx512-intrinsics: Collecting 10 samples in estimated 3.0055 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/avx512-intrinsics: Analyzing
+acceptance/clickbench/q06/avx512-intrinsics
+                        time:   [201.57 µs 201.69 µs 201.87 µs]
+
+Benchmarking acceptance/clickbench/q07/scalar
+Benchmarking acceptance/clickbench/q07/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/scalar: Collecting 10 samples in estimated 3.0414 s (3190 iterations)
+Benchmarking acceptance/clickbench/q07/scalar: Analyzing
+acceptance/clickbench/q07/scalar
+                        time:   [952.42 µs 953.10 µs 953.96 µs]
+Benchmarking acceptance/clickbench/q07/avx2-auto
+Benchmarking acceptance/clickbench/q07/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/avx2-auto: Collecting 10 samples in estimated 3.0022 s (4290 iterations)
+Benchmarking acceptance/clickbench/q07/avx2-auto: Analyzing
+acceptance/clickbench/q07/avx2-auto
+                        time:   [698.72 µs 700.09 µs 702.32 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q07/avx2-intrinsics
+Benchmarking acceptance/clickbench/q07/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/avx2-intrinsics: Collecting 10 samples in estimated 3.0026 s (4950 iterations)
+Benchmarking acceptance/clickbench/q07/avx2-intrinsics: Analyzing
+acceptance/clickbench/q07/avx2-intrinsics
+                        time:   [608.92 µs 609.97 µs 611.50 µs]
+Benchmarking acceptance/clickbench/q07/avx512-auto
+Benchmarking acceptance/clickbench/q07/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/avx512-auto: Collecting 10 samples in estimated 3.0297 s (4400 iterations)
+Benchmarking acceptance/clickbench/q07/avx512-auto: Analyzing
+acceptance/clickbench/q07/avx512-auto
+                        time:   [689.08 µs 689.55 µs 689.98 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q07/avx512-intrinsics
+Benchmarking acceptance/clickbench/q07/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/avx512-intrinsics: Collecting 10 samples in estimated 3.0163 s (6380 iterations)
+Benchmarking acceptance/clickbench/q07/avx512-intrinsics: Analyzing
+acceptance/clickbench/q07/avx512-intrinsics
+                        time:   [470.17 µs 471.76 µs 473.29 µs]
+
+Benchmarking acceptance/clickbench/q42/scalar
+Benchmarking acceptance/clickbench/q42/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/scalar: Collecting 10 samples in estimated 3.2009 s (715 iterations)
+Benchmarking acceptance/clickbench/q42/scalar: Analyzing
+acceptance/clickbench/q42/scalar
+                        time:   [4.4498 ms 4.4848 ms 4.5005 ms]
+Benchmarking acceptance/clickbench/q42/avx2-auto
+Benchmarking acceptance/clickbench/q42/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/avx2-auto: Collecting 10 samples in estimated 3.0352 s (1045 iterations)
+Benchmarking acceptance/clickbench/q42/avx2-auto: Analyzing
+acceptance/clickbench/q42/avx2-auto
+                        time:   [2.8555 ms 2.8619 ms 2.8749 ms]
+Benchmarking acceptance/clickbench/q42/avx2-intrinsics
+Benchmarking acceptance/clickbench/q42/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/avx2-intrinsics: Collecting 10 samples in estimated 3.0583 s (1155 iterations)
+Benchmarking acceptance/clickbench/q42/avx2-intrinsics: Analyzing
+acceptance/clickbench/q42/avx2-intrinsics
+                        time:   [2.6414 ms 2.6513 ms 2.6595 ms]
+Benchmarking acceptance/clickbench/q42/avx512-auto
+Benchmarking acceptance/clickbench/q42/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/avx512-auto: Collecting 10 samples in estimated 3.1305 s (1265 iterations)
+Benchmarking acceptance/clickbench/q42/avx512-auto: Analyzing
+acceptance/clickbench/q42/avx512-auto
+                        time:   [2.4530 ms 2.4671 ms 2.4864 ms]
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q42/avx512-intrinsics
+Benchmarking acceptance/clickbench/q42/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/avx512-intrinsics: Collecting 10 samples in estimated 3.0609 s (1375 iterations)
+Benchmarking acceptance/clickbench/q42/avx512-intrinsics: Analyzing
+acceptance/clickbench/q42/avx512-intrinsics
+                        time:   [2.2152 ms 2.2233 ms 2.2291 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking acceptance/tpch/q01/scalar
+Benchmarking acceptance/tpch/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/scalar: Collecting 10 samples in estimated 4.1895 s (165 iterations)
+Benchmarking acceptance/tpch/q01/scalar: Analyzing
+acceptance/tpch/q01/scalar
+                        time:   [25.070 ms 25.107 ms 25.162 ms]
+Benchmarking acceptance/tpch/q01/avx2-auto
+Benchmarking acceptance/tpch/q01/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/avx2-auto: Collecting 10 samples in estimated 3.5368 s (165 iterations)
+Benchmarking acceptance/tpch/q01/avx2-auto: Analyzing
+acceptance/tpch/q01/avx2-auto
+                        time:   [21.115 ms 21.409 ms 21.682 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q01/avx2-intrinsics
+Benchmarking acceptance/tpch/q01/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/avx2-intrinsics: Collecting 10 samples in estimated 3.5004 s (165 iterations)
+Benchmarking acceptance/tpch/q01/avx2-intrinsics: Analyzing
+acceptance/tpch/q01/avx2-intrinsics
+                        time:   [20.984 ms 21.031 ms 21.090 ms]
+Benchmarking acceptance/tpch/q01/avx512-auto
+Benchmarking acceptance/tpch/q01/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/avx512-auto: Collecting 10 samples in estimated 3.9453 s (220 iterations)
+Benchmarking acceptance/tpch/q01/avx512-auto: Analyzing
+acceptance/tpch/q01/avx512-auto
+                        time:   [17.899 ms 17.978 ms 18.138 ms]
+Benchmarking acceptance/tpch/q01/avx512-intrinsics
+Benchmarking acceptance/tpch/q01/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/avx512-intrinsics: Collecting 10 samples in estimated 3.6027 s (220 iterations)
+Benchmarking acceptance/tpch/q01/avx512-intrinsics: Analyzing
+acceptance/tpch/q01/avx512-intrinsics
+                        time:   [16.027 ms 16.183 ms 16.461 ms]
+
+Benchmarking acceptance/tpch/q06/scalar
+Benchmarking acceptance/tpch/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/scalar: Collecting 10 samples in estimated 3.1608 s (550 iterations)
+Benchmarking acceptance/tpch/q06/scalar: Analyzing
+acceptance/tpch/q06/scalar
+                        time:   [5.7452 ms 5.7659 ms 5.7894 ms]
+Benchmarking acceptance/tpch/q06/avx2-auto
+Benchmarking acceptance/tpch/q06/avx2-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/avx2-auto: Collecting 10 samples in estimated 3.0232 s (990 iterations)
+Benchmarking acceptance/tpch/q06/avx2-auto: Analyzing
+acceptance/tpch/q06/avx2-auto
+                        time:   [3.0413 ms 3.0506 ms 3.0566 ms]
+Benchmarking acceptance/tpch/q06/avx2-intrinsics
+Benchmarking acceptance/tpch/q06/avx2-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/avx2-intrinsics: Collecting 10 samples in estimated 3.1155 s (1155 iterations)
+Benchmarking acceptance/tpch/q06/avx2-intrinsics: Analyzing
+acceptance/tpch/q06/avx2-intrinsics
+                        time:   [2.7207 ms 2.7340 ms 2.7472 ms]
+Benchmarking acceptance/tpch/q06/avx512-auto
+Benchmarking acceptance/tpch/q06/avx512-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/avx512-auto: Collecting 10 samples in estimated 3.0287 s (1155 iterations)
+Benchmarking acceptance/tpch/q06/avx512-auto: Analyzing
+acceptance/tpch/q06/avx512-auto
+                        time:   [2.6397 ms 2.6429 ms 2.6502 ms]
+Benchmarking acceptance/tpch/q06/avx512-intrinsics
+Benchmarking acceptance/tpch/q06/avx512-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/avx512-intrinsics: Collecting 10 samples in estimated 3.0139 s (1485 iterations)
+Benchmarking acceptance/tpch/q06/avx512-intrinsics: Analyzing
+acceptance/tpch/q06/avx512-intrinsics
+                        time:   [2.0434 ms 2.0496 ms 2.0541 ms]
+
+# end 21:40:50 load 2.61 3.54 4.31
