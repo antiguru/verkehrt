@@ -473,9 +473,16 @@ impl Registry {
     }
 
     /// Adds a kernel. Panics on a duplicate name, a missing scalar implementation, an entry
-    /// that does not match the class, or a scalar or auto entry that declares a feature,
-    /// because all are bugs in the kernel tables.
+    /// that does not match the class, a scalar or auto entry that declares a feature, or a
+    /// fused kernel with an `op`, because all are bugs in the kernel tables.
     pub(crate) fn add(&mut self, def: KernelDef) -> KernelId {
+        // Planning without fusion drops every kernel with a pattern. That leaves a plan for
+        // every term only because no fused kernel is also the single-op kernel of an op.
+        assert!(
+            def.pattern.is_none() || def.op.is_none(),
+            "fused kernel {} must not have an op, fusion off would lose that op's kernel",
+            def.name
+        );
         assert!(
             def.impls.get(Variant::SCALAR).is_some(),
             "kernel {} lacks a scalar impl",
