@@ -1,0 +1,157 @@
+loadavg before: 1.29 2.98 3.67 2/2260 1220138
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2m 14s
+     Running benches/tier1.rs (target/release/deps/tier1-a3daa48776feced2)
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/group-id-i64-uniform-1M/scalar
+Benchmarking tier2/group-id-i64-uniform-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-1M/scalar: Collecting 10 samples in estimated 3.8767 s (110 iterations)
+Benchmarking tier2/group-id-i64-uniform-1M/scalar: Analyzing
+tier2/group-id-i64-uniform-1M/scalar
+                        time:   [34.927 ms 35.068 ms 35.241 ms]
+                        thrpt:  [216.49 MiB/s 217.56 MiB/s 218.44 MiB/s]
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v3-auto: Collecting 10 samples in estimated 3.7623 s (110 iterations)
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-uniform-1M/x86-64-v3-auto
+                        time:   [34.414 ms 34.615 ms 34.759 ms]
+                        thrpt:  [219.50 MiB/s 220.41 MiB/s 221.69 MiB/s]
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v4-auto: Collecting 10 samples in estimated 3.7359 s (110 iterations)
+Benchmarking tier2/group-id-i64-uniform-1M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-uniform-1M/x86-64-v4-auto
+                        time:   [33.598 ms 33.793 ms 33.958 ms]
+                        thrpt:  [224.67 MiB/s 225.77 MiB/s 227.08 MiB/s]
+
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/scalar
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/scalar: Collecting 10 samples in estimated 4.7632 s (110 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/scalar: Analyzing
+tier2/group-id2-i64-i64-uniform-1M/scalar
+                        time:   [43.176 ms 43.241 ms 43.342 ms]
+                        thrpt:  [352.06 MiB/s 352.88 MiB/s 353.41 MiB/s]
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v3-auto: Collecting 10 samples in estimated 4.9967 s (110 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-uniform-1M/x86-64-v3-auto
+                        time:   [45.720 ms 45.932 ms 46.093 ms]
+                        thrpt:  [331.05 MiB/s 332.20 MiB/s 333.75 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v4-auto: Collecting 10 samples in estimated 4.9708 s (110 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-1M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-uniform-1M/x86-64-v4-auto
+                        time:   [44.579 ms 44.663 ms 44.779 ms]
+                        thrpt:  [340.76 MiB/s 341.64 MiB/s 342.28 MiB/s]
+
+Benchmarking tier2/group-id-i64-d80k-1M/scalar
+Benchmarking tier2/group-id-i64-d80k-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d80k-1M/scalar: Collecting 10 samples in estimated 3.4659 s (385 iterations)
+Benchmarking tier2/group-id-i64-d80k-1M/scalar: Analyzing
+tier2/group-id-i64-d80k-1M/scalar
+                        time:   [9.0683 ms 9.1121 ms 9.1599 ms]
+                        thrpt:  [832.91 MiB/s 837.28 MiB/s 841.32 MiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v3-auto: Collecting 10 samples in estimated 3.4514 s (385 iterations)
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-d80k-1M/x86-64-v3-auto
+                        time:   [8.9547 ms 8.9654 ms 8.9770 ms]
+                        thrpt:  [849.88 MiB/s 850.98 MiB/s 852.00 MiB/s]
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v4-auto: Collecting 10 samples in estimated 3.4909 s (385 iterations)
+Benchmarking tier2/group-id-i64-d80k-1M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-d80k-1M/x86-64-v4-auto
+                        time:   [8.9939 ms 9.0041 ms 9.0192 ms]
+                        thrpt:  [845.91 MiB/s 847.33 MiB/s 848.29 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/scalar
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/scalar: Collecting 10 samples in estimated 3.5776 s (330 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/scalar: Analyzing
+tier2/group-id2-i64-i64-d80k-1M/scalar
+                        time:   [10.846 ms 10.882 ms 10.943 ms]
+                        thrpt:  [1.3618 GiB/s 1.3694 GiB/s 1.3739 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v3-auto: Collecting 10 samples in estimated 3.0225 s (275 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-d80k-1M/x86-64-v3-auto
+                        time:   [10.982 ms 10.996 ms 11.016 ms]
+                        thrpt:  [1.3527 GiB/s 1.3551 GiB/s 1.3568 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v4-auto: Collecting 10 samples in estimated 3.5804 s (330 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-1M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-d80k-1M/x86-64-v4-auto
+                        time:   [10.845 ms 10.855 ms 10.880 ms]
+                        thrpt:  [1.3696 GiB/s 1.3727 GiB/s 1.3740 GiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking tier2/group-id-i64-d10-1M/scalar
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Collecting 10 samples in estimated 3.0796 s (1815 iterations)
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Analyzing
+tier2/group-id-i64-d10-1M/scalar
+                        time:   [1.6928 ms 1.6994 ms 1.7040 ms]
+                        thrpt:  [4.3724 GiB/s 4.3841 GiB/s 4.4013 GiB/s]
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v3-auto: Collecting 10 samples in estimated 3.0814 s (1815 iterations)
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-d10-1M/x86-64-v3-auto
+                        time:   [1.6926 ms 1.6949 ms 1.6988 ms]
+                        thrpt:  [4.3857 GiB/s 4.3960 GiB/s 4.4020 GiB/s]
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v4-auto: Collecting 10 samples in estimated 3.0770 s (1760 iterations)
+Benchmarking tier2/group-id-i64-d10-1M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-d10-1M/x86-64-v4-auto
+                        time:   [1.7511 ms 1.7546 ms 1.7602 ms]
+                        thrpt:  [4.2328 GiB/s 4.2462 GiB/s 4.2548 GiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Collecting 10 samples in estimated 3.0524 s (1265 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Analyzing
+tier2/group-id2-i64-i64-d10-1M/scalar
+                        time:   [2.4157 ms 2.4177 ms 2.4191 ms]
+                        thrpt:  [6.1597 GiB/s 6.1635 GiB/s 6.1686 GiB/s]
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v3-auto: Collecting 10 samples in estimated 3.1420 s (1210 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-d10-1M/x86-64-v3-auto
+                        time:   [2.5864 ms 2.5915 ms 2.6007 ms]
+                        thrpt:  [5.7298 GiB/s 5.7500 GiB/s 5.7614 GiB/s]
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v4-auto: Collecting 10 samples in estimated 3.0732 s (1265 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-1M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-d10-1M/x86-64-v4-auto
+                        time:   [2.4164 ms 2.4182 ms 2.4194 ms]
+                        thrpt:  [6.1589 GiB/s 6.1622 GiB/s 6.1667 GiB/s]
+
+loadavg after: 2.20 2.54 3.32 2/2271 1220511

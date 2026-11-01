@@ -4,6 +4,8 @@
 //! The ids depend only on the order in which distinct keys first appear, never on the hash
 //! function or the table layout, so every variant returns the same output.
 
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
 use crate::kernels::scalar::construct::width;
@@ -14,25 +16,41 @@ use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, Wh
 use crate::ops::Op;
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 
-/// Slots of the first table. The table doubles whenever more than half its slots are taken.
+/// Slots of the first table, which grows whenever an insert leaves it more than half full.
 pub(super) const INITIAL_SLOTS: usize = 256;
 
-/// The odd multiplier of `mix`, `2^64` divided by the golden ratio.
-const MUL: u64 = 0x9E37_79B9_7F4A_7C15;
+/// Doublings of one growth when nearly every row so far has opened a group. Measured in
+/// `docs/measurements/2026-11-01-group-id.md`.
+const JUMP_BITS: u32 = 4;
 
-/// A deterministic, well-mixed hash of `x`. It is a bijection on `u64`, and its high bits,
-/// which pick the slot, depend on every bit of `x`.
+/// From this many slots on, a growth of a nearly distinct column goes straight to the largest
+/// table.
+const BIG_SLOTS: usize = 1 << 20;
+
+/// A fixed odd multiplier for `mix`, `2^64` divided by the golden ratio. `group_id` draws a
+/// random multiplier per call instead, and the tests use this one to build colliding keys.
+#[cfg(test)]
+pub(super) const MUL: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// A random odd multiplier for one `group_id` call. Chosen keys cannot be made to collide
+/// without knowing it, and the ids do not depend on it.
+fn multiplier() -> u64 {
+    RandomState::new().hash_one(0u64) | 1
+}
+
+/// A well-mixed hash of `x` under the odd multiplier `mul`. It is a bijection on `u64`, and
+/// its high bits, which pick the slot, depend on every bit of `x`.
 #[inline(always)]
-pub(super) fn mix(x: u64) -> u64 {
+pub(super) fn mix(x: u64, mul: u64) -> u64 {
     // The xorshift folds the high half into the low half, which the multiply then carries
     // into the high bits.
-    (x ^ (x >> 32)).wrapping_mul(MUL)
+    (x ^ (x >> 32)).wrapping_mul(mul)
 }
 
 /// A key that `group_id` hashes: one column's value or a pair of them.
 pub(super) trait GroupKey: Copy + Eq + Default {
-    /// The hash of the key. Equal keys hash equally.
-    fn key_hash(self) -> u64;
+    /// The hash of the key under the odd multiplier `mul`. Equal keys hash equally.
+    fn key_hash(self, mul: u64) -> u64;
 }
 
 /// A key column type of `group_id`.
@@ -45,21 +63,22 @@ pub(super) trait Column: Elem + Eq + Default {
     /// the table cannot be allocated.
     #[inline(always)]
     fn ids_into(xs: &[Self], out: &mut [i64]) -> Result<(), String> {
-        hashed_into(xs.iter().copied(), xs.len(), Self::key_hash, out)
+        let mul = multiplier();
+        hashed_into(xs.iter().copied(), xs.len(), |k| k.key_hash(mul), out)
     }
 }
 
 impl<T: Column> GroupKey for T {
     #[inline(always)]
-    fn key_hash(self) -> u64 {
-        mix(self.bits())
+    fn key_hash(self, mul: u64) -> u64 {
+        mix(self.bits(), mul)
     }
 }
 
 impl<A: Column, B: Column> GroupKey for (A, B) {
     #[inline(always)]
-    fn key_hash(self) -> u64 {
-        mix(mix(self.0.bits()) ^ self.1.bits())
+    fn key_hash(self, mul: u64) -> u64 {
+        mix(mix(self.0.bits(), mul) ^ self.1.bits(), mul)
     }
 }
 
@@ -144,12 +163,50 @@ pub(super) fn hashed_into<K: GroupKey>(
     }
 }
 
+/// The table that replaces the full `tab` of `slots` slots, with its slot count and hash
+/// shift. A table that is nearly all distinct keys (`distinct`) skips ahead instead of
+/// doubling, which saves rehashing at every size, and no growth goes past `max_slots`. Fails
+/// if the new table cannot be allocated.
+#[cold]
+#[inline(never)]
+fn grow<K: GroupKey, P: Pos + Eq>(
+    tab: &[(K, P)],
+    slots: usize,
+    shift: u32,
+    distinct: bool,
+    max_slots: usize,
+    hash: &impl Fn(K) -> u64,
+) -> Result<(Vec<(K, P)>, usize, u32), String> {
+    let empty = P::default();
+    let grown = if distinct && slots >= BIG_SLOTS {
+        max_slots
+    } else {
+        let jump = if distinct { JUMP_BITS } else { 1 };
+        slots
+            .checked_mul(1 << jump)
+            .ok_or("cannot allocate a group_id table")?
+            .min(max_slots)
+    };
+    let new_shift = shift - (grown / slots).trailing_zeros();
+    let mut new = table::<K, P>(grown)?;
+    // The keys are distinct, so reinsertion only looks for an empty slot.
+    for &(key, tag) in tab.iter().filter(|(_, tag)| *tag != empty) {
+        let mut j = slot(hash(key), new_shift);
+        while new[j].1 != empty {
+            j = (j + 1) & (grown - 1);
+        }
+        new[j] = (key, tag);
+    }
+    Ok((new, grown, new_shift))
+}
+
 /// The body of `hashed_into` for tags of type `P`, which holds `n`.
 ///
 /// Each slot holds a key and its tag, the id plus 1, and tag 0 marks an empty slot. Probing
-/// is linear. The table grows before more than half its slots are taken, so every probe
-/// meets an empty slot and terminates whatever the hash. Growth reinserts the keys with
-/// their tags, so the ids stay in first-occurrence order.
+/// is linear. The table grows right after an insert leaves it more than half full, so it is
+/// at most half full when each probe starts. Every probe therefore meets an empty slot and
+/// terminates whatever the hash. Growth reinserts the keys with their tags, so the ids stay
+/// in first-occurrence order.
 #[inline(always)]
 fn probe_into<K: GroupKey, P: Pos + Eq>(
     keys: impl Iterator<Item = K>,
@@ -164,12 +221,17 @@ fn probe_into<K: GroupKey, P: Pos + Eq>(
         .checked_next_power_of_two()
         .unwrap_or(INITIAL_SLOTS)
         .clamp(2, INITIAL_SLOTS);
+    // The table that holds `n` keys at most half full, which a growth never exceeds.
+    let max_slots = n
+        .saturating_mul(2)
+        .checked_next_power_of_two()
+        .unwrap_or(usize::MAX);
     let mut shift = 64 - slots.trailing_zeros();
     let mut tab = table::<K, P>(slots)?;
     let empty = P::default();
     let mut groups = 0usize;
     let mut next = 0i64;
-    for (o, k) in out.iter_mut().zip(keys) {
+    for (row, (o, k)) in out.iter_mut().zip(keys).enumerate() {
         let mask = slots - 1;
         let mut i = slot(hash(k), shift);
         loop {
@@ -188,20 +250,11 @@ fn probe_into<K: GroupKey, P: Pos + Eq>(
             i = (i + 1) & mask;
         }
         if 2 * groups > slots {
-            let grown = slots
-                .checked_mul(2)
-                .ok_or_else(|| format!("cannot allocate a group_id table for {n} rows"))?;
-            let new_shift = shift - 1;
-            let mut new = table::<K, P>(grown)?;
-            // The keys are distinct, so reinsertion only looks for an empty slot.
-            for &(key, tag) in tab.iter().filter(|(_, tag)| *tag != empty) {
-                let mut j = slot(hash(key), new_shift);
-                while new[j].1 != empty {
-                    j = (j + 1) & (grown - 1);
-                }
-                new[j] = (key, tag);
-            }
-            (tab, slots, shift) = (new, grown, new_shift);
+            // Nearly every row so far opened a group, so the column is likely close to
+            // all distinct.
+            let distinct = 8 * groups >= 7 * (row + 1);
+            (tab, slots, shift) = grow(&tab, slots, shift, distinct, max_slots, &hash)
+                .map_err(|e| format!("{e} for {n} rows"))?;
         }
     }
     Ok(())
@@ -238,11 +291,12 @@ impl<A: Column, B: Column> WholeBody for GroupId2<A, B> {
         if xs.len() != ys.len() {
             return Err(format!("length mismatch: {} vs {}", xs.len(), ys.len()));
         }
+        let mul = multiplier();
         Array::build_bytes(xs.len(), ScalarType::I64, |out| {
             hashed_into(
                 xs.iter().copied().zip(ys.iter().copied()),
                 xs.len(),
-                <(A, B)>::key_hash,
+                |k| k.key_hash(mul),
                 bytemuck::cast_slice_mut(out),
             )
         })

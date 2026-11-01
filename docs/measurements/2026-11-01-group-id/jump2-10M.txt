@@ -1,0 +1,38 @@
+loadavg before: 4.31 4.09 3.59 1/2292 1223358
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2m 13s
+     Running benches/tier1.rs (target/release/deps/tier1-a3daa48776feced2)
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Collecting 10 samples in estimated 5.3899 s (20 iterations)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Analyzing
+tier2/group-id-i64-uniform-10M/scalar
+                        time:   [268.44 ms 269.03 ms 269.70 ms]
+                        thrpt:  [282.89 MiB/s 283.59 MiB/s 284.21 MiB/s]
+                 change:
+                        time:   [−35.678% −35.517% −35.341%] (p = 0.00 < 0.05)
+                        thrpt:  [+54.657% +55.081% +55.467%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Collecting 10 samples in estimated 3.3612 s (10 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-uniform-10M/scalar
+                        time:   [330.97 ms 333.31 ms 335.68 ms]
+                        thrpt:  [454.57 MiB/s 457.79 MiB/s 461.03 MiB/s]
+                 change:
+                        time:   [−36.156% −35.622% −35.136%] (p = 0.00 < 0.05)
+                        thrpt:  [+54.170% +55.333% +56.632%]
+                        Performance has improved.
+
+loadavg after: 2.46 3.28 3.35 2/2265 1223522

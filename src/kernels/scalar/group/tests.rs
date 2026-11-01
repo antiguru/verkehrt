@@ -8,7 +8,7 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 use proptest::test_runner::{Config, TestRunner};
 
-use super::{GroupKey, INITIAL_SLOTS, hashed_into, mix, table};
+use super::{BIG_SLOTS, GroupKey, INITIAL_SLOTS, MUL, hashed_into, mix, table};
 use crate::kernels::scalar::construct::splitmix64;
 use crate::kernels::{Backend, FeatureSet, Isa, Registry, Variant};
 use crate::value::{Array, Elem, ScalarType, Value};
@@ -376,6 +376,50 @@ fn growth_thresholds_keep_first_occurrence_order() {
     }
 }
 
+/// The same thresholds with every key twice in a row, so under 7/8 of the rows open a group
+/// and every growth doubles instead of jumping.
+#[test]
+fn doubling_growth_keeps_first_occurrence_order() {
+    let mut lens = Vec::new();
+    let mut slots = INITIAL_SLOTS;
+    while slots / 2 <= MAX_LEN {
+        let half = slots / 2;
+        lens.extend([half - 1, half, half + 1]);
+        slots *= 2;
+    }
+    for len in lens {
+        let seed = u64::try_from(len).unwrap();
+        let xs: Vec<u64> = (0..seed)
+            .flat_map(|i| {
+                let k = splitmix64(seed << 32 | i);
+                [k, k]
+            })
+            .collect();
+        let want: Vec<i64> = (0..i64::try_from(len).unwrap())
+            .flat_map(|i| [i, i])
+            .collect();
+        assert_eq!(group_id(&xs), want, "len {len}");
+    }
+}
+
+/// A column long enough to pass `BIG_SLOTS` slots, once all distinct, where the growth goes
+/// straight to the largest table, and once with a prefix of repeated keys, where it doubles.
+#[test]
+fn big_table_growth_keeps_first_occurrence_order() {
+    let groups = BIG_SLOTS / 2 + 1000;
+    let keys: Vec<u64> = (0..groups).map(|i| splitmix64(i as u64)).collect();
+    let mut xs = keys.clone();
+    xs.extend(keys.iter().rev());
+    let want: Vec<i64> = (0..groups as i64).chain((0..groups as i64).rev()).collect();
+    assert_eq!(group_id(&xs), want);
+    // The first keys each appear 8 times, so under 7/8 of the rows have opened a group when
+    // the table passes `BIG_SLOTS` slots.
+    let few = BIG_SLOTS / 8 + 100;
+    let mut ys: Vec<u64> = (0..few).flat_map(|i| [splitmix64(i as u64); 8]).collect();
+    ys.extend((few..groups).map(|i| splitmix64(i as u64)));
+    assert_eq!(group_id(&ys), group_id_reference(&ys));
+}
+
 /// The table on hashes that collide everywhere: every key probes from the same slot, so
 /// probing must still separate the keys and terminate across growth.
 #[test]
@@ -398,13 +442,26 @@ fn degenerate_hashes() {
     }
 }
 
-/// Keys whose real hash picks slot 0 in every table of up to `2^12` slots, the worst case
-/// for linear probing under the real hash.
+/// Runs `hashed_into` on `keys` under the hash with the fixed multiplier `MUL`.
+fn fixed_hash_ids<K: GroupKey>(keys: &[K]) -> Vec<i64> {
+    let mut out = vec![-1; keys.len()];
+    hashed_into(
+        keys.iter().copied(),
+        keys.len(),
+        |k| k.key_hash(MUL),
+        &mut out,
+    )
+    .unwrap();
+    out
+}
+
+/// Keys whose hash under `MUL` picks slot 0 in every table of up to `2^12` slots, the worst
+/// case for linear probing, which a call with a random multiplier does not meet.
 #[test]
 fn colliding_keys_under_the_real_hash() {
     let bits = 12;
     let i64s: Vec<i64> = (0u64..)
-        .filter(|&k| mix(k) >> (64 - bits) == 0)
+        .filter(|&k| mix(k, MUL) >> (64 - bits) == 0)
         .take(1500)
         .map(u64::cast_signed)
         .collect();
@@ -412,31 +469,35 @@ fn colliding_keys_under_the_real_hash() {
     let mut xs = i64s.clone();
     xs.extend(i64s.iter().rev());
     xs.extend(i64s.iter().map(|k| k.wrapping_neg()));
+    assert_eq!(fixed_hash_ids(&xs), group_id_reference(&xs));
     assert_eq!(group_id(&xs), group_id_reference(&xs));
     let i32s: Vec<i32> = (0u32..)
-        .filter(|&k| mix(u64::from(k)) >> (64 - bits) == 0)
+        .filter(|&k| mix(u64::from(k), MUL) >> (64 - bits) == 0)
         .take(1500)
         .map(u32::cast_signed)
         .collect();
     let mut ys = i32s.clone();
     ys.extend(i32s.iter().rev());
+    assert_eq!(fixed_hash_ids(&ys), group_id_reference(&ys));
     assert_eq!(group_id(&ys), group_id_reference(&ys));
 }
 
-/// `mix` is a bijection, so single keys never share a full hash. Pairs can: for any `a` and
-/// `a2`, the pair `(a2, b ^ mix(a) ^ mix(a2))` has the full hash of `(a, b)`.
+/// `mix` is a bijection, so single keys never share a full hash. Pairs can: under a known
+/// multiplier, for any `a` and `a2`, the pair `(a2, b ^ mix(a) ^ mix(a2))` has the full hash
+/// of `(a, b)`. The multiplier of a call is random, so chosen pairs do not collide there.
 #[test]
 fn pairs_with_equal_full_hashes() {
     let b = 0x1234_5678_9ABC_DEF0u64;
     let xs: Vec<u64> = (0..1000).collect();
-    let ys: Vec<u64> = xs.iter().map(|&a| b ^ mix(0) ^ mix(a)).collect();
-    let h = (0u64, b).key_hash();
-    assert!(pairs(&xs, &ys).iter().all(|p| p.key_hash() == h));
+    let ys: Vec<u64> = xs.iter().map(|&a| b ^ mix(0, MUL) ^ mix(a, MUL)).collect();
+    let h = (0u64, b).key_hash(MUL);
+    assert!(pairs(&xs, &ys).iter().all(|p| p.key_hash(MUL) == h));
     let mut xs2 = xs.clone();
     xs2.extend(xs.iter().rev());
     let mut ys2 = ys.clone();
     ys2.extend(ys.iter().rev());
     let want: Vec<i64> = (0..1000).chain((0..1000).rev()).collect();
+    assert_eq!(fixed_hash_ids(&pairs(&xs2, &ys2)), want);
     assert_eq!(group_id2(&xs2, &ys2).unwrap(), want);
 }
 
