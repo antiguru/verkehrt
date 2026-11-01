@@ -143,9 +143,12 @@ fn datadriven_programs() {
             }
         })
     });
-    // One `RUN` value applies to every harness and may match nothing here.
+    // One `RUN` value applies to every harness and may match nothing here, so a filter that
+    // matches nothing is reported rather than failed.
     if std::env::var_os("RUN").is_none() {
         assert!(cases > 0, "no test case ran in {dir}");
+    } else if cases == 0 {
+        eprintln!("note: RUN matched no test case in {dir}");
     }
 }
 
