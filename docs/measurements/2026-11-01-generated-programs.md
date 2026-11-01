@@ -13,12 +13,14 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 48 cases on 4 workers, 7.5 s to 8.1 s in release and 10.1 s in debug (latest measurement) |
+| CI run | fixed seed `0x5eed0001`, 48 cases on 4 workers, 7.5 s to 8.1 s in release, and in debug 10.2 s on 32 cores against 17.9 s limited to 2 cores with `taskset -c 0,1` |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
 Oracle 2 requires the fused and unfused plans to agree on printed text, export bits, and the error kind, statement line, and message category.
-Oracle 3 compares the scalar outcome against a reference evaluator that imports only the typed program from `check`, the parser, and the value types, and calls no kernel, lowering, planner, or executor code.
+The same category is stricter than the base spec, which leaves open which of several errors in a statement surfaces, and it assumes that fusion keeps the order in which a kernel's children are evaluated, which #30 must revisit when fused kernels reorder their operands.
+Oracle 3 compares the scalar outcome against a reference evaluator that calls no kernel, lowering, planner, or executor code.
+It shares the front end with the pipeline: the parser and `check::check`, including the lifted typing of lambda bodies through the kernel registry, and it prints values through the library's `Value` display.
 Floats compare by bits except that all NaNs are equal, per the base spec.
 A value that reaches no print or export is not computed, so errors in it are not raised, which is the ruling the evaluator follows.
 
@@ -26,30 +28,37 @@ A value that reaches no print or export is not computed, so errors in it are not
 
 The first table lists the runs of oracles 1 and 2.
 Only the last row used the final generator, and earlier rows used earlier versions of it.
+The oracle 2 column names the comparison of errors: "kind only" compared the error kind, and "strict" compares the kind, the statement line, and the category.
 
-| Seed | Cases | Params | Result |
-|---|---|---|---|
-| 200000, 300000, 500000 | 6000 each | default | no failure |
-| 400000 | 4000 | depth 5, 9 statements | no failure |
-| 600000 | 6000 | default, strict oracle 2 | no failure |
-| 700000 | 3000 | default | no failure |
-| 800000 | 6000 | default, final generator | no failure |
+| Seed | Cases | Params | Oracle 2 | Result |
+|---|---|---|---|---|
+| 200000, 300000, 500000 | 6000 each | default | kind only | no failure |
+| 400000 | 4000 | depth 5, 9 statements | kind only | no failure |
+| 600000 | 6000 | default | strict | no failure |
+| 700000 | 3000 | default | strict | no failure |
+| 800000 | 6000 | default, final generator | strict | no failure |
 
-About 15,000 further cases with seeds 1, 1000, 20000, and 100000 ran on still earlier generator versions, also without oracle failures.
-In the seed 500000 run, fusion changed the plan in about 39% of programs, and about 88% ran to completion.
+About 15,000 further cases with seeds 1, 1000, 20000, and 100000 ran on still earlier generator versions with oracle 2 comparing the error kind only, also without oracle failures.
+In the seed 500000 run, 5308 of 6000 programs (88%) ran to completion.
+In the seed 1200000 run below, fusion changed the plan of 2375 of 6000 programs (40%).
 The rest stopped with runtime errors on empty reductions, bucket keys, `gather` indices, `slice` bounds, length mismatches, and `div_const` by zero, which exercises error agreement.
 
-The second table lists the runs that include oracle 3.
+The second table lists the runs that include oracle 3, with the oracle 3 version each used.
 
-| Seed | Cases | Skipped for #40 | Result |
-|---|---|---|---|
-| 900000 | 3000 | 6 | no failure |
-| 1100000 | 6000 | 73, then 57 on rerun | the first run failed 4 workers on the first stopgap, and the rerun passed after the fix |
-| 1200000 | 6000 | 71 | no failure |
-| 1300000 | 4000 | 44 | no failure, latest run |
+* **First:** one error union over the whole program, no line rule, and a stopgap that forced every top-level let.
+* **Line rule:** the failing statement's line and categories, with a stopgap that forced every top-level let.
+* **Current:** the line rule with the current stopgap, which forces only the let on the pipeline's failing line.
 
-Seed 1000000 ran 1000 cases before the lambda `if` fix and passed, but it did not exercise that bug.
-Oracle 3 skips cases only for the #40 stopgap, because the evaluator supports every generated primitive.
+| Seed | Cases | Oracle 3 | Skipped for #40 | Result |
+|---|---|---|---|---|
+| 900000 | 3000 | first | 6 | no failure |
+| 1000000 | 1000 | line rule, with the lazy lambda `if` in the evaluator but before the lowering fix | not recorded | no failure, did not exercise the lambda `if` bug |
+| 1100000 | 6000 | line rule | 73 | failed 4 workers on the stopgap |
+| 1100000 | 6000 | current | 57 | no failure |
+| 1200000 | 6000 | current | 71 | no failure |
+| 1300000 | 4000 | current, with calls typed by their body | 44 | no failure, latest run |
+
+Oracle 3 skips cases only for the #40 stopgap. A program the evaluator does not support fails the case, because the generator produces none.
 
 ### Feature histogram
 
@@ -83,14 +92,15 @@ Dead code from constant conditions such as `if true { .. } else { .. }` still co
 The runs show that the harness can find bugs, but they bound what it has covered.
 Each limit below weakens any statement that the runs found nothing.
 
-* **Thin per-pair coverage.** Each (operation, type) pair appears in only about 1 to 2% of programs, so a bug specific to one pair needs thousands of cases to surface.
+* **Thin per-pair coverage.** Per (operation, type) pair coverage was not measured. The histogram bounds it: `histogram`, which has one key type, appears in 119 of 6000 programs (2%), and `op sqrt`, over two float types, in 454 (about 4% per type if split evenly). Operations spread over more types, such as `scan_by` over seven operators and several element types, are estimated at about 1 to 2% per pair. A bug specific to one pair therefore needs thousands of cases to surface.
 * **Mutation probes caught 2 of 3 planted kernel bugs.** The probes were reverted after each run.
   * A fused `CountCmp::update` that skipped the last row above 40 rows failed oracle 2 within 640 cases.
   * A `scan_by_add` tail loop on v4 that ignored segment starts for tiles of 8 or more rows failed oracle 1, once unread lets were exported.
   * A second `scan_by_add` mutation (`m |= m << 3`) is wrong only when a segment starts on lane 0 of a later 8-row chunk and the next 7 rows do not start. It was not caught in 3,000 cases, and the kernel property tests in `tests/isa_variants.rs` fit data-pattern bugs of this kind better.
 * **Lowering bugs reach only oracle 3.** Swapping the branches of a lambda `if` in lowering passed oracles 1 and 2, because every variant and both fusion settings share the lowering. Only the reference evaluator failed on it, in the 48-case CI run.
 * **The #39 cap replaces statements.** A statement whose shared bindings nest deeper than `MAX_SHARE_DEPTH = 3` becomes a leaf. The cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000, the latest count, after the generator started to call functions more often. The generator under-covers deep sharing until #39 lands.
-* **The #40 stopgap skips cases.** Oracle 3 skips about 1.2% of cases (44 of 4000 to 73 of 6000 in the runs above), which hides its checks on those programs until #40 lands.
+* **The #40 stopgap skips cases.** Oracle 3 skips about 1% of cases under the current stopgap (57 of 6000, 71 of 6000, and 44 of 4000), which hides its checks on those programs until #40 lands.
+* **Shared code.** All three oracles run the same parser and checker, and the evaluator types lambda bodies through the same registry and prints through the same `Value` display. The generator draws its operations from that registry too. Bugs in parsing, checking, or value formatting are invisible to all three oracles.
 * **Untaken lazy branches.** The generator rarely puts a failing value, such as a zero `div_const` divisor, in a lambda branch that is not taken. The 1000-case run of seed 1000000 did not find the lambda `if` bug, and a hand-written probe did.
 * **Value-dependent primitives are mostly built valid.** Most `gather`, `slice`, `histogram`, and `reduce_into` operands are generated in range, and only a small share is arbitrary.
 * **Types and primitives not generated.** The scalar-only types `i8`, `i16`, `u16`, and `u32` are absent, because lambdas over them cannot lift. `load_*` and strings are absent too.
@@ -103,9 +113,10 @@ Each limit below weakens any statement that the runs found nothing.
 Lowering inlines block lets and function arguments by substituting deep clones.
 A binding read k times and nested d levels deep therefore grows the term as k^d before the hoisting pass recovers any sharing.
 Top-level lets do not show it, because they stay separate statements.
-A depth 7 program of nested `filter` blocks that read each binding four times took 4.84 s and 1.8 GB in the release CLI, where the same program with top-level lets took 0.59 s and 24 MB.
+The function form `fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }` called as `f(f(...f(a)))` took 4.84 s and 1.8 GB at depth 7 in the release CLI. The block form, nested `filter` blocks that read each binding four times, took 4.85 s and 1.8 GB, and the same program with top-level lets took 0.59 s and 24 MB.
+The table below is the function form.
 
-| Depth | Time | Peak RSS |
+| Depth (function form) | Time | Peak RSS |
 |---|---|---|
 | 2 | 0.20 s | 23 MB |
 | 3 | 0.29 s | 24 MB |
@@ -162,7 +173,6 @@ A first, simpler stopgap was too narrow and too wide at once, and a 6000-case ru
 ## Reference evaluator
 
 The evaluator excludes no primitives: every primitive the generator produces is supported, including float reductions in the canonical order of the base spec.
-Strings, `load_*`, and arrays longer than 2^22 rows make a case unsupported and skipped, and the generator produces none of them.
-No case was skipped for those reasons.
+Strings, `load_*`, and arrays longer than 2^22 rows make a case unsupported, which fails it, because the generator produces none of them.
 Evaluation is demand-driven: lets, block lets, and arguments are memoized thunks, and an expression statement is not evaluated.
 The evaluator collects the error categories of the first failing statement and stops output there, and oracle 3 accepts a runtime error at that line whose category was collected and whose output is a prefix of the evaluator's.
