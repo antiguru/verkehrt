@@ -46,11 +46,17 @@ fn interpreters() -> Vec<(String, Interpreter)> {
     v
 }
 
-/// The `.vk` programs of a suite, sorted by name.
+/// The `.vk` programs of a suite, sorted by name. `VERKEHRT_PROGRAMS` names a directory to read
+/// them from instead of `tests/acceptance/SUITE`, to time another version of a query in the
+/// same build.
 fn programs(suite: &str) -> Vec<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/acceptance")
-        .join(suite);
+    let dir = std::env::var_os("VERKEHRT_PROGRAMS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/acceptance")
+                .join(suite)
+        });
     let mut v: Vec<PathBuf> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("program directory {}: {e}", dir.display()))
         .map(|d| d.unwrap().path())
