@@ -605,6 +605,9 @@ fn count_ops(t: &Term, counts: &mut HashMap<Term, usize>) {
 }
 
 struct Hoister<'a> {
+    /// The span of the statement, which every hoisted bind takes, so that a runtime error in
+    /// one carries the line of the statement it serves.
+    span: Span,
     counts: HashMap<Term, usize>,
     done: HashMap<Term, Term>,
     binds: Vec<LStmt>,
@@ -648,7 +651,7 @@ impl Hoister<'_> {
                 self.binds.push(LStmt::Bind {
                     var,
                     term: rebuilt,
-                    span: t.span,
+                    span: self.span,
                 });
                 let id = self.leaves.var(var);
                 let leaf = Term {
@@ -669,7 +672,9 @@ impl Hoister<'_> {
 fn hoist_repeated(mut s: LStmt, leaves: &mut Leaves, g: &mut Globals) -> Vec<LStmt> {
     let mut counts = HashMap::new();
     count_ops(stmt_term_mut(&mut s), &mut counts);
+    let (LStmt::Bind { span, .. } | LStmt::Print { span, .. } | LStmt::Show { span, .. }) = s;
     let mut h = Hoister {
+        span,
         counts,
         done: HashMap::new(),
         binds: Vec::new(),

@@ -1,0 +1,9 @@
+# Regressions found by the generated programs of `tests/generated`.
+
+# hoisted_bind_error_carries_statement_line
+error
+let a = [1, 2, 3];
+let v = { let b = slice(a, 2, 1); b + b };
+print(v);
+----
+Runtime error at 3:1: slice 2..1 out of range for length 3
