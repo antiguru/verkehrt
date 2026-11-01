@@ -14,7 +14,7 @@ The last sections list the gaps and the candidates for plan 5.
 | CPU | AMD Ryzen AI MAX+ 395 (Zen 5, 32 logical CPUs), AVX2 and AVX-512 |
 | Frequency scaling | boost off, governor `powersave`, 3.0 GHz under load (user-reported, the sandbox cannot read cpufreq) |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
-| Verkehrt commit | `8c695db` (the q40 slice-first fix) plus the `acceptance_stats` example. q03, q27 and q41 changed after it and were re-measured at `b1955cd`, whose programs are the ones in this PR |
+| Verkehrt build | this branch after the q40 slice-first fix, plus the `acceptance_stats` example. The final review fixes then changed q03, q27 and q41, which were re-measured on the programs in this PR. The other later changes give the loader a per-suite list of signed columns and add tests, with no effect on the ClickBench inputs |
 | corgi revision | `2751e04e8501d47b33219be23049bf4afa7a4428`, checkout `~/dev/repos/data/verkehrt/corgi-wip` |
 | DuckDB | one-thread times from `duckdb.tsv` of the prepared data directory, written by `prepare.py` |
 | Data | `hits_0.parquet`, 1,000,000 rows, the data directory of the tier 2 round |
@@ -29,10 +29,10 @@ Differences within about 10% between runs or builds count as noise, and the text
 * `bench-b.txt`: criterion log for q27, q29, q30, q31. Load 3.29 to 2.89.
 * `bench-c.txt`: criterion log for q40, q41, q42. Load 2.89 to 2.40.
 * `corgi.txt`: corgi's bench for the 14 queries at the pinned revision. Load 2.28 to 2.34.
-* `bench-d.txt`: criterion log for q03, q27 and q41, re-measured at `b1955cd`. Load 3.08 to 4.16.
-* `stats.txt`: per-kernel totals of each query at `8c695db`. Load 1.87 to 2.08. Its q03, q27 and q41 sections describe the older programs.
-* `stats-rerun.txt`: per-kernel totals of q03, q27 and q41 at `b1955cd`. Load 3.75 to 3.63.
-* `query-plans.txt`: the `acceptance_plans` output at `b1955cd`, the plan of every acceptance program.
+* `bench-d.txt`: criterion log for q03, q27 and q41, re-measured on the programs in this PR. Load 3.08 to 4.16.
+* `stats.txt`: per-kernel totals of each query, from the first build. Load 1.87 to 2.08. Its q03, q27 and q41 sections describe the older programs.
+* `stats-rerun.txt`: per-kernel totals of q03, q27 and q41 on the programs in this PR. Load 3.75 to 3.63.
+* `query-plans.txt`: the `acceptance_plans` output on the programs in this PR, the plan of every acceptance program.
 
 ## How the systems were timed
 
