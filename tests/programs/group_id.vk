@@ -1,0 +1,7 @@
+let k = [7, -1, 7, 3, -1, 7];
+let g = group_id(k);
+print(g);
+print(reduce(g, max) + 1);
+print(group_id([1, 2, 1, 2], [2, 1, 2, 2]));
+print(group_id([5u8, 5u8, 9u8], [-1i32, -1i32, -1i32]));
+print(length(group_id(compress(k, k > 100))));

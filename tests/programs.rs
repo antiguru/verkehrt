@@ -48,6 +48,17 @@ fn golden_programs() {
 }
 
 #[test]
+fn group_id_length_mismatch_is_a_runtime_error() {
+    let src = "let a = [1, 2, 3];\nlet b = [1, 2];\nprint(group_id(a, b));\n";
+    let (r, out, _) = run_with(Options::default(), src);
+    let e = r.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert!(e.message.contains("length mismatch: 3 vs 2"), "{e}");
+    assert_eq!(e.span.unwrap().line, 3);
+    assert_eq!(out, "");
+}
+
+#[test]
 fn runtime_error_carries_statement_line() {
     let src = "let x = [1.0, 2.0];\nlet y = [1.0, 2.0, 3.0];\nprint(sum(x + y));\n";
     let (r, out, _) = run_with(Options::default(), src);

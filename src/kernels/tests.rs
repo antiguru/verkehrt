@@ -454,6 +454,7 @@ fn kernel_names_are_unique_valid_identifiers() {
                 | Op::Slice
                 | Op::Histogram
                 | Op::ArgSort
+                | Op::GroupId
                 | Op::ReduceInto(_)
                 | Op::RandI64
                 | Op::RandF64
@@ -1256,12 +1257,14 @@ fn variant_entry_counts_are_stable() {
     // `_s` forms of `div_const`) and 8 auto entries per x86 ISA.
     // `gather_i64`, `gather_u64`, and `gather_f64` added 3 intrinsics entries per x86 ISA.
     // `scan_by_add_i64` and `scan_by_add_u64` added 2 x86-64-v4 intrinsics entries.
+    // The 4 `group_id_<t>` and 16 `group_id2_<t1>_<t2>` kernels added 20 scalar and 20 auto
+    // entries per x86 ISA.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [749, 439, 39, 439, 43, 0, 0]);
+    assert_eq!(counts, [769, 459, 39, 459, 43, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [749, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [769, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {

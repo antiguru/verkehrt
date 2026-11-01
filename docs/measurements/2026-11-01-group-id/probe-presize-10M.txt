@@ -1,0 +1,39 @@
+loadavg before: 1.97 2.50 3.04 1/2280 1221717
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2m 29s
+     Running benches/tier1.rs (target/release/deps/tier1-a3daa48776feced2)
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Collecting 10 samples in estimated 4.7569 s (20 iterations)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Analyzing
+tier2/group-id-i64-uniform-10M/scalar
+                        time:   [237.43 ms 237.87 ms 238.42 ms]
+                        thrpt:  [320.00 MiB/s 320.73 MiB/s 321.34 MiB/s]
+                 change:
+                        time:   [−56.060% −55.833% −55.637%] (p = 0.00 < 0.05)
+                        thrpt:  [+125.41% +126.41% +127.58%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking tier2/group-id-i64-d80k-10M/scalar
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.2s or enable flat sampling.
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Collecting 10 samples in estimated 3.2280 s (55 iterations)
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Analyzing
+tier2/group-id-i64-d80k-10M/scalar
+                        time:   [58.121 ms 58.281 ms 58.546 ms]
+                        thrpt:  [1.2726 GiB/s 1.2784 GiB/s 1.2819 GiB/s]
+                 change:
+                        time:   [−9.9018% −9.2649% −8.2403%] (p = 0.00 < 0.05)
+                        thrpt:  [+8.9803% +10.211% +10.990%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+loadavg after: 2.55 2.70 3.03 2/2258 1221934

@@ -391,11 +391,10 @@ fn q35_computes_offsets_without_overflow() {
     assert_eq!(run_clickbench("q35", &[("ClientIP.u64", &[], true)]), "");
 }
 
-/// The real q08 on users that straddle region boundaries. Region 0 starts with user 0, which
-/// equals the `prev` fill of row 0. Region 2 starts with user 20, which region 1 ends with,
-/// and region 3 repeats user 10 from region 1. A distinct count that ignored region
-/// boundaries would lose those users. Every region but the last has 2 distinct users, so the
-/// ties go to the smaller region.
+/// The real q08 on users that straddle region boundaries. Region 3 repeats user 10 from region
+/// 1, and region 2 repeats user 20 from region 1. A distinct count over users alone would
+/// merge those, while the count per (region, user) pair keeps them. Every region but the last
+/// has 2 distinct users, so the ties go to the smaller region, although region 3 occurs first.
 #[test]
 fn q08_counts_distinct_users_per_region() {
     let (min, max) = (i64::MIN, i64::MAX);
@@ -433,14 +432,15 @@ fn q08_counts_distinct_users_per_region() {
 }
 
 /// The real q09 with distinct counts at the same region boundaries as q08 (region 0 starts
-/// with user 0, region 2 starts with the user region 1 ends with). The counts are unequal and
-/// their order (regions 1, 3, 2, 0) differs from both the region order and the distinct-user
-/// order (regions 2, 1, 3, 0), so the sort is shown to be by count.
+/// with user 0, region 2 starts with the user region 1 ends with). Regions 1 and 3 tie on the
+/// count, and region 3 occurs first, so the tie goes to region 1 only if the groups are sorted
+/// by key. The order by count (regions 1, 3, 2, 0) differs from both the region order and the
+/// distinct-user order (regions 2, 1, 3, 0).
 #[test]
 fn q09_aggregates_per_region() {
     let min = i64::MIN;
     // (RegionID, AdvEngineID, ResolutionWidth, UserID)
-    let rows: [(i64, i64, i64, i64); 14] = [
+    let rows: [(i64, i64, i64, i64); 15] = [
         (3, 0, 10, min),
         (1, 2, 100, 10),
         (0, 1, 1000, 0),
@@ -455,6 +455,7 @@ fn q09_aggregates_per_region() {
         (1, 1, 400, 10),
         (3, 1, 31, 10),
         (1, 0, 500, 20),
+        (3, 2, 6, 10),
     ];
     let col = |f: fn(&(i64, i64, i64, i64)) -> i64| -> Vec<i64> { rows.iter().map(f).collect() };
     let columns = [
@@ -469,7 +470,7 @@ fn q09_aggregates_per_region() {
         .collect();
     assert_eq!(
         run_clickbench("q09", &args),
-        "1\t6\t5\t300.0000\t2\n3\t6\t4\t25.2500\t2\n2\t5\t3\t70.0000\t3\n0\t3\t2\t1000.5000\t1\n"
+        "1\t6\t5\t300.0000\t2\n3\t8\t5\t21.4000\t2\n2\t5\t3\t70.0000\t3\n0\t3\t2\t1000.5000\t1\n"
     );
     let empty: Vec<(&str, &[i64], bool)> =
         columns.iter().map(|(f, _, s)| (*f, &[][..], *s)).collect();

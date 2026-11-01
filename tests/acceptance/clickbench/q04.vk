@@ -2,9 +2,7 @@
 // output: u
 input UserID: i64[];
 
-// Sorting makes equal ids adjacent, so the distinct count is the number of run starts. An empty
-// column has no rows, hence no run starts and a count of 0.
-let s = gather(UserID, argsort(UserID));
-let n = length(s);
-let start = or(s != prev(s, 0), iota(n) == 0);
-export u = count(start);
+// `group_id` numbers each distinct id once, densely from 0, so the distinct count is the largest id
+// plus one. An empty column has no ids and no groups.
+let g = group_id(UserID);
+export u = if length(g) > 0 { reduce(g, max) + 1 } else { 0 };

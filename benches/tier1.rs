@@ -832,6 +832,143 @@ fn argsort_group<T: Elem + Ord>(c: &mut Criterion, interps: &[&Interp], ty: &str
     g.finish();
 }
 
+/// The key shapes of the `group_id` groups: the distinct key count, or `None` for keys
+/// uniform over the full range, which are almost all distinct.
+const GROUP_SHAPES: [(&str, Option<usize>); 5] = [
+    ("uniform", None),
+    // The ClickBench `UserID` shape, about 80K distinct values in 1M rows.
+    ("d80k", Some(80_000)),
+    // A pool of 1M values, which is 63% distinct in 1M rows and 10 rows per value in 10M.
+    ("d1m", Some(1_000_000)),
+    // A pool of 3M values, which is 85% distinct in 1M rows. At 10M rows nearly every row of
+    // the first 600K opens a group, yet the column ends with 3M groups.
+    ("d3m", Some(3_000_000)),
+    ("d10", Some(10)),
+];
+
+/// `n` rows of a key pair. The first column draws from a pool of `d` values, and the second
+/// is a small column of 7 values chosen by the pool index, so two rows have equal pairs when
+/// their pool indexes are equal. With `d` `None` both columns are uniform over the full range.
+fn group_columns(n: usize, d: Option<usize>) -> (Vec<i64>, Vec<i64>) {
+    match d {
+        None => (
+            splitmix(n, 11, u64::cast_signed),
+            splitmix(n, 12, u64::cast_signed),
+        ),
+        Some(d) => {
+            let pool = splitmix(d, 13, u64::cast_signed);
+            let idx = splitmix(n, 14, |r| (r % d as u64) as usize);
+            (
+                idx.iter().map(|&i| pool[i]).collect(),
+                idx.iter().map(|&i| (i % 7) as i64).collect(),
+            )
+        }
+    }
+}
+
+/// The ids of `rows` by first occurrence, from a hash map.
+fn first_occurrence_ids<K: std::hash::Hash + Eq>(rows: impl Iterator<Item = K>) -> Vec<i64> {
+    let mut seen = std::collections::HashMap::new();
+    rows.map(|k| {
+        let next = seen.len() as i64;
+        *seen.entry(k).or_insert(next)
+    })
+    .collect()
+}
+
+/// The group ids that the sort idiom yields: the rank of each row's key among the distinct
+/// keys, listed in sorted order.
+fn sorted_ids<K: Ord + Copy>(keys: &[K]) -> Vec<i64> {
+    let mut sorted = keys.to_vec();
+    sorted.sort();
+    let mut id = -1;
+    let mut prev = None;
+    sorted
+        .into_iter()
+        .map(|k| {
+            if prev != Some(k) {
+                id += 1;
+                prev = Some(k);
+            }
+            id
+        })
+        .collect()
+}
+
+/// The groups `tier2/group-id-<cols>-<shape>-<size>` and `tier2/sort-group-<cols>-<shape>-<size>`
+/// at 1M and 10M rows. The first is `group_id`, and the second is the sort-based idiom of
+/// `tests/acceptance/clickbench/q30.vk`, which sorts stably by each key, marks the start of
+/// each run, and numbers the runs. Its ids are in sorted order and it gathers no payload, so
+/// it favors the sort. Throughput is the key bytes read.
+fn tier2_group(c: &mut Criterion) {
+    let all_interps = interpreters();
+    let auto: Vec<&Interp> = all_interps.iter().filter(|it| !it.intrinsics).collect();
+    for (shape, d) in GROUP_SHAPES {
+        for (size, n) in [("1M", 1_000_000usize), ("10M", N)] {
+            let (a, b) = group_columns(n, d);
+            let av = Value::Array(Array::from_vec(a.clone()));
+            let bv = Value::Array(Array::from_vec(b.clone()));
+            let bytes = u64::try_from(n * size_of::<i64>()).unwrap();
+            let want1 = first_occurrence_ids(a.iter().copied());
+            let sort1 = sorted_ids(&a);
+            let pairs: Vec<(i64, i64)> = a.iter().copied().zip(b.iter().copied()).collect();
+            let want2 = first_occurrence_ids(pairs.iter().copied());
+            let sort2 = sorted_ids(&pairs);
+            let in1 = [("x", av.clone())];
+            let in2 = [("x", av), ("y", bv)];
+            let rows: [(&str, &str, &[(&str, Value)], &[i64], u64); 4] = [
+                (
+                    "group-id-i64",
+                    "input x: i64[]; export g = group_id(x);",
+                    &in1,
+                    &want1,
+                    bytes,
+                ),
+                (
+                    "sort-group-i64",
+                    "input x: i64[];
+                     let o = argsort(x);
+                     let s = gather(x, o);
+                     let start = or(s != prev(s, 0), iota(length(s)) == 0);
+                     export g = scan(cast_i64(start), add) - 1;",
+                    &in1,
+                    &sort1,
+                    bytes,
+                ),
+                (
+                    "group-id2-i64-i64",
+                    "input x: i64[]; input y: i64[]; export g = group_id(x, y);",
+                    &in2,
+                    &want2,
+                    2 * bytes,
+                ),
+                (
+                    "sort-group2-i64-i64",
+                    "input x: i64[]; input y: i64[];
+                     let o1 = argsort(y);
+                     let x1 = gather(x, o1);
+                     let y1 = gather(y, o1);
+                     let o2 = argsort(x1);
+                     let x2 = gather(x1, o2);
+                     let y2 = gather(y1, o2);
+                     let start = or(or(x2 != prev(x2, 0), y2 != prev(y2, 0)), iota(length(x2)) == 0);
+                     export g = scan(cast_i64(start), add) - 1;",
+                    &in2,
+                    &sort2,
+                    2 * bytes,
+                ),
+            ];
+            for (name, src, ins, want, nbytes) in rows {
+                let mut g = c.benchmark_group(format!("tier2/{name}-{shape}-{size}"));
+                configure(&mut g);
+                g.throughput(Throughput::Bytes(nbytes));
+                interp_variants(&mut g, &auto, src, ins, want);
+                g.finish();
+            }
+        }
+    }
+}
+
 /// The tier 2 kernels at `N` rows. Each group has the scalar and auto variants, the
 /// intrinsics variants where the kernel has intrinsics entries, and, for the kernels the spec
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
@@ -1205,5 +1342,5 @@ fn crossover(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, tier1, tier2, crossover);
+criterion_group!(benches, tier1, tier2, tier2_group, crossover);
 criterion_main!(benches);

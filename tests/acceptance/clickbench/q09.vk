@@ -6,33 +6,23 @@ input AdvEngineID: i64[];
 input ResolutionWidth: i64[];
 input UserID: i64[];
 
-// Sorting by the minor key (UserID) first and the major key (RegionID) second, both stable, orders
-// the rows by (RegionID, UserID).
-let o1 = argsort(UserID);
-let r1 = gather(RegionID, o1);
-let u1 = gather(UserID, o1);
-let a1 = gather(AdvEngineID, o1);
-let w1 = gather(ResolutionWidth, o1);
-let o2 = argsort(r1);
-let r = gather(r1, o2);
-let u = gather(u1, o2);
-let a = gather(a1, o2);
-let w = gather(w1, o2);
-// A row starts a group when its region differs from the previous row, and it starts a distinct
-// user within the group when either key differs. An empty column gives no groups and empty outputs.
-let n = length(r);
-let start = or(r != prev(r, 0), iota(n) == 0);
-let ustart = or(start, u != prev(u, 0));
-let ng = count(start);
-let gid = scan(cast_i64(start), add) - 1;
-let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
-let advs = reduce_into(gid, a, ng, add);
-let widths = reduce_into(gid, w, ng, add);
-let users = reduce_into(gid, cast_i64(ustart), ng, add);
-let gr = compress(r, start);
-// The groups are in RegionID order, so a stable sort on descending counts breaks ties by region.
-let order = argsort(0 - counts);
-let top = slice(order, 0, min(ng, 10));
+// `group_id` of the pair numbers each distinct (RegionID, UserID) pair once. The region id of each
+// pair, counted per region, is the distinct user count. An empty column gives no groups and empty
+// outputs.
+let g = group_id(RegionID);
+let ng = if length(g) > 0 { reduce(g, max) + 1 } else { 0 };
+let p = group_id(RegionID, UserID);
+let np = if length(p) > 0 { reduce(p, max) + 1 } else { 0 };
+let users = histogram(reduce_into(p, g, np, min), ng);
+let counts = histogram(g, ng);
+let advs = reduce_into(g, AdvEngineID, ng, add);
+let widths = reduce_into(g, ResolutionWidth, ng, add);
+// Every row of a group has the same region, so the minimum recovers it.
+let gr = reduce_into(g, RegionID, ng, min);
+// Sorting the groups by region and then stably by descending counts breaks ties by region.
+let ko = argsort(gr);
+let co = argsort(0 - gather(counts, ko));
+let top = gather(ko, slice(co, 0, min(ng, 10)));
 let tc = gather(counts, top);
 export RegionID = gather(gr, top);
 export AdvEngineID = gather(advs, top);

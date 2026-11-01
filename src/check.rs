@@ -4,6 +4,7 @@
 //! and `if` stay intact because lowering handles them next.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 
 use crate::error::{Error, Span};
 use crate::kernels::Registry;
@@ -123,7 +124,8 @@ impl FoldKind {
 }
 
 enum Builtin {
-    Op(Op, usize),
+    /// An op with its argument counts.
+    Op(Op, RangeInclusive<usize>),
     /// `reduce`, `scan`, `scan_by`, and `reduce_into`: the arguments, then an operation name.
     Fold(FoldKind),
     Map,
@@ -134,6 +136,7 @@ enum Builtin {
 /// Maps a call name to its builtin. User functions may not use these names.
 fn builtin(name: &str) -> Option<Builtin> {
     let (op, arity) = match name {
+        "group_id" => return Some(Builtin::Op(Op::GroupId, 1..=2)),
         "neg" => (Op::Neg, 1),
         "abs" => (Op::Abs, 1),
         "min" => (Op::Min, 2),
@@ -179,7 +182,7 @@ fn builtin(name: &str) -> Option<Builtin> {
             }
         }
     };
-    Some(Builtin::Op(op, arity))
+    Some(Builtin::Op(op, arity..=arity))
 }
 
 fn reduce_op(name: &str) -> Option<ReduceOp> {
@@ -315,6 +318,7 @@ fn op_name(op: Op) -> String {
         Op::Mul => "*".into(),
         Op::Div => "/".into(),
         Op::DivConst => "div_const".into(),
+        Op::GroupId => "group_id".into(),
         Op::Eq => "==".into(),
         Op::Ne => "!=".into(),
         Op::Lt => "<".into(),
@@ -799,9 +803,15 @@ impl<'a> Checker<'a> {
                         span,
                     ));
                 }
-                if args.len() != arity {
+                if !arity.contains(&args.len()) {
+                    let (lo, hi) = (arity.start(), arity.end());
+                    let want = if lo == hi {
+                        format!("{lo}")
+                    } else {
+                        format!("{lo} to {hi}")
+                    };
                     return Err(Error::ty(
-                        format!("'{name}' takes {arity} arguments, got {}", args.len()),
+                        format!("'{name}' takes {want} arguments, got {}", args.len()),
                         span,
                     ));
                 }

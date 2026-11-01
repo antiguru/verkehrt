@@ -185,7 +185,7 @@ fn argsort_reference<T: Elem + Ord>(xs: &[T]) -> Vec<i64> {
     out
 }
 
-mod radix;
+pub(super) mod radix;
 #[cfg(test)]
 mod tests;
 

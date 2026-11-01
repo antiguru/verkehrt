@@ -1,0 +1,16 @@
+corgi rev 2751e04e8501d47b33219be23049bf4afa7a4428
+start 05:28:56 load 2.12 2.27 2.43 1/2264 1251002
+    Finished `bench` profile [optimized] target(s) in 0.00s
+     Running benches/clickbench/main.rs (target/release/deps/clickbench-0ed22c9f69392b91)
+query    corgi ms duckdb 1t ms    ratio duckdb all ms
+q04         26.77         6.91    3.87x         5.16
+q08         49.19         9.85    4.99x         6.10
+q09         52.76        19.09    2.76x        11.24
+q15         28.46         9.22    3.09x         5.84
+q30          5.29         8.27    0.64x         3.68
+q31          4.93         9.62    0.51x         3.88
+q32         60.45        71.29    0.85x        15.36
+q35         39.15        16.02    2.44x         6.98
+q40          5.30         4.31    1.23x         3.20
+q41          5.03         3.83    1.31x         3.12
+end 05:29:06 load 2.10 2.26 2.43 1/2286 1251016

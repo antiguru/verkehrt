@@ -1,0 +1,38 @@
+// sql: SELECT URLHash, EventDate, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= 15887 AND EventDate <= 15917
+// sql:   AND IsRefresh = 0 AND TraficSourceID IN (-1, 6) AND RefererHash = 3594120000172545465
+// sql:   GROUP BY URLHash, EventDate ORDER BY PageViews DESC, URLHash, EventDate LIMIT 10 OFFSET 100
+// output: [i,u,u]
+input CounterID: i64[];
+input EventDate: i64[];
+input IsRefresh: i64[];
+input TraficSourceID: i64[];
+input RefererHash: i64[];
+input URLHash: i64[];
+
+let m = and(and(CounterID == 62, and(EventDate >= 15887, EventDate <= 15917)),
+            and(and(IsRefresh == 0, or(TraficSourceID == -1, TraficSourceID == 6)), RefererHash == 3594120000172545465));
+let d0 = compress(EventDate, m);
+let h0 = compress(URLHash, m);
+// Group by hashing. `group_id` of the two keys gives each row the dense id of its (URLHash,
+// EventDate) pair, numbered by first occurrence. An empty filter gives no rows, no groups, and
+// empty outputs.
+let ids = group_id(h0, d0);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
+let counts = histogram(ids, ng);
+// Every row of a group has the same keys, so the minimum recovers them.
+let gh = reduce_into(ids, h0, ng, min);
+let gd = reduce_into(ids, d0, ng, min);
+// Sorting the groups by (URLHash, EventDate) takes two stable passes, minor key first. The stable
+// sort on descending counts then breaks ties by key.
+let o1 = argsort(gd);
+let o2 = argsort(gather(gh, o1));
+let ko = gather(o1, o2);
+let co = argsort(0 - gather(counts, ko));
+// OFFSET 100 LIMIT 10, clamped to the number of groups.
+let lo = min(ng, 100);
+let hi = min(ng, 110);
+// Slice the order before gathering, so only the 10 output groups are gathered.
+let top = gather(ko, slice(co, lo, hi));
+export URLHash = gather(gh, top);
+export EventDate = gather(gd, top);
+export PageViews = gather(counts, top);

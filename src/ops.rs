@@ -67,6 +67,9 @@ pub enum Op {
     DivConst,
     /// The positions of the rows of the operand in stable ascending order, as `i64`.
     ArgSort,
+    /// The dense `i64` id of each row's key, numbered from 0 by first occurrence. The key is
+    /// the row of the one operand, or the pair of rows of the two equally long operands.
+    GroupId,
     /// The fold of the values per key in `0..n`, an empty bucket holding the identity of the
     /// fold. The operands are the keys, the values, and the `i64` scalar `n`.
     ReduceInto(ReduceOp),

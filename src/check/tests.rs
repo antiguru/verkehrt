@@ -511,3 +511,38 @@ fn argsort_f64_has_no_kernel() {
         "no kernel for 'argsort' on f64[]",
     );
 }
+
+#[test]
+fn group_id_takes_one_or_two_key_columns() {
+    let i64a = ValueType::Array(ScalarType::I64);
+    assert_eq!(last_type("let x = [3, 1, 3]; let g = group_id(x);"), i64a);
+    assert_eq!(
+        last_type("let a = [1, 2]; let b = [2u8, 1u8]; let g = group_id(a, b);"),
+        i64a
+    );
+    assert_eq!(
+        last_type("let a = [1i32]; let b = [2u64]; let g = group_id(a, b);"),
+        i64a
+    );
+    type_err(
+        "let g = group_id();",
+        "'group_id' takes 1 to 2 arguments, got 0",
+    );
+    type_err(
+        "let x = [1]; let g = group_id(x, x, x);",
+        "'group_id' takes 1 to 2 arguments, got 3",
+    );
+    type_err(
+        "let x = [1.0]; let g = group_id(x);",
+        "no kernel for 'group_id' on f64[]",
+    );
+    type_err(
+        "let x = [1]; let g = group_id(x, [true]);",
+        "no kernel for 'group_id' on i64[], bool[]",
+    );
+    type_err("let g = group_id(1);", "no kernel for 'group_id' on i64");
+    type_err(
+        "let x = [1]; let y = map(x, |v| group_id(v));",
+        "'group_id' cannot be used inside a lambda",
+    );
+}

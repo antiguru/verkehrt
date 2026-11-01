@@ -1,0 +1,72 @@
+loadavg before: 5.21 3.86 3.60 1/2250 1226909
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+warning: unused import: `std::collections::hash_map::RandomState`
+ --> src/kernels/scalar/group.rs:7:5
+  |
+7 | use std::collections::hash_map::RandomState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::hash::BuildHasher`
+ --> src/kernels/scalar/group.rs:8:5
+  |
+8 | use std::hash::BuildHasher;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `verkehrt` (lib) generated 2 warnings (run `cargo fix --lib -p verkehrt` to apply 2 suggestions)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2m 29s
+     Running benches/tier1.rs (target/release/deps/tier1-a3daa48776feced2)
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/group-id-i64-d10-1M/scalar
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Collecting 10 samples in estimated 3.0618 s (1430 iterations)
+Benchmarking tier2/group-id-i64-d10-1M/scalar: Analyzing
+tier2/group-id-i64-d10-1M/scalar
+                        time:   [2.1202 ms 2.1248 ms 2.1302 ms]
+                        thrpt:  [3.4976 GiB/s 3.5065 GiB/s 3.5142 GiB/s]
+                 change:
+                        time:   [−5.2420% −3.1546% −1.0111%] (p = 0.01 < 0.05)
+                        thrpt:  [+1.0214% +3.2573% +5.5320%]
+                        Performance has improved.
+
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Collecting 10 samples in estimated 3.0803 s (1210 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-1M/scalar: Analyzing
+tier2/group-id2-i64-i64-d10-1M/scalar
+                        time:   [2.5321 ms 2.5335 ms 2.5354 ms]
+                        thrpt:  [5.8771 GiB/s 5.8816 GiB/s 5.8848 GiB/s]
+                 change:
+                        time:   [−8.9650% −7.5285% −6.0393%] (p = 0.00 < 0.05)
+                        thrpt:  [+6.4275% +8.1414% +9.8478%]
+                        Performance has improved.
+
+Benchmarking tier2/group-id-i64-d10-10M/scalar
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Collecting 10 samples in estimated 3.8842 s (165 iterations)
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Analyzing
+tier2/group-id-i64-d10-10M/scalar
+                        time:   [23.397 ms 23.413 ms 23.437 ms]
+                        thrpt:  [3.1789 GiB/s 3.1822 GiB/s 3.1844 GiB/s]
+                 change:
+                        time:   [−9.7050% −3.7182% +1.7563%] (p = 0.30 > 0.05)
+                        thrpt:  [−1.7260% +3.8618% +10.748%]
+                        No change in performance detected.
+
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Collecting 10 samples in estimated 3.0154 s (110 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-d10-10M/scalar
+                        time:   [27.262 ms 27.323 ms 27.402 ms]
+                        thrpt:  [5.4380 GiB/s 5.4537 GiB/s 5.4659 GiB/s]
+                 change:
+                        time:   [−11.627% −7.3701% −3.5676%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.6996% +7.9565% +13.157%]
+                        Performance has improved.
+
+loadavg after: 2.51 3.28 3.42 1/2261 1227159

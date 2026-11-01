@@ -14,29 +14,25 @@ let m = and(and(CounterID == 62, and(EventDate >= 15887, EventDate <= 15917)),
             and(and(IsRefresh == 0, DontCountHits == 0), URLHash == 2868770270353813622));
 let w0 = compress(WindowClientWidth, m);
 let h0 = compress(WindowClientHeight, m);
-// Group by sorting. `argsort` is stable, so sorting by the minor key first and the major key second
-// orders the rows by (width, height).
-let o1 = argsort(h0);
-let w1 = gather(w0, o1);
-let h1 = gather(h0, o1);
-let o2 = argsort(w1);
-let w = gather(w1, o2);
-let h = gather(h1, o2);
-// A row starts a group when either key differs from the previous row, or when it is the first row.
-let n = length(w);
-let start = or(or(w != prev(w, 0), h != prev(h, 0)), iota(n) == 0);
-let ng = count(start);
-let gid = scan(cast_i64(start), add) - 1;
-let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
-let gw = compress(w, start);
-let gh = compress(h, start);
-// The groups are in (width, height) order, so a stable sort on descending counts breaks ties by key.
-let order = argsort(0 - counts);
+// Group by hashing. `group_id` of the two keys gives each row the dense id of its (width, height)
+// pair, numbered by first occurrence. An empty filter gives no rows, no groups, and empty outputs.
+let ids = group_id(w0, h0);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
+let counts = histogram(ids, ng);
+// Every row of a group has the same keys, so the minimum recovers them.
+let gw = reduce_into(ids, w0, ng, min);
+let gh = reduce_into(ids, h0, ng, min);
+// Sorting the groups by (width, height) takes two stable passes, minor key first. The stable sort
+// on descending counts then breaks ties by key.
+let o1 = argsort(gh);
+let o2 = argsort(gather(gw, o1));
+let ko = gather(o1, o2);
+let co = argsort(0 - gather(counts, ko));
 // OFFSET 10000 LIMIT 10, clamped to the number of groups.
 let lo = min(ng, 10000);
 let hi = min(ng, 10010);
 // Slice the order before gathering, so only the 10 output groups are gathered.
-let top = slice(order, lo, hi);
+let top = gather(ko, slice(co, lo, hi));
 export WindowClientWidth = gather(gw, top);
 export WindowClientHeight = gather(gh, top);
 export PageViews = gather(counts, top);

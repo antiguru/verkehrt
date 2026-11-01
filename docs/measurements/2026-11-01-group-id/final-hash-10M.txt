@@ -1,0 +1,313 @@
+loadavg before: 4.13 3.30 3.14 1/2272 1231325
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.08s
+     Running benches/tier1.rs (target/release/deps/tier1-a3daa48776feced2)
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Collecting 10 samples in estimated 4.8746 s (20 iterations)
+Benchmarking tier2/group-id-i64-uniform-10M/scalar: Analyzing
+tier2/group-id-i64-uniform-10M/scalar
+                        time:   [242.51 ms 243.45 ms 244.51 ms]
+                        thrpt:  [312.03 MiB/s 313.38 MiB/s 314.60 MiB/s]
+                 change:
+                        time:   [−4.6395% −4.1771% −3.6988%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.8409% +4.3592% +4.8652%]
+                        Performance has improved.
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v3-auto: Collecting 10 samples in estimated 4.8674 s (20 iterations)
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-uniform-10M/x86-64-v3-auto
+                        time:   [242.62 ms 243.55 ms 244.55 ms]
+                        thrpt:  [311.98 MiB/s 313.26 MiB/s 314.46 MiB/s]
+                 change:
+                        time:   [−6.2960% −5.9010% −5.5264%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.8497% +6.2710% +6.7190%]
+                        Performance has improved.
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v4-auto: Collecting 10 samples in estimated 4.8721 s (20 iterations)
+Benchmarking tier2/group-id-i64-uniform-10M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-uniform-10M/x86-64-v4-auto
+                        time:   [242.09 ms 242.51 ms 242.99 ms]
+                        thrpt:  [313.98 MiB/s 314.60 MiB/s 315.15 MiB/s]
+                 change:
+                        time:   [−9.6449% −9.4384% −9.2046%] (p = 0.00 < 0.05)
+                        thrpt:  [+10.138% +10.422% +10.674%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Collecting 10 samples in estimated 3.4156 s (10 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-uniform-10M/scalar
+                        time:   [334.96 ms 335.45 ms 335.94 ms]
+                        thrpt:  [454.22 MiB/s 454.88 MiB/s 455.55 MiB/s]
+                 change:
+                        time:   [−0.5548% −0.3233% −0.1072%] (p = 0.01 < 0.05)
+                        thrpt:  [+0.1074% +0.3243% +0.5578%]
+                        Change within noise threshold.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v3-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.3s.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v3-auto: Collecting 10 samples in estimated 3.3458 s (10 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-uniform-10M/x86-64-v3-auto
+                        time:   [333.30 ms 334.06 ms 334.85 ms]
+                        thrpt:  [455.68 MiB/s 456.77 MiB/s 457.81 MiB/s]
+                 change:
+                        time:   [+3.5392% +4.3460% +5.0298%] (p = 0.00 < 0.05)
+                        thrpt:  [−4.7889% −4.1650% −3.4182%]
+                        Performance has regressed.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v4-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.3s.
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v4-auto: Collecting 10 samples in estimated 3.3475 s (10 iterations)
+Benchmarking tier2/group-id2-i64-i64-uniform-10M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-uniform-10M/x86-64-v4-auto
+                        time:   [333.05 ms 333.78 ms 334.57 ms]
+                        thrpt:  [456.07 MiB/s 457.15 MiB/s 458.16 MiB/s]
+                 change:
+                        time:   [−1.5442% −1.2029% −0.8578%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.8652% +1.2175% +1.5684%]
+                        Change within noise threshold.
+
+Benchmarking tier2/group-id-i64-d80k-10M/scalar
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Collecting 10 samples in estimated 3.4186 s (55 iterations)
+Benchmarking tier2/group-id-i64-d80k-10M/scalar: Analyzing
+tier2/group-id-i64-d80k-10M/scalar
+                        time:   [61.314 ms 61.428 ms 61.565 ms]
+                        thrpt:  [1.2102 GiB/s 1.2129 GiB/s 1.2151 GiB/s]
+                 change:
+                        time:   [−5.1078% −4.7765% −4.4414%] (p = 0.00 < 0.05)
+                        thrpt:  [+4.6478% +5.0161% +5.3827%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v3-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v3-auto: Collecting 10 samples in estimated 3.4006 s (55 iterations)
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-d80k-10M/x86-64-v3-auto
+                        time:   [61.527 ms 61.697 ms 61.905 ms]
+                        thrpt:  [1.2035 GiB/s 1.2076 GiB/s 1.2110 GiB/s]
+                 change:
+                        time:   [−7.6976% −7.3822% −7.0816%] (p = 0.00 < 0.05)
+                        thrpt:  [+7.6214% +7.9706% +8.3395%]
+                        Performance has improved.
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v4-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v4-auto: Collecting 10 samples in estimated 3.3659 s (55 iterations)
+Benchmarking tier2/group-id-i64-d80k-10M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-d80k-10M/x86-64-v4-auto
+                        time:   [60.598 ms 60.668 ms 60.811 ms]
+                        thrpt:  [1.2252 GiB/s 1.2281 GiB/s 1.2295 GiB/s]
+                 change:
+                        time:   [−9.3000% −9.0053% −8.7084%] (p = 0.00 < 0.05)
+                        thrpt:  [+9.5391% +9.8965% +10.254%]
+                        Performance has improved.
+
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.3s or enable flat sampling.
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/scalar: Collecting 10 samples in estimated 4.3260 s (55 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-d80k-10M/scalar
+                        time:   [78.414 ms 78.641 ms 78.874 ms]
+                        thrpt:  [1.8892 GiB/s 1.8948 GiB/s 1.9003 GiB/s]
+                 change:
+                        time:   [+0.8904% +1.1356% +1.4064%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.3869% −1.1229% −0.8825%]
+                        Change within noise threshold.
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v3-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.4s or enable flat sampling.
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v3-auto: Collecting 10 samples in estimated 4.3533 s (55 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-d80k-10M/x86-64-v3-auto
+                        time:   [78.814 ms 79.099 ms 79.228 ms]
+                        thrpt:  [1.8808 GiB/s 1.8839 GiB/s 1.8907 GiB/s]
+                 change:
+                        time:   [−4.4240% −3.8771% −3.4114%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.5318% +4.0335% +4.6288%]
+                        Performance has improved.
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v4-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.3s or enable flat sampling.
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v4-auto: Collecting 10 samples in estimated 4.2723 s (55 iterations)
+Benchmarking tier2/group-id2-i64-i64-d80k-10M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-d80k-10M/x86-64-v4-auto
+                        time:   [76.710 ms 76.939 ms 77.115 ms]
+                        thrpt:  [1.9323 GiB/s 1.9368 GiB/s 1.9425 GiB/s]
+                 change:
+                        time:   [−5.2484% −4.8917% −4.5421%] (p = 0.00 < 0.05)
+                        thrpt:  [+4.7583% +5.1433% +5.5391%]
+                        Performance has improved.
+
+Benchmarking tier2/group-id-i64-d1m-10M/scalar
+Benchmarking tier2/group-id-i64-d1m-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d1m-10M/scalar: Collecting 10 samples in estimated 3.0948 s (20 iterations)
+Benchmarking tier2/group-id-i64-d1m-10M/scalar: Analyzing
+tier2/group-id-i64-d1m-10M/scalar
+                        time:   [155.55 ms 157.37 ms 159.37 ms]
+                        thrpt:  [478.73 MiB/s 484.82 MiB/s 490.48 MiB/s]
+                 change:
+                        time:   [−2.1154% −0.7817% +0.6185%] (p = 0.29 > 0.05)
+                        thrpt:  [−0.6147% +0.7878% +2.1612%]
+                        No change in performance detected.
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v3-auto: Collecting 10 samples in estimated 3.1244 s (20 iterations)
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-d1m-10M/x86-64-v3-auto
+                        time:   [154.72 ms 155.80 ms 156.85 ms]
+                        thrpt:  [486.42 MiB/s 489.69 MiB/s 493.10 MiB/s]
+                 change:
+                        time:   [−4.9196% −4.0724% −3.1420%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.2439% +4.2453% +5.1742%]
+                        Performance has improved.
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v4-auto: Collecting 10 samples in estimated 3.0954 s (20 iterations)
+Benchmarking tier2/group-id-i64-d1m-10M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-d1m-10M/x86-64-v4-auto
+                        time:   [153.99 ms 155.87 ms 158.19 ms]
+                        thrpt:  [482.29 MiB/s 489.46 MiB/s 495.44 MiB/s]
+                 change:
+                        time:   [−6.9352% −5.3952% −3.8234%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.9754% +5.7029% +7.4520%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/scalar: Collecting 10 samples in estimated 4.8853 s (20 iterations)
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-d1m-10M/scalar
+                        time:   [241.98 ms 242.86 ms 243.83 ms]
+                        thrpt:  [625.80 MiB/s 628.30 MiB/s 630.58 MiB/s]
+                 change:
+                        time:   [−2.1032% −1.4895% −0.8692%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.8768% +1.5120% +2.1484%]
+                        Change within noise threshold.
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v3-auto: Collecting 10 samples in estimated 4.8792 s (20 iterations)
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-d1m-10M/x86-64-v3-auto
+                        time:   [245.00 ms 247.15 ms 250.06 ms]
+                        thrpt:  [610.20 MiB/s 617.40 MiB/s 622.82 MiB/s]
+                 change:
+                        time:   [+2.7304% +3.6836% +5.0389%] (p = 0.00 < 0.05)
+                        thrpt:  [−4.7972% −3.5527% −2.6578%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v4-auto: Collecting 10 samples in estimated 4.9069 s (20 iterations)
+Benchmarking tier2/group-id2-i64-i64-d1m-10M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-d1m-10M/x86-64-v4-auto
+                        time:   [243.17 ms 244.04 ms 244.92 ms]
+                        thrpt:  [623.00 MiB/s 625.25 MiB/s 627.50 MiB/s]
+                 change:
+                        time:   [−1.8266% −1.1057% −0.3314%] (p = 0.01 < 0.05)
+                        thrpt:  [+0.3325% +1.1180% +1.8606%]
+                        Change within noise threshold.
+
+Benchmarking tier2/group-id-i64-d10-10M/scalar
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Collecting 10 samples in estimated 3.1188 s (165 iterations)
+Benchmarking tier2/group-id-i64-d10-10M/scalar: Analyzing
+tier2/group-id-i64-d10-10M/scalar
+                        time:   [18.835 ms 19.636 ms 21.070 ms]
+                        thrpt:  [3.5362 GiB/s 3.7944 GiB/s 3.9558 GiB/s]
+                 change:
+                        time:   [−9.0287% −2.3645% +6.6460%] (p = 0.58 > 0.05)
+                        thrpt:  [−6.2318% +2.4218% +9.9248%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v3-auto
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v3-auto: Collecting 10 samples in estimated 3.1833 s (165 iterations)
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v3-auto: Analyzing
+tier2/group-id-i64-d10-10M/x86-64-v3-auto
+                        time:   [19.529 ms 20.184 ms 20.805 ms]
+                        thrpt:  [3.5811 GiB/s 3.6914 GiB/s 3.8151 GiB/s]
+                 change:
+                        time:   [−19.176% −12.451% −5.0636%] (p = 0.01 < 0.05)
+                        thrpt:  [+5.3337% +14.222% +23.725%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v4-auto
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v4-auto: Collecting 10 samples in estimated 3.2164 s (165 iterations)
+Benchmarking tier2/group-id-i64-d10-10M/x86-64-v4-auto: Analyzing
+tier2/group-id-i64-d10-10M/x86-64-v4-auto
+                        time:   [18.540 ms 19.917 ms 20.892 ms]
+                        thrpt:  [3.5662 GiB/s 3.7407 GiB/s 4.0186 GiB/s]
+                 change:
+                        time:   [−22.212% −17.109% −11.671%] (p = 0.00 < 0.05)
+                        thrpt:  [+13.212% +20.640% +28.555%]
+                        Performance has improved.
+
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Collecting 10 samples in estimated 4.4522 s (165 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-10M/scalar: Analyzing
+tier2/group-id2-i64-i64-d10-10M/scalar
+                        time:   [26.733 ms 27.484 ms 28.221 ms]
+                        thrpt:  [5.2801 GiB/s 5.4217 GiB/s 5.5740 GiB/s]
+                 change:
+                        time:   [+5.9099% +10.506% +13.933%] (p = 0.00 < 0.05)
+                        thrpt:  [−12.229% −9.5070% −5.5801%]
+                        Performance has regressed.
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v3-auto
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v3-auto: Collecting 10 samples in estimated 3.0799 s (110 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v3-auto: Analyzing
+tier2/group-id2-i64-i64-d10-10M/x86-64-v3-auto
+                        time:   [26.341 ms 27.475 ms 28.983 ms]
+                        thrpt:  [5.1414 GiB/s 5.4235 GiB/s 5.6569 GiB/s]
+                 change:
+                        time:   [−15.063% −9.6815% −3.4645%] (p = 0.01 < 0.05)
+                        thrpt:  [+3.5888% +10.719% +17.735%]
+                        Performance has improved.
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v4-auto
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v4-auto: Collecting 10 samples in estimated 4.0450 s (165 iterations)
+Benchmarking tier2/group-id2-i64-i64-d10-10M/x86-64-v4-auto: Analyzing
+tier2/group-id2-i64-i64-d10-10M/x86-64-v4-auto
+                        time:   [26.208 ms 27.063 ms 27.680 ms]
+                        thrpt:  [5.3834 GiB/s 5.5060 GiB/s 5.6858 GiB/s]
+                 change:
+                        time:   [−16.622% −10.654% −4.4413%] (p = 0.01 < 0.05)
+                        thrpt:  [+4.6477% +11.925% +19.936%]
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+loadavg after: 2.39 2.85 2.98 1/2263 1231854
