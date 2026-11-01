@@ -287,13 +287,13 @@ impl Engine {
             ));
         }
         let evaluate = |eager| eval::evaluate(&self.reg, &case.source, &case.inputs, eager);
-        let reference_skipped = match evaluate(false) {
+        let reference_skipped = match evaluate(None) {
             Err(reason) => Some(reason),
             Ok(r) if agrees(&r, f) => None,
             // Until #40 (errors as data), the pipeline computes top-level lets it does not
-            // inline. Such a case is skipped only when eager evaluation of the top-level lets
-            // reproduces the pipeline's failure exactly.
-            Ok(r) if eager_reproduces(&r, f, &evaluate(true)) => Some(
+            // inline. Such a case is skipped only when evaluating the top-level let on the
+            // line of the pipeline's failure at its statement reproduces that failure exactly.
+            Ok(r) if eager_reproduces(&r, f, |line| evaluate(Some(line))) => Some(
                 "until #40, the pipeline computes a top-level let it does not inline".to_string(),
             ),
             Ok(r) => {
@@ -313,24 +313,32 @@ impl Engine {
     }
 }
 
-/// Whether the pipeline's failure `o` is the one eager evaluation of top-level lets gives, at
-/// the same line and with the same output, while the lazy evaluation `lazy` succeeds or fails
-/// only at a later statement.
-fn eager_reproduces(lazy: &Reference, o: &Outcome, eager: &Result<Reference, String>) -> bool {
-    let (Err(f), Ok(eager)) = (&o.result, eager) else {
+/// Whether the pipeline's failure `o` is the one that `eager` gives, which evaluates the
+/// top-level let on the failure's line at its statement: at the same line and with the same
+/// output, while the lazy evaluation `lazy` succeeds or fails only at a later statement.
+fn eager_reproduces(
+    lazy: &Reference,
+    o: &Outcome,
+    eager: impl FnOnce(u32) -> Result<Reference, String>,
+) -> bool {
+    let Err(f) = &o.result else {
+        return false;
+    };
+    let Some(line) = f.span.map(|s| s.line) else {
+        return false;
+    };
+    if lazy.result.as_ref().is_err_and(|l| l.line <= line) {
+        return false;
+    }
+    let Ok(eager) = eager(line) else {
         return false;
     };
     let Err(failed) = &eager.result else {
         return false;
     };
-    // The two evaluations share every statement before the lazy failure except the lets, so
-    // an eager failure before it comes from a let that the lazy evaluation reads later.
-    if lazy.result.as_ref().is_err_and(|l| l.line <= failed.line) {
-        return false;
-    }
     let category = Category::of(&f.message);
     f.kind == ErrorKind::Runtime
-        && f.span.map(|s| s.line) == Some(failed.line)
+        && failed.line == line
         && failed.errors.iter().any(|(c, _)| *c == category)
         && eager.printed == o.printed
 }

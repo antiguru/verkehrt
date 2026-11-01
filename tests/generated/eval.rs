@@ -469,14 +469,14 @@ pub struct Reference {
 /// Evaluates `source` on `inputs`. Fails with the reason when the program uses something the
 /// evaluator does not support. `reg` only serves type checking.
 ///
-/// With `eager_lets`, every top-level let is evaluated at its statement. Until #40 (errors as
-/// data), the pipeline computes top-level lets it does not inline, and this mode only serves
-/// to recognize that divergence.
+/// With `eager_let`, the top-level let on that line is evaluated at its statement. Until #40
+/// (errors as data), the pipeline computes top-level lets it does not inline, and this mode
+/// only serves to recognize that divergence.
 pub fn evaluate(
     reg: &Registry,
     source: &str,
     inputs: &[(String, Value)],
-    eager_lets: bool,
+    eager_let: Option<u32>,
 ) -> Result<Reference, String> {
     let ast = parse(source).map_err(|e| format!("does not parse: {e}"))?;
     let mut globals = Globals::new();
@@ -500,7 +500,7 @@ pub fn evaluate(
             TStmt::Let { var, value, .. } => {
                 let t = Thunk::pending(value, env.clone(), None);
                 env = env.bind(*var, Rc::clone(&t));
-                if eager_lets {
+                if eager_let == Some(stmt_line(s)) {
                     ev.force(&t).map(|_| ())
                 } else {
                     Ok(())
