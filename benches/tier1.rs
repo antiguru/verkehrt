@@ -834,12 +834,15 @@ fn argsort_group<T: Elem + Ord>(c: &mut Criterion, interps: &[&Interp], ty: &str
 
 /// The key shapes of the `group_id` groups: the distinct key count, or `None` for keys
 /// uniform over the full range, which are almost all distinct.
-const GROUP_SHAPES: [(&str, Option<usize>); 4] = [
+const GROUP_SHAPES: [(&str, Option<usize>); 5] = [
     ("uniform", None),
     // The ClickBench `UserID` shape, about 80K distinct values in 1M rows.
     ("d80k", Some(80_000)),
     // A pool of 1M values, which is 63% distinct in 1M rows and 10 rows per value in 10M.
     ("d1m", Some(1_000_000)),
+    // A pool of 3M values, which is 85% distinct in 1M rows. At 10M rows nearly every row of
+    // the first 600K opens a group, yet the column ends with 3M groups.
+    ("d3m", Some(3_000_000)),
     ("d10", Some(10)),
 ];
 

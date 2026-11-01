@@ -19,13 +19,11 @@ use crate::value::{Array, Elem, ScalarType, Value, ValueType};
 /// Slots of the first table, which grows whenever an insert leaves it more than half full.
 pub(super) const INITIAL_SLOTS: usize = 256;
 
-/// Doublings of one growth when nearly every row so far has opened a group. Measured in
+/// Doublings of one growth when nearly every row so far has opened a group. A growth
+/// happens when the table is just over half full, so the new table has under 16 slots per
+/// group, whatever the rest of the column holds. Measured in
 /// `docs/measurements/2026-11-01-group-id.md`.
-const JUMP_BITS: u32 = 4;
-
-/// From this many slots on, a growth of a nearly distinct column goes straight to the largest
-/// table.
-const BIG_SLOTS: usize = 1 << 20;
+pub(super) const JUMP_BITS: u32 = 3;
 
 /// A fixed odd multiplier for `mix`, `2^64` divided by the golden ratio. `group_id` draws a
 /// random multiplier per call instead, and the tests use this one to build colliding keys.
@@ -33,7 +31,7 @@ const BIG_SLOTS: usize = 1 << 20;
 pub(super) const MUL: u64 = 0x9E37_79B9_7F4A_7C15;
 
 /// A random odd multiplier for one `group_id` call. Chosen keys cannot be made to collide
-/// without knowing it, and the ids do not depend on it.
+/// without knowing it, except for links between two pairs, and the ids do not depend on it.
 fn multiplier() -> u64 {
     RandomState::new().hash_one(0u64) | 1
 }
@@ -164,9 +162,10 @@ pub(super) fn hashed_into<K: GroupKey>(
 }
 
 /// The table that replaces the full `tab` of `slots` slots, with its slot count and hash
-/// shift. A table that is nearly all distinct keys (`distinct`) skips ahead instead of
-/// doubling, which saves rehashing at every size, and no growth goes past `max_slots`. Fails
-/// if the new table cannot be allocated.
+/// shift. A table that is nearly all distinct keys (`distinct`) grows `2^JUMP_BITS`-fold
+/// instead of doubling, which saves rehashing at every size. No growth goes past `max_slots`,
+/// so a table never has more than 16 slots per group or more slots than twice the rows.
+/// Fails if the new table cannot be allocated.
 #[cold]
 #[inline(never)]
 fn grow<K: GroupKey, P: Pos + Eq>(
@@ -178,15 +177,11 @@ fn grow<K: GroupKey, P: Pos + Eq>(
     hash: &impl Fn(K) -> u64,
 ) -> Result<(Vec<(K, P)>, usize, u32), String> {
     let empty = P::default();
-    let grown = if distinct && slots >= BIG_SLOTS {
-        max_slots
-    } else {
-        let jump = if distinct { JUMP_BITS } else { 1 };
-        slots
-            .checked_mul(1 << jump)
-            .ok_or("cannot allocate a group_id table")?
-            .min(max_slots)
-    };
+    let jump = if distinct { JUMP_BITS } else { 1 };
+    let grown = slots
+        .checked_mul(1 << jump)
+        .ok_or("cannot allocate a group_id table")?
+        .min(max_slots);
     let new_shift = shift - (grown / slots).trailing_zeros();
     let mut new = table::<K, P>(grown)?;
     // The keys are distinct, so reinsertion only looks for an empty slot.

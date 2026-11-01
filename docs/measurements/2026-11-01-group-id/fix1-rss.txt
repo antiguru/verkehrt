@@ -1,0 +1,16 @@
+uniform policy=old maxrss_kib=718312
+uniform policy=a maxrss_kib=963948
+uniform policy=c maxrss_kib=964540
+uniform policy=d maxrss_kib=833248
+d3m policy=old maxrss_kib=718256
+d3m policy=a maxrss_kib=455808
+d3m policy=c maxrss_kib=373728
+d3m policy=d maxrss_kib=324636
+prefix policy=old maxrss_kib=718444
+prefix policy=a maxrss_kib=456416
+prefix policy=c maxrss_kib=259852
+prefix policy=d maxrss_kib=325496
+d80k policy=old maxrss_kib=177588
+d80k policy=a maxrss_kib=177596
+d80k policy=c maxrss_kib=177752
+d80k policy=d maxrss_kib=177712

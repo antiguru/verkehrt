@@ -8,7 +8,7 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 use proptest::test_runner::{Config, TestRunner};
 
-use super::{BIG_SLOTS, GroupKey, INITIAL_SLOTS, MUL, hashed_into, mix, table};
+use super::{GroupKey, INITIAL_SLOTS, JUMP_BITS, MUL, hashed_into, mix, table};
 use crate::kernels::scalar::construct::splitmix64;
 use crate::kernels::{Backend, FeatureSet, Isa, Registry, Variant};
 use crate::value::{Array, Elem, ScalarType, Value};
@@ -402,22 +402,51 @@ fn doubling_growth_keeps_first_occurrence_order() {
     }
 }
 
-/// A column long enough to pass `BIG_SLOTS` slots, once all distinct, where the growth goes
-/// straight to the largest table, and once with a prefix of repeated keys, where it doubles.
+/// Every length around the thresholds of the `2^JUMP_BITS`-fold growths of a column that is
+/// all distinct so far, up to a table of 1M slots, each followed by the keys in reverse. The
+/// rows are twice the keys, so a growth just above a threshold meets the cap of the table
+/// for twice the rows.
 #[test]
-fn big_table_growth_keeps_first_occurrence_order() {
-    let groups = BIG_SLOTS / 2 + 1000;
-    let keys: Vec<u64> = (0..groups).map(|i| splitmix64(i as u64)).collect();
+fn jump_thresholds_keep_first_occurrence_order() {
+    let mut lens = Vec::new();
+    let mut slots = INITIAL_SLOTS;
+    while slots <= 1 << 20 {
+        let half = slots / 2;
+        lens.extend([half - 1, half, half + 1]);
+        slots <<= JUMP_BITS;
+    }
+    for len in lens {
+        let seed = u64::try_from(len).unwrap();
+        let keys: Vec<u64> = (0..seed).map(|i| splitmix64(seed << 32 | i)).collect();
+        let mut xs = keys.clone();
+        xs.extend(keys.iter().rev());
+        let n = i64::try_from(len).unwrap();
+        let want: Vec<i64> = (0..n).chain((0..n).rev()).collect();
+        assert_eq!(group_id(&xs), want, "len {len}");
+    }
+}
+
+/// A column whose first rows repeat keys, so that the first growths double. The repeated
+/// prefix is diluted by 600K distinct keys, which end in jumps.
+#[test]
+fn doubling_growth_to_a_large_table() {
+    let few = 1000;
+    let groups = 600_000;
+    let mut xs: Vec<u64> = (0..few).flat_map(|i| [splitmix64(i); 8]).collect();
+    xs.extend((few..groups).map(splitmix64));
+    assert_eq!(group_id(&xs), group_id_reference(&xs));
+}
+
+/// A column that opens many groups at first, so that its table jumps, and then only repeats
+/// them.
+#[test]
+fn distinct_prefix_then_repeats() {
+    let keys: Vec<u64> = (0..70_000).map(splitmix64).collect();
     let mut xs = keys.clone();
-    xs.extend(keys.iter().rev());
-    let want: Vec<i64> = (0..groups as i64).chain((0..groups as i64).rev()).collect();
-    assert_eq!(group_id(&xs), want);
-    // The first keys each appear 8 times, so under 7/8 of the rows have opened a group when
-    // the table passes `BIG_SLOTS` slots.
-    let few = BIG_SLOTS / 8 + 100;
-    let mut ys: Vec<u64> = (0..few).flat_map(|i| [splitmix64(i as u64); 8]).collect();
-    ys.extend((few..groups).map(|i| splitmix64(i as u64)));
-    assert_eq!(group_id(&ys), group_id_reference(&ys));
+    for _ in 0..5 {
+        xs.extend(keys.iter().rev());
+    }
+    assert_eq!(group_id(&xs), group_id_reference(&xs));
 }
 
 /// The table on hashes that collide everywhere: every key probes from the same slot, so
@@ -484,7 +513,8 @@ fn colliding_keys_under_the_real_hash() {
 
 /// `mix` is a bijection, so single keys never share a full hash. Pairs can: under a known
 /// multiplier, for any `a` and `a2`, the pair `(a2, b ^ mix(a) ^ mix(a2))` has the full hash
-/// of `(a, b)`. The multiplier of a call is random, so chosen pairs do not collide there.
+/// of `(a, b)`. The multiplier of a call is random, so chosen pairs do not collide there, except for
+/// pairs of two, which collide under every multiplier.
 #[test]
 fn pairs_with_equal_full_hashes() {
     let b = 0x1234_5678_9ABC_DEF0u64;
