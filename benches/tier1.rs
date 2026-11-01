@@ -817,6 +817,21 @@ fn interp_variants<T: Elem + PartialEq + std::fmt::Debug>(
     }
 }
 
+/// The group `tier2/argsort-<ty>` over the rows `xs`, interpreter variants only.
+fn argsort_group<T: Elem + Ord>(c: &mut Criterion, interps: &[&Interp], ty: &str, xs: &[T]) {
+    let mut want: Vec<i64> = (0..).take(xs.len()).collect();
+    want.sort_by_key(|&i| xs[i as usize]);
+    let mut g = c.benchmark_group(format!("tier2/argsort-{ty}"));
+    configure(&mut g);
+    g.throughput(Throughput::Bytes(
+        u64::try_from(size_of_val(xs)).expect("size fits in u64"),
+    ));
+    let src = format!("input x: {ty}[]; export o = argsort(x);");
+    let ins = [("x", Value::Array(Array::from_vec(xs.to_vec())))];
+    interp_variants(&mut g, interps, &src, &ins, &want);
+    g.finish();
+}
+
 /// The tier 2 kernels at `N` rows. Each group has the scalar and auto variants, the
 /// intrinsics variants where the kernel has intrinsics entries, and, for the kernels the spec
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
@@ -1024,6 +1039,14 @@ fn tier2(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(*b));
         interp_variants(&mut g, &auto, src, ins, want);
         g.finish();
+    }
+    // `argsort` on the other key types, with the rows of `argsort-i64` truncated to the type.
+    {
+        let x32: Vec<i32> = x.iter().map(|&v| v as i32).collect();
+        let x8: Vec<u8> = x.iter().map(|&v| v as u8).collect();
+        argsort_group(c, &auto, "u64", &xu);
+        argsort_group(c, &auto, "i32", &x32);
+        argsort_group(c, &auto, "u8", &x8);
     }
     {
         let mut acc = 0i64;

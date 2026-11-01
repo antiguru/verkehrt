@@ -1,0 +1,183 @@
+## sign flip omitted for i64: KILLED
+- 'self.cast_unsigned() ^ (1 << 63)'
++ 'self.cast_unsigned()'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.58s
+
+## sign flip applied to u64: KILLED
+- '    fn image(self) -> u64 {\n        self\n'
++ '    fn image(self) -> u64 {\n        self ^ (1 << 63)\n'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.57s
+
+## sign flip omitted for i32: KILLED
+- 'self.cast_unsigned() ^ (1 << 31)'
++ 'self.cast_unsigned()'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.74s
+
+## last (most significant) pass skipped: KILLED
+- 'for (c, shift) in counts.iter().zip((0..).step_by(8)).take(T::U::PASSES) {'
++ 'for (c, shift) in counts.iter().zip((0..).step_by(8)).take(T::U::PASSES - 1) {'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test result: FAILED. 4 passed; 5 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.37s
+
+## first pass of a multi-pass sort scatters backwards (stability): KILLED
+- '            scatter(\n                xs.iter().zip(0..),\n'
++ '            scatter(\n                xs.iter().zip(0..).rev(),\n'
+
+
+## middle passes scatter backwards: KILLED
+- '                scatter(\n                    a.iter().copied(),\n'
++ '                scatter(\n                    a.iter().rev().copied(),\n'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.48s
+
+## single-pass sort scatters backwards (stability): KILLED
+- '                xs.iter().zip(0i64..),\n'
++ '                xs.iter().zip(0i64..).rev(),\n'
+
+
+## switchover off by one (<= to <): SURVIVED
+- 'if xs.len() <= T::SMALL {'
++ 'if xs.len() < T::SMALL {'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 1.06s
+
+## switchover off by one (<= to <= SMALL + 1): SURVIVED
+- 'if xs.len() <= T::SMALL {'
++ 'if xs.len() <= T::SMALL + 1 {'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 1.06s
+
+## comparison path loses its position tiebreak (stability): KILLED
+- '        (xs[row], i)\n'
++ '        xs[row]\n'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test result: FAILED. 4 passed; 5 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.29s
+
+## pass skipping tests the wrong bucket (digit of key 0 vs count of bucket 0): SURVIVED
+- 'if c[first.image().digit(shift)] != n {'
++ 'if c[0] != n {'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 1.05s
+
+# from here on the test command is: cargo test --release --lib -- argsort radix_paths (adds radix_paths_match_reference)
+## pass skipped when all but one row share the digit: KILLED
+- 'if c[first.image().digit(shift)] != n {'
++ 'if c[first.image().digit(shift)] < n - 1 {'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::radix_paths_match_reference ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 243 filtered out; finished in 1.05s
+
+# rerun of the two backwards-scatter mutations: the first attempt did not compile (.rev() on an unbounded zip), so it proved nothing
+## first pass of a multi-pass sort scatters backwards (stability): KILLED
+- '            scatter(\n                xs.iter().zip(0..),\n'
++ '            scatter(\n                xs.iter().zip(0..).collect::<Vec<_>>().into_iter().rev(),\n'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::radix_paths_match_reference ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... ok
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test result: FAILED. 5 passed; 5 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.49s
+
+## single-pass sort scatters backwards (stability): KILLED
+- '                xs.iter().zip(0i64..),\n'
++ '                xs.iter().zip(0i64..).collect::<Vec<_>>().into_iter().rev(),\n'
+test check::tests::argsort_f64_has_no_kernel ... ok
+test kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order ... ok
+test kernels::tests::argsort_is_stable ... ok
+test kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity ... ok
+test kernels::scalar::index::tests::radix_paths_match_reference ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u8 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i32 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_i64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_u64 ... FAILED
+test kernels::scalar::index::tests::argsort_matches_reference_across_lengths ... FAILED
+test result: FAILED. 4 passed; 6 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.83s
+

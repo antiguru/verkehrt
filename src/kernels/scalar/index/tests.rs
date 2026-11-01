@@ -6,6 +6,7 @@ use proptest::sample::Index;
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
 
 use super::argsort_reference;
+use super::radix::{RadixKey, radix_into, scratch};
 use crate::kernels::scalar::construct::splitmix64;
 use crate::kernels::{Backend, FeatureSet, Isa, Registry, Variant};
 use crate::value::{Array, Elem, ScalarType, Value};
@@ -268,4 +269,42 @@ fn argsort_of_all_equal_rows_is_the_identity() {
     );
     assert_eq!(argsort(ScalarType::I32, &vec![-7i32; n]), want);
     assert_eq!(argsort(ScalarType::U8, &vec![7u8; n]), want);
+}
+
+/// The radix path on its own, with 32-bit positions and with the 64-bit positions that only
+/// inputs above `u32::MAX` rows reach through the kernel, at every generated length, including
+/// those below the small-input switch point.
+fn radix_paths<T: Key + RadixKey>(extremes: Vec<T>) {
+    let mut runner = TestRunner::new(Config {
+        cases: CASES,
+        ..Config::default()
+    });
+    runner
+        .run(&arrays(extremes), |xs| {
+            let want = argsort_reference(&xs);
+            let mut narrow = vec![0; xs.len()];
+            radix_into::<T, u32>(&xs, &mut narrow).map_err(TestCaseError::fail)?;
+            prop_assert_eq!(&narrow, &want);
+            let mut wide = vec![0; xs.len()];
+            radix_into::<T, u64>(&xs, &mut wide).map_err(TestCaseError::fail)?;
+            prop_assert_eq!(&wide, &want);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn radix_paths_match_reference() {
+    radix_paths::<i64>(vec![i64::MIN, i64::MAX, -1, 0, 1]);
+    radix_paths::<u64>(vec![0, 1, u64::MAX, 1 << 63, (1 << 63) - 1]);
+    radix_paths::<i32>(vec![i32::MIN, i32::MAX, -1, 0, 1]);
+    radix_paths::<u8>(vec![0, 1, 127, 128, 255]);
+}
+
+#[test]
+fn argsort_scratch_allocation_failure_is_an_error() {
+    // No allocator grants this many pairs, so the reservation fails instead of aborting.
+    let err = scratch::<(u64, u32)>(usize::MAX / 32, true).unwrap_err();
+    assert!(err.contains("cannot allocate"), "{err}");
+    assert!(scratch::<(u64, u32)>(usize::MAX, false).unwrap().is_empty());
 }

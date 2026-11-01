@@ -1,0 +1,69 @@
+# prototype round 2, u32 against u64 positions, baseline target
+# head: 72b8180, dirty files: 4
+# command: cargo bench --bench argsort_proto -- 'proto/p-'
+# loadavg before: 6.37 3.67 2.91 2/2279 1186176
+Benchmarking proto/p-i64/1000000/lsd8
+Benchmarking proto/p-i64/1000000/lsd8: Warming up for 500.00 ms
+Benchmarking proto/p-i64/1000000/lsd8: Collecting 10 samples in estimated 1.5136 s (110 iterations)
+Benchmarking proto/p-i64/1000000/lsd8: Analyzing
+proto/p-i64/1000000/lsd8
+                        time:   [13.524 ms 13.637 ms 13.723 ms]
+                        thrpt:  [555.95 MiB/s 559.45 MiB/s 564.15 MiB/s]
+Benchmarking proto/p-i64/1000000/lsd8-p64
+Benchmarking proto/p-i64/1000000/lsd8-p64: Warming up for 500.00 ms
+Benchmarking proto/p-i64/1000000/lsd8-p64: Collecting 10 samples in estimated 1.7244 s (110 iterations)
+Benchmarking proto/p-i64/1000000/lsd8-p64: Analyzing
+proto/p-i64/1000000/lsd8-p64
+                        time:   [15.584 ms 15.697 ms 15.838 ms]
+                        thrpt:  [481.70 MiB/s 486.03 MiB/s 489.56 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking proto/p-i32/1000000/lsd8
+Benchmarking proto/p-i32/1000000/lsd8: Warming up for 500.00 ms
+Benchmarking proto/p-i32/1000000/lsd8: Collecting 10 samples in estimated 1.1651 s (220 iterations)
+Benchmarking proto/p-i32/1000000/lsd8: Analyzing
+proto/p-i32/1000000/lsd8
+                        time:   [5.2836 ms 5.2997 ms 5.3179 ms]
+                        thrpt:  [717.33 MiB/s 719.80 MiB/s 721.98 MiB/s]
+Benchmarking proto/p-i32/1000000/lsd8-p64
+Benchmarking proto/p-i32/1000000/lsd8-p64: Warming up for 500.00 ms
+Benchmarking proto/p-i32/1000000/lsd8-p64: Collecting 10 samples in estimated 1.2734 s (165 iterations)
+Benchmarking proto/p-i32/1000000/lsd8-p64: Analyzing
+proto/p-i32/1000000/lsd8-p64
+                        time:   [7.6363 ms 7.6664 ms 7.6864 ms]
+                        thrpt:  [496.29 MiB/s 497.59 MiB/s 499.55 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking proto/p-i64/10000000/lsd8
+Benchmarking proto/p-i64/10000000/lsd8: Warming up for 500.00 ms
+Benchmarking proto/p-i64/10000000/lsd8: Collecting 10 samples in estimated 4.3614 s (30 iterations)
+Benchmarking proto/p-i64/10000000/lsd8: Analyzing
+proto/p-i64/10000000/lsd8
+                        time:   [145.62 ms 146.11 ms 146.62 ms]
+                        thrpt:  [520.35 MiB/s 522.18 MiB/s 523.94 MiB/s]
+Benchmarking proto/p-i64/10000000/lsd8-p64
+Benchmarking proto/p-i64/10000000/lsd8-p64: Warming up for 500.00 ms
+Benchmarking proto/p-i64/10000000/lsd8-p64: Collecting 10 samples in estimated 3.1308 s (20 iterations)
+Benchmarking proto/p-i64/10000000/lsd8-p64: Analyzing
+proto/p-i64/10000000/lsd8-p64
+                        time:   [156.34 ms 156.79 ms 157.21 ms]
+                        thrpt:  [485.30 MiB/s 486.61 MiB/s 488.00 MiB/s]
+Benchmarking proto/p-i32/10000000/lsd8
+Benchmarking proto/p-i32/10000000/lsd8: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking proto/p-i32/10000000/lsd8: Collecting 10 samples in estimated 3.4451 s (55 iterations)
+Benchmarking proto/p-i32/10000000/lsd8: Analyzing
+proto/p-i32/10000000/lsd8
+                        time:   [61.981 ms 62.159 ms 62.386 ms]
+                        thrpt:  [611.46 MiB/s 613.70 MiB/s 615.47 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking proto/p-i32/10000000/lsd8-p64
+Benchmarking proto/p-i32/10000000/lsd8-p64: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.2s or enable flat sampling.
+Benchmarking proto/p-i32/10000000/lsd8-p64: Collecting 10 samples in estimated 4.1943 s (55 iterations)
+Benchmarking proto/p-i32/10000000/lsd8-p64: Analyzing
+proto/p-i32/10000000/lsd8-p64
+                        time:   [75.362 ms 75.534 ms 75.844 ms]
+                        thrpt:  [502.97 MiB/s 505.03 MiB/s 506.18 MiB/s]
+# loadavg after: 6.53 4.14 3.11 2/2257 1186332
