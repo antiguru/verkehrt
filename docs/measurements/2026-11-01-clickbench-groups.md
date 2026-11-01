@@ -3,7 +3,7 @@
 This document times the six ClickBench queries added in plan 5 (q04, q08, q09, q15, q32, q35) against corgi and DuckDB on one thread, and re-times the four sort-bound queries of the #20 round (q30, q31, q40, q41) on the radix `argsort`.
 Of the six new queries, q35 is faster than corgi and slower than DuckDB, q32 is level with DuckDB and slower than corgi, q04, q08 and q09 are level with corgi and 2.9 to 4.9 times slower than DuckDB, and q15 is slower than both.
 In all six, `argsort_i64` is the largest kernel at 53% to 89% of kernel time, and `gather_i64` is the second largest in q08, q09, q32 and q35 at 11% to 31%.
-Compared with the #20 round, q30, q31, q40 and q41 take 28% to 48% less time on the best variant, and `argsort_i64` is no longer the largest kernel in any of the four.
+Compared with the #20 round, q30, q31, q40 and q41 take 28% to 48% less time on the best variant, and `argsort_i64` is no longer the largest kernel in q30, q40 and q41 and is at most 30% of kernel time in any of the four (it was 44% to 54%).
 The comparison with #20 spans two sessions on the same host, and the last sections list the gaps.
 
 ## Setup
@@ -70,7 +70,7 @@ Against DuckDB, q32 (0.96) is level, q35 (1.81) is slower by under 2x, and q04, 
 Against corgi, q04 (0.95), q08 (0.99) and q09 (1.02) are level, q15 (1.14) and q32 (1.13) are slower by a little more than the noise band, and q35 (0.72) is faster.
 This document did not read corgi's per-op profile, so it does not attribute corgi's lead on q15 and q32 or Verkehrt's lead on q35.
 The q04, q08 and q09 times are the same on all five variants within 10% (q04 25.73 to 27.12, q08 48.42 to 49.66, q09 54.86 to 58.61), so the ISA level and the backend change nothing there.
-q32, q15 and q35 spread by 5% to 12% across variants with no consistent order, which this document reads as noise.
+q15 (5%) and q35 (9%) spread across variants inside the noise band with no consistent order. q32 spreads by 12% (68.36 to 76.53 ms), which exceeds the 10% band, and this document did not repeat the runs to tell noise from a variant effect, so it claims neither.
 The four queries of the #20 round still gain from the ISA levels, with `x86-64-v4-intrinsics` the best variant and 37% to 48% below `scalar` (q30 8.10 to 4.71 ms, q31 8.77 to 5.55, q40 6.61 to 3.53, q41 6.09 to 3.14).
 
 ## Change against #20
@@ -90,11 +90,13 @@ The corgi column is a drift check, not part of the comparison: corgi's times for
 | q41 | v4-intrinsics (best) | 5.99 | 3.14 | -48% |
 | q41 | scalar | 8.88 | 6.09 | -31% |
 
-All twenty variant rows (four queries, five variants) moved by -17% or more, none inside the noise band.
+All twenty variant rows (four queries, five variants) moved by about -17% or more (the smallest is q40 `x86-64-v3-auto`, 6.03 to 5.03 ms, -16.6%), none inside the noise band.
 The `argsort_i64` kernel time in `stats.txt` fell from 4495 to 1323 us in q30, from 4715 to 1916 us in q31, from 2339 to 941 us in q40, and from 3575 to 783 us in q41.
 The drop in `argsort_i64` is 3172, 2799, 1398 and 2792 us, against drops in the criterion mean of 3.99, 3.58, 1.39 and 2.85 ms.
 The two sets of numbers are the same size, so the sort accounts for most of the change.
 The remaining difference is at most 0.8 ms (q30), and this document did not attribute it.
+The kernel time outside `argsort_i64` supports the cross-session reading, because it is unchanged within noise: q30 4609 to 4544 us, q31 4738 to 4405 us, q40 2963 to 3079 us, and q41 3038 to 2983 us.
+`bench-b.txt` also ran at a higher load (up to 4.42) than the #20 runs (up to 3.3), so if load slowed the runs at all, it makes the speedup a conservative reading.
 
 Against the references, q30 (0.57) and q31 (0.58) are 1.7x faster than DuckDB, and q40 and q41 (both 0.82) are faster by 18%.
 In the #20 round, q30 and q31 were level with DuckDB, and q40 and q41 were 1.14x and 1.56x slower.
@@ -107,34 +109,38 @@ Plans are in `query-plans.txt`.
 
 | Query | Dominating kernel | Share | Next kernels | Follow-up |
 |---|---|---|---|---|
-| q04 | `argsort_i64` (1 call) | 89% (22.9 of 25.7 ms) | `gather_i64` 5%, `ne_i64` 2% | Plan 5, #9 |
-| q08 | `argsort_i64` (3 calls) | 69% (32.4 of 47.0 ms) | `gather_i64` (6 calls) 18%, `prev_i64` 3% | Plan 5, #9 |
-| q09 | `argsort_i64` (3 calls) | 59% (32.8 of 56.0 ms) | `gather_i64` (13 calls) 23%, `reduce_into_add_i64` 6% | Plan 5, #9 |
-| q15 | `argsort_i64` (2 calls) | 73% (23.2 of 31.7 ms) | `reduce_into_add_i64` 5%, `gather_i64` 4% | Plan 5, #9 |
-| q32 | `argsort_i64` (3 calls) | 53% (36.6 of 68.9 ms) | `gather_i64` (13 calls) 31%, `reduce_into_add_i64` 6% | Plan 5, #9 |
-| q35 | `argsort_i64` (2 calls) | 64% (18.5 of 28.8 ms) | `gather_i64` 11%, `reduce_into_add_i64` 5% | Plan 5, #9 |
+| q04 | `argsort_i64` (1 call) | 89% (22.9 of 25.7 ms) | `gather_i64` 5%, `ne_i64` 2% | Sort itself (see gaps) |
+| q08 | `argsort_i64` (3 calls, two over 1M rows) | 69% (32.4 of 47.0 ms) | `gather_i64` (6 calls) 18%, `prev_i64` 3% | Composite-key grouping, hash grouping (unverified), top-k |
+| q09 | `argsort_i64` (3 calls, two over 1M rows) | 59% (32.8 of 56.0 ms) | `gather_i64` (13 calls) 23%, `reduce_into_add_i64` 6% | Composite-key grouping, hash grouping (unverified), top-k |
+| q15 | `argsort_i64` (2 calls) | 73% (23.2 of 31.7 ms) | `reduce_into_add_i64` 5%, `gather_i64` 4% | Hash grouping (unverified), top-k |
+| q32 | `argsort_i64` (3 calls, all over 1M rows) | 53% (36.6 of 68.9 ms) | `gather_i64` (13 calls) 31%, `reduce_into_add_i64` 6% | Composite-key grouping, hash grouping (unverified), top-k |
+| q35 | `argsort_i64` (2 calls) | 64% (18.5 of 28.8 ms) | `gather_i64` 11%, `reduce_into_add_i64` 5% | Hash grouping (unverified), top-k |
 | q30 | none: `compress_i64` 24%, `argsort_i64` 23% | 24%, 23% | `prev_i64` 21%, `sub_i64` 16% | Spread, see below |
 | q31 | `argsort_i64` | 30% | `compress_i64` 23%, `prev_i64` 16%, `sub_i64` 15% | Spread, see below |
 | q40 | `eq_i64` (6 calls, five over the 1M-row filter columns) | 33% | `argsort_i64` 23%, `compress_i64` 15%, `le_i64` 11% | #16 |
 | q41 | `eq_i64` (5 calls, four over the filter columns) | 30% | `argsort_i64` 21%, `compress_i64` 17%, `le_i64` 12% | #16 |
 
-In the six new queries, one `argsort_i64` over a full 1M-row column handles the group key (UserID, ClientIP) and the second call (q15, q35) sorts the group counts.
-The byte counts in `stats.txt` show that the second sort is small: in q15 the two calls handle 17.3 MB together and the first alone handles 16 MB, and in q35 the two handle 17.1 MB.
-This document did not time the two calls separately, so it does not say how much of the 18.5 to 23.2 ms is the count sort.
-The `gather_i64` calls in q08, q09 and q32 carry payload columns through the sort permutation (plans 12, 17 and 18 of q32, for example) and take 8.2, 13.1 and 21.2 ms.
-This document did not measure why those gathers cost what they do, so it names them as a gap and files them under no existing issue.
+q04, q15 and q35 group by one key: one `argsort_i64` over the 1M-row column, then (q15, q35) a second sort of the group counts.
+The byte counts in `stats.txt` show that this second sort is small: in q15 the two calls handle 17.3 MB together and the first alone handles 16 MB, and in q35 the two handle 17.1 MB.
+q08 and q09 group by two keys (plans 8 and 11 of q08): one stable sort over `UserID` and a second over the region key `r1`, so two sorts over 1M rows, then a small sort of the per-region counts (about 20 KB of argsort bytes).
+q32 sorts three times over 1M rows (`ClientIP`, `k1`, and the 1M group counts, whose `slice_i64` input is 8 MB), so the count sort is about a third of its argsort bytes (16 of 48 MB), and by that share about a third of its 36.6 ms argsort time is a full sort to take ten rows.
+That time share is an inference from byte counts, because this document did not time the three calls separately.
+The `gather_i64` calls in q08, q09 and q32 carry each payload column through both permutations (plans 9, 12 and 13 of q08, and plans 12, 17 and 18 of q32), so every payload is gathered twice, and they take 8.2, 13.1 and 21.2 ms.
+q08, q09 and q32 therefore attribute to composite-key grouping: one sort over a combined key instead of two, and one gather per payload instead of two.
+Composing the two permutations once would also cut the gather count without a new sort.
 
 In q40 and q41 the mask chain is now the largest block.
 The kernels `eq_i64`, `le_i64` and `and_bool` that build the five-column filter take 2036 us in q40 and 1885 us in q41, which is 51% and 50% of kernel time (37% and 29% in #20), and issue #16 (mask chains) covers them.
-In q30 and q31 no kernel exceeds 30%.
+In q30 no kernel exceeds 24%, and in q31 `argsort_i64` is the largest at 30% with `compress_i64` at 23%.
 `compress_i64` (six calls, 1.4 ms each query) is the largest in q30, and `prev_i64`, `sub_i64`, `lt_i64` and `compress_i64` also serve the non-empty-phrase filter on `SearchPhrase_ends` (plan 12).
 This document did not split those kernel times between the filter and the later steps, so it attributes q30 and q31 to no single follow-up.
 
 ## Gaps
 
 * **DuckDB on the counting queries.** q04, q08, q09, q15 and q35 are 2.9x to 4.9x slower than DuckDB, and the sort alone is slower than DuckDB's whole query (q04: `argsort_i64` 22.9 ms, DuckDB 6.91 ms). The group counts come from sorting a 1M-row key, and DuckDB most likely uses a hash table here (an inference, not checked in DuckDB), which the spec excludes from this layer. These five queries are the candidates for hash grouping. q32 is level with DuckDB (0.96) and needs nothing from it.
-* **In-situ `argsort_i64` against the microbench.** The prototype of `2026-11-01-argsort.md` sorts 1M uniform `i64` keys in about 13.5 ms (`lsd8`), and q04 spends 22.9 ms in one `argsort_i64` call on the real `UserID` column. The key distribution, the prototype against the kernel, and first-touch faults differ between the two, and this document did not measure which accounts for the gap.
-* **Permutation gathers.** `gather_i64` costs 11% to 31% of q08, q09, q32 and q35. Fusing the payload into the sort, or another way to avoid a random-access gather per payload column, is a candidate, and nothing here measures how much it would save.
-* **Top-k.** q15 and q35 sort all group counts to take ten of them. The byte counts say the count sort is small (about 7% of the argsort bytes in q15 and 6% in q35), so a top-k primitive is unlikely to matter for these two on this data. This is an inference from byte counts, not a timing.
+* **In-situ `argsort_i64` against the kernel's own scaling.** q04 spends 22.9 ms in one `argsort_i64` call on the real `UserID` column, and q15's `UserID` sort repeats the cost (q15's two calls take 23.2 ms in total). Stats overhead does not explain it, because the q04 kernel sum of 25.65 ms matches criterion's 25.73 ms. The pass count does not explain it either: the prototype input of `2026-11-01-argsort.md` (uniform `i64`, 13.5 ms per 1M rows for `lsd8`) already needs all 8 passes. The prototype is the wrong baseline, and the final kernel at 10M rows scales to about 15 to 16.6 ms per 1M rows (`final-i64-u64.txt`), so the gap is about 40%, not 70%. First-touch page faults on the 32 MB of scratch and the 8 MB output are the remaining plausible cause, and this document did not measure them.
+* **Permutation gathers.** `gather_i64` costs 11% to 31% of q08, q09, q32 and q35, and the two-permutation payload gathers of q08, q09 and q32 are the part composite-key grouping or composing the permutations once would remove. Nothing here measures how much that would save.
+* **Top-k.** q15 and q35 sort all group counts to take ten of them. The byte counts say the count sort is small there (about 7% of the argsort bytes in q15 and 6% in q35), so a top-k primitive is unlikely to matter for these two on this data. q32 is different: its count sort runs over about 1M groups, so about a third of its argsort time is a full sort to take ten rows, and top-k is a candidate there. Both statements come from byte counts, not timings.
+* **Elementwise maps before a reduction, issue #30.** The count column `add_i64 (mul_i64 gid 0) 1` is materialized before `reduce_into_add_i64` in q09, q15, q32 and q35, where `add_i64` and `mul_i64` together take 1.5% (q32) to 4.6% (q15) of kernel time.
 * **Stats for the short queries.** The summed kernel time of q30, q31, q40 and q41 is 14% to 25% above the criterion mean, so their shares are rough.
 * **Output checks.** This round timed the programs and did not re-check their output against `expected/`. Correctness rests on the acceptance tests of the commits that added the queries.
