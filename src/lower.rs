@@ -84,6 +84,15 @@ pub enum LStmt {
     Show { term: Term, span: Span },
 }
 
+impl LStmt {
+    /// The span of the source statement, which runtime errors of the statement carry.
+    pub fn span(&self) -> Span {
+        let (LStmt::Bind { span, .. } | LStmt::Print { span, .. } | LStmt::Show { span, .. }) =
+            self;
+        *span
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Lowered {
     pub leaves: Vec<Leaf>,
@@ -685,9 +694,8 @@ impl Hoister<'_> {
 fn hoist_repeated(mut s: LStmt, leaves: &mut Leaves, g: &mut Globals) -> Vec<LStmt> {
     let mut counts = HashMap::new();
     count_ops(stmt_term_mut(&mut s), &mut counts);
-    let (LStmt::Bind { span, .. } | LStmt::Print { span, .. } | LStmt::Show { span, .. }) = s;
     let mut h = Hoister {
-        span,
+        span: s.span(),
         counts,
         done: HashMap::new(),
         binds: Vec::new(),

@@ -196,9 +196,9 @@ impl Interpreter {
         let mut nodes = Vec::new();
         let mut plan_lines = Vec::new();
         for stmt in &lowered.stmts {
-            let (LStmt::Bind { term, span, .. }
-            | LStmt::Print { term, span }
-            | LStmt::Show { term, span }) = stmt;
+            let (LStmt::Bind { term, .. } | LStmt::Print { term, .. } | LStmt::Show { term, .. }) =
+                stmt;
+            let span = stmt.span();
             let node = self.planner.plan(&self.reg, term)?;
             if self.opts.show_plan {
                 let text = render(&self.reg, &node, &lowered.leaves, globals);
