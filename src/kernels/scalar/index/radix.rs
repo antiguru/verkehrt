@@ -42,12 +42,14 @@ digits!(u8);
 pub(crate) trait RadixKey: Elem + Ord {
     /// The unsigned image.
     type U: Digits;
-    /// Inputs of at most this many rows sort by comparison. Each value is the crossover with
-    /// the radix sort, measured on random keys.
+    /// Inputs of at most this many rows sort by comparison.
     const SMALL: usize;
     /// The unsigned image, with the same order as `self`.
     fn image(self) -> Self::U;
 }
+
+// Each `SMALL` is the crossover between the comparison sort and the radix sort, measured on
+// random keys.
 
 impl RadixKey for i64 {
     type U = u64;
@@ -91,14 +93,15 @@ impl RadixKey for u8 {
 pub(crate) trait Pos: Copy + Default {
     /// Position `i`, which the caller guarantees to fit.
     fn from_index(i: usize) -> Self;
+    /// The position as an `i64` output row.
     fn to_i64(self) -> i64;
 }
 
 impl Pos for u32 {
     #[inline(always)]
     fn from_index(i: usize) -> u32 {
-        let b = i.to_le_bytes();
-        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        debug_assert!(u32::try_from(i).is_ok(), "position {i} exceeds u32");
+        u32::try_from(i).unwrap_or(u32::MAX)
     }
     #[inline(always)]
     fn to_i64(self) -> i64 {

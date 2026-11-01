@@ -301,6 +301,26 @@ fn radix_paths_match_reference() {
     radix_paths::<u8>(vec![0, 1, 127, 128, 255]);
 }
 
+/// Exactly two radix passes, so the first pass writes the scratch buffer and the second writes
+/// the output, with no middle pass and no second buffer.
+#[test]
+fn argsort_with_two_active_passes_matches_reference() {
+    let n = 2000;
+    let base = 0x0101_0101_0101_0101u64;
+    // Keys differ only in bytes 0 and 3, each from 16 values, so both passes see ties.
+    let xs: Vec<i64> = (0..n)
+        .map(|i| {
+            let h = splitmix64(i);
+            (base ^ (h % 16) ^ (((h >> 8) % 16) << 24)).cast_signed()
+        })
+        .collect();
+    let want = argsort_reference(&xs);
+    assert_eq!(argsort(ScalarType::I64, &xs), want);
+    let mut wide = vec![0; xs.len()];
+    radix_into::<i64, u64>(&xs, &mut wide).unwrap();
+    assert_eq!(wide, want);
+}
+
 #[test]
 fn argsort_scratch_allocation_failure_is_an_error() {
     // No allocator grants this many pairs, so the reservation fails instead of aborting.
