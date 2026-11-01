@@ -370,7 +370,9 @@ fn q15_breaks_count_ties_by_signed_id() {
 }
 
 /// The real q35 on addresses at the i32 edge, where `ClientIP - 3` leaves the i32 range, and
-/// on an empty column.
+/// on an empty column. DuckDB computes `ClientIP - 1` on an INTEGER column and raises an
+/// overflow error at `i32::MIN - 1`, so the answer for those addresses is a Verkehrt-only
+/// choice (i64 arithmetic) and not a match with DuckDB.
 #[test]
 fn q35_computes_offsets_without_overflow() {
     let (lo, hi) = (i64::from(i32::MIN), i64::from(i32::MAX));
@@ -389,8 +391,11 @@ fn q35_computes_offsets_without_overflow() {
     assert_eq!(run_clickbench("q35", &[("ClientIP.u64", &[], true)]), "");
 }
 
-/// The real q08 where a user appears in several regions and a region repeats its users, with
-/// ties among the distinct counts. Ties go to the smaller region.
+/// The real q08 on users that straddle region boundaries. Region 0 starts with user 0, which
+/// equals the `prev` fill of row 0. Region 2 starts with user 20, which region 1 ends with,
+/// and region 3 repeats user 10 from region 1. A distinct count that ignored region
+/// boundaries would lose those users. Every region but the last has 2 distinct users, so the
+/// ties go to the smaller region.
 #[test]
 fn q08_counts_distinct_users_per_region() {
     let (min, max) = (i64::MIN, i64::MAX);
@@ -398,16 +403,16 @@ fn q08_counts_distinct_users_per_region() {
     let rows = [
         (3, 10),
         (1, 10),
-        (0, 1),
-        (2, 7),
+        (0, 0),
+        (2, 30),
         (3, min),
         (1, 10),
-        (0, 3),
-        (2, -5),
+        (0, 5),
+        (2, 20),
         (3, min),
         (1, 20),
-        (2, 7),
-        (0, 2),
+        (2, 30),
+        (0, 0),
         (4, max),
     ];
     let region: Vec<i64> = rows.iter().map(|r| r.0).collect();
@@ -419,7 +424,7 @@ fn q08_counts_distinct_users_per_region() {
             ("UserID.u64", &user, true),
         ],
     );
-    assert_eq!(got, "0\t3\n1\t2\n2\t2\n3\t2\n4\t1\n");
+    assert_eq!(got, "0\t2\n1\t2\n2\t2\n3\t2\n4\t1\n");
     let empty = run_clickbench(
         "q08",
         &[("RegionID.u64", &[], false), ("UserID.u64", &[], true)],
@@ -427,25 +432,29 @@ fn q08_counts_distinct_users_per_region() {
     assert_eq!(empty, "");
 }
 
-/// The real q09 with equal counts in every region, so the order is the region order, and a
-/// user shared by two regions.
+/// The real q09 with distinct counts at the same region boundaries as q08 (region 0 starts
+/// with user 0, region 2 starts with the user region 1 ends with). The counts are unequal and
+/// their order (regions 1, 3, 2, 0) differs from both the region order and the distinct-user
+/// order (regions 2, 1, 3, 0), so the sort is shown to be by count.
 #[test]
 fn q09_aggregates_per_region() {
     let min = i64::MIN;
     // (RegionID, AdvEngineID, ResolutionWidth, UserID)
-    let rows: [(i64, i64, i64, i64); 12] = [
+    let rows: [(i64, i64, i64, i64); 14] = [
         (3, 0, 10, min),
         (1, 2, 100, 10),
-        (0, 1, 1000, 1),
-        (2, 1, 50, -5),
-        (3, 5, 40, 10),
+        (0, 1, 1000, 0),
+        (2, 1, 50, 20),
+        (3, 5, 40, min),
         (1, 3, 200, 10),
-        (2, 0, 70, 7),
-        (0, 1, 1001, 2),
+        (2, 0, 70, 30),
+        (0, 2, 1001, 0),
         (3, 0, 20, min),
-        (1, 0, 300, 20),
-        (2, 4, 90, 7),
-        (0, 1, 1002, 3),
+        (1, 0, 300, 10),
+        (2, 4, 90, 40),
+        (1, 1, 400, 10),
+        (3, 1, 31, 10),
+        (1, 0, 500, 20),
     ];
     let col = |f: fn(&(i64, i64, i64, i64)) -> i64| -> Vec<i64> { rows.iter().map(f).collect() };
     let columns = [
@@ -460,7 +469,7 @@ fn q09_aggregates_per_region() {
         .collect();
     assert_eq!(
         run_clickbench("q09", &args),
-        "0\t3\t3\t1001.0000\t3\n1\t5\t3\t200.0000\t2\n2\t5\t3\t70.0000\t2\n3\t5\t3\t23.3333\t2\n"
+        "1\t6\t5\t300.0000\t2\n3\t6\t4\t25.2500\t2\n2\t5\t3\t70.0000\t3\n0\t3\t2\t1000.5000\t1\n"
     );
     let empty: Vec<(&str, &[i64], bool)> =
         columns.iter().map(|(f, _, s)| (*f, &[][..], *s)).collect();
@@ -468,17 +477,22 @@ fn q09_aggregates_per_region() {
 }
 
 /// The real q32 with ties among counts and signed keys. Ties go to the smaller (WatchID,
-/// ClientIP) pair in signed order.
+/// ClientIP) pair in signed order, including two groups of the same WatchID whose ClientIPs
+/// differ in sign. An empty input gives an empty answer.
 #[test]
 fn q32_breaks_count_ties_by_signed_key() {
     // (WatchID, ClientIP, IsRefresh, ResolutionWidth)
-    let rows: [(i64, i64, i64, i64); 6] = [
+    let rows: [(i64, i64, i64, i64); 10] = [
         (5, -1, 1, 100),
+        (7, 4, 0, 50),
         (5, 2, 0, 300),
         (-3, 2, 0, 10),
+        (7, -9, 0, 70),
         (5, -1, 0, 201),
         (-3, -1, 1, 20),
+        (7, 4, 1, 60),
         (-3, 2, 1, 11),
+        (7, -9, 0, 80),
     ];
     let col = |f: fn(&(i64, i64, i64, i64)) -> i64| -> Vec<i64> { rows.iter().map(f).collect() };
     let (w, ip, r, wd) = (col(|r| r.0), col(|r| r.1), col(|r| r.2), col(|r| r.3));
@@ -493,6 +507,17 @@ fn q32_breaks_count_ties_by_signed_key() {
     );
     assert_eq!(
         got,
-        "-3\t2\t2\t1\t10.5000\n5\t-1\t2\t1\t150.5000\n-3\t-1\t1\t1\t20.0000\n5\t2\t1\t0\t300.0000\n"
+        "-3\t2\t2\t1\t10.5000\n5\t-1\t2\t1\t150.5000\n7\t-9\t2\t0\t75.0000\n7\t4\t2\t1\t55.0000\n\
+         -3\t-1\t1\t1\t20.0000\n5\t2\t1\t0\t300.0000\n"
     );
+    let empty = run_clickbench(
+        "q32",
+        &[
+            ("WatchID.u64", &[], true),
+            ("ClientIP.u64", &[], true),
+            ("IsRefresh.u64", &[], false),
+            ("ResolutionWidth.u64", &[], false),
+        ],
+    );
+    assert_eq!(empty, "");
 }
