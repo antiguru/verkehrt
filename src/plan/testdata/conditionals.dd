@@ -1,0 +1,11 @@
+# Conditionals plan their branches separately, and fuse around an array-valued one.
+
+plan
+print(if sum(x) > 0.0 { sum(x * y) } else { 0.0 });
+----
+-: (if (lt_f64_s 0.0 (reduce_add_f64 x)) then (dot_f64 x y) else 0.0)
+
+plan
+print(sum(x * if length(x) > 1 { y } else { x }));
+----
+dot_f64: (dot_f64 x (if (lt_i64_s 1 (length_f64 x)) then y else x))
