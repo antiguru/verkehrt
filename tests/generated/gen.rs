@@ -374,13 +374,29 @@ impl<'a> Gen<'a, '_> {
             } else {
                 ["let", "print", "export"][self.c.weighted(&[5, 2, 2])]
             };
-            // A statement often has the type of a variable, which a leaf then reads.
-            let want = if !cx.vars.is_empty() && self.c.flip(50) {
+            // A statement often has the return type of a function and calls it, so inlining
+            // runs, or the type of a variable, which a leaf then reads.
+            let from_fn = !self.fns.is_empty() && self.c.flip(45);
+            let want = if from_fn {
+                let f = self.c.below(self.fns.len());
+                self.fns[f].ret
+            } else if !cx.vars.is_empty() && self.c.flip(50) {
                 self.c.pick(&cx.vars).ty
             } else {
                 self.want_type()
             };
-            let mut e = self.expr(&mut cx, want, None);
+            let call = if from_fn && self.c.flip(80) {
+                cx.depth += 1;
+                let call = self.call_fn(&mut cx, want, None);
+                cx.depth -= 1;
+                call
+            } else {
+                None
+            };
+            let mut e = match call {
+                Some(e) => e,
+                None => self.expr(&mut cx, want, None),
+            };
             // Lowering inlines function calls and block lets by deep-cloning substitution, so
             // bindings read more than once that nest deeply grow the term exponentially, to
             // gigabytes at seven levels. Such a statement is replaced by a leaf.
