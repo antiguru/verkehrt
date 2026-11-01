@@ -492,3 +492,25 @@ fn xor_on_bool_exports_bool_bytes() {
     };
     assert_eq!(a.as_bool_bytes(), &[0, 1, 0]);
 }
+
+/// A program planned without fused patterns prints what the fused plan prints.
+#[test]
+fn no_fusion_matches_fused_output() {
+    let src = "let x = [1.0, 2.0, 3.0, 4.0];\nlet y = [0.5, 1.5, 2.5, 3.5];\n\
+               print(sum(x * y));\nprint(sum(x * x));\nprint(count(x > 2.0));\n\
+               print(filter(x, |v| v > 2.0));\n";
+    let (fused_result, fused, _) = run_with(scalar_opts(), src);
+    fused_result.unwrap();
+    let (unfused_result, unfused, diag) = run_with(
+        Options {
+            no_fusion: true,
+            show_plan: true,
+            ..scalar_opts()
+        },
+        src,
+    );
+    unfused_result.unwrap();
+    assert_eq!(fused, unfused);
+    assert!(diag.contains("reduce_add_f64"), "{diag}");
+    assert!(!diag.contains("dot_f64"), "{diag}");
+}

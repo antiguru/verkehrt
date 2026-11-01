@@ -73,7 +73,7 @@ pub fn run_plan(
     sinks: &mut Sinks<'_>,
 ) -> Result<(), Error> {
     for (stmt, node) in plan.lowered.stmts.iter().zip(&plan.nodes) {
-        let span = stmt_span(stmt);
+        let span = stmt.span();
         let value = Machine {
             reg,
             dispatch,
@@ -104,11 +104,6 @@ pub fn run_plan(
         }
     }
     Ok(())
-}
-
-fn stmt_span(stmt: &LStmt) -> Span {
-    let (LStmt::Bind { span, .. } | LStmt::Print { span, .. } | LStmt::Show { span, .. }) = stmt;
-    *span
 }
 
 struct Machine<'a> {
