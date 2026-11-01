@@ -1,0 +1,155 @@
+start 23:30:52 load 3.29 3.22 2.90 1/2260 1167459
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.08s
+     Running benches/acceptance.rs (target/release/deps/acceptance-af9f8ebc7c45ca74)
+Benchmarking acceptance/clickbench/q27/scalar
+Benchmarking acceptance/clickbench/q27/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/scalar: Collecting 10 samples in estimated 3.0691 s (385 iterations)
+Benchmarking acceptance/clickbench/q27/scalar: Analyzing
+acceptance/clickbench/q27/scalar
+                        time:   [7.9315 ms 7.9428 ms 7.9512 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Collecting 10 samples in estimated 3.2091 s (495 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q27/x86-64-v3-auto
+                        time:   [6.4592 ms 6.4920 ms 6.5264 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2536 s (495 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q27/x86-64-v3-intrinsics
+                        time:   [6.5048 ms 6.5161 ms 6.5312 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Collecting 10 samples in estimated 3.1072 s (440 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q27/x86-64-v4-auto
+                        time:   [6.8514 ms 6.8723 ms 6.9095 ms]
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1262 s (550 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q27/x86-64-v4-intrinsics
+                        time:   [5.3932 ms 5.4263 ms 5.4673 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  2 (20.00%) high severe
+
+Benchmarking acceptance/clickbench/q29/scalar
+Benchmarking acceptance/clickbench/q29/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/scalar: Collecting 10 samples in estimated 4.6657 s (110 iterations)
+Benchmarking acceptance/clickbench/q29/scalar: Analyzing
+acceptance/clickbench/q29/scalar
+                        time:   [42.315 ms 42.344 ms 42.369 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Collecting 10 samples in estimated 3.4490 s (110 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v3-auto
+                        time:   [31.308 ms 31.376 ms 31.449 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.4426 s (110 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v3-intrinsics
+                        time:   [31.344 ms 31.458 ms 31.548 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Collecting 10 samples in estimated 3.4686 s (110 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v4-auto
+                        time:   [31.471 ms 31.820 ms 32.298 ms]
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.4557 s (110 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v4-intrinsics
+                        time:   [31.524 ms 32.068 ms 32.562 ms]
+
+Benchmarking acceptance/clickbench/q30/scalar
+Benchmarking acceptance/clickbench/q30/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/scalar: Collecting 10 samples in estimated 3.3290 s (275 iterations)
+Benchmarking acceptance/clickbench/q30/scalar: Analyzing
+acceptance/clickbench/q30/scalar
+                        time:   [12.119 ms 12.154 ms 12.183 ms]
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Collecting 10 samples in estimated 3.3737 s (330 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q30/x86-64-v3-auto
+                        time:   [10.228 ms 10.252 ms 10.296 ms]
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1918 s (330 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q30/x86-64-v3-intrinsics
+                        time:   [9.6241 ms 9.6443 ms 9.6625 ms]
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Collecting 10 samples in estimated 3.2850 s (330 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q30/x86-64-v4-auto
+                        time:   [9.9601 ms 9.9791 ms 10.010 ms]
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low severe
+  2 (20.00%) high severe
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.3609 s (385 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q30/x86-64-v4-intrinsics
+                        time:   [8.6802 ms 8.7033 ms 8.7250 ms]
+
+Benchmarking acceptance/clickbench/q31/scalar
+Benchmarking acceptance/clickbench/q31/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/scalar: Collecting 10 samples in estimated 3.4228 s (275 iterations)
+Benchmarking acceptance/clickbench/q31/scalar: Analyzing
+acceptance/clickbench/q31/scalar
+                        time:   [12.332 ms 12.355 ms 12.395 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Collecting 10 samples in estimated 3.0326 s (275 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q31/x86-64-v3-auto
+                        time:   [11.059 ms 11.078 ms 11.095 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.3873 s (330 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q31/x86-64-v3-intrinsics
+                        time:   [10.366 ms 10.387 ms 10.409 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Collecting 10 samples in estimated 3.5432 s (330 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q31/x86-64-v4-auto
+                        time:   [10.586 ms 10.639 ms 10.697 ms]
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0948 s (330 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q31/x86-64-v4-intrinsics
+                        time:   [9.1041 ms 9.1302 ms 9.1581 ms]
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set
+end 23:32:55 load 2.89 3.34 3.00 3/2249 1167758

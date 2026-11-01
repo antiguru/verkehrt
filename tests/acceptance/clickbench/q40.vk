@@ -1,0 +1,42 @@
+// sql: SELECT URLHash, EventDate, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= 15887 AND EventDate <= 15917
+// sql:   AND IsRefresh = 0 AND TraficSourceID IN (-1, 6) AND RefererHash = 3594120000172545465
+// sql:   GROUP BY URLHash, EventDate ORDER BY PageViews DESC, URLHash, EventDate LIMIT 10 OFFSET 100
+// output: [i,u,u]
+input CounterID: i64[];
+input EventDate: i64[];
+input IsRefresh: i64[];
+input TraficSourceID: i64[];
+input RefererHash: i64[];
+input URLHash: i64[];
+
+let m = and(and(CounterID == 62, and(EventDate >= 15887, EventDate <= 15917)),
+            and(and(IsRefresh == 0, or(TraficSourceID == -1, TraficSourceID == 6)), RefererHash == 3594120000172545465));
+let d0 = compress(EventDate, m);
+let h0 = compress(URLHash, m);
+// Group by sorting. `argsort` is stable, so sorting by the minor key (EventDate) first and the major
+// key (URLHash) second orders the rows by (URLHash, EventDate).
+let o1 = argsort(d0);
+let d1 = gather(d0, o1);
+let h1 = gather(h0, o1);
+let o2 = argsort(h1);
+let d = gather(d1, o2);
+let h = gather(h1, o2);
+// A row starts a group when either key differs from the previous row, or when it is the first row.
+// An empty filter gives no rows, no groups, and empty outputs.
+let n = length(h);
+let start = or(or(h != prev(h, 0), d != prev(d, 0)), iota(n) == 0);
+let ng = count(start);
+let gid = scan(cast_i64(start), add) - 1;
+let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
+let gh = compress(h, start);
+let gd = compress(d, start);
+// The groups are in (URLHash, EventDate) order, so a stable sort on descending counts breaks ties by key.
+let order = argsort(0 - counts);
+// OFFSET 100 LIMIT 10, clamped to the number of groups.
+let lo = min(ng, 100);
+let hi = min(ng, 110);
+// Slice the order before gathering, so only the 10 output groups are gathered.
+let top = slice(order, lo, hi);
+export URLHash = gather(gh, top);
+export EventDate = gather(gd, top);
+export PageViews = gather(counts, top);

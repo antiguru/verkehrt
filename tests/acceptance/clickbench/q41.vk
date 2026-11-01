@@ -1,0 +1,42 @@
+// sql: SELECT WindowClientWidth, WindowClientHeight, COUNT(*) AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= 15887
+// sql:   AND EventDate <= 15917 AND IsRefresh = 0 AND DontCountHits = 0 AND URLHash = 2868770270353813622
+// sql:   GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC, WindowClientWidth, WindowClientHeight LIMIT 10 OFFSET 10000
+// output: [u,u,u]
+input CounterID: i64[];
+input EventDate: i64[];
+input IsRefresh: i64[];
+input DontCountHits: i64[];
+input URLHash: i64[];
+input WindowClientWidth: i64[];
+input WindowClientHeight: i64[];
+
+let m = and(and(CounterID == 62, and(EventDate >= 15887, EventDate <= 15917)),
+            and(and(IsRefresh == 0, DontCountHits == 0), URLHash == 2868770270353813622));
+let w0 = compress(WindowClientWidth, m);
+let h0 = compress(WindowClientHeight, m);
+// Group by sorting. `argsort` is stable, so sorting by the minor key first and the major key second
+// orders the rows by (width, height).
+let o1 = argsort(h0);
+let w1 = gather(w0, o1);
+let h1 = gather(h0, o1);
+let o2 = argsort(w1);
+let w = gather(w1, o2);
+let h = gather(h1, o2);
+// A row starts a group when either key differs from the previous row, or when it is the first row.
+let n = length(w);
+let start = or(or(w != prev(w, 0), h != prev(h, 0)), iota(n) == 0);
+let ng = count(start);
+let gid = scan(cast_i64(start), add) - 1;
+let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
+let gw = compress(w, start);
+let gh = compress(h, start);
+// The groups are in (width, height) order, so a stable sort on descending counts breaks ties by key.
+let order = argsort(0 - counts);
+// OFFSET 10000 LIMIT 10, clamped to the number of groups.
+let lo = min(ng, 10000);
+let hi = min(ng, 10010);
+// Slice the order before gathering, so only the 10 output groups are gathered.
+let top = slice(order, lo, hi);
+export WindowClientWidth = gather(gw, top);
+export WindowClientHeight = gather(gh, top);
+export PageViews = gather(counts, top);

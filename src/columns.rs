@@ -6,20 +6,43 @@ use std::path::Path;
 use crate::interp::Prepared;
 use crate::value::{Array, ScalarType, Value, ValueType};
 
+/// The columns of the ClickBench data that `prepare.py` stores with the sign bit flipped, so
+/// that the words' unsigned order is the signed order. Pass it to [`load_inputs`].
+pub const CLICKBENCH_SIGNED: &[&str] = &[
+    "WatchID",
+    "ClientIP",
+    "UserID",
+    "TraficSourceID",
+    "URLHash",
+    "RefererHash",
+];
+
 /// Loads one value per declared input of `prepared` from the column files in `dir`, in
 /// declaration order.
 ///
 /// An input of type `u64[]` or `i64[]` named `N` is read from `dir/N.u64`, which holds the
-/// rows as little-endian 64-bit words. An input of type `u8[]` named `C_bytes` is read from
-/// `dir/C.bytes`, one byte per row, and `dir/C.ends` (little-endian `u64` cumulative end
-/// offsets) must show that every row is exactly one byte. Any other input is an error naming
-/// it.
-pub fn load_inputs(dir: &Path, prepared: &Prepared) -> Result<Vec<(String, Value)>, String> {
+/// rows as little-endian 64-bit words. When `N` is in `signed`, the file stores the column with
+/// bit 63 flipped, and the load flips it back. An input of type `u64[]` or `i64[]` named
+/// `C_ends` is read from `dir/C.ends`, the little-endian cumulative row end offsets of string
+/// column `C`, so row lengths are `ends - prev(ends, 0)`. The `_ends` suffix takes precedence, so
+/// a `dir/C_ends.u64` file is never read for it and `signed` never applies to it. An input of type `u8[]` named
+/// `C_bytes` is read from `dir/C.bytes`, one byte per row, and `dir/C.ends` must show that
+/// every row is exactly one byte. Any other input is an error naming it.
+pub fn load_inputs(
+    dir: &Path,
+    prepared: &Prepared,
+    signed: &[&str],
+) -> Result<Vec<(String, Value)>, String> {
     let mut out = Vec::new();
     for (name, ty) in prepared.inputs() {
         let array = match ty {
             ValueType::Array(elem @ (ScalarType::U64 | ScalarType::I64)) => {
-                load_words(&dir.join(format!("{name}.u64")), elem)?
+                if let Some(column) = name.strip_suffix("_ends") {
+                    load_words(&dir.join(format!("{column}.ends")), elem, false)?
+                } else {
+                    let flip = signed.contains(&name);
+                    load_words(&dir.join(format!("{name}.u64")), elem, flip)?
+                }
             }
             // Strip the suffix once, so `x_bytes_bytes` names the column `x_bytes`.
             ValueType::Array(ScalarType::U8) if name.ends_with("_bytes") => {
@@ -36,8 +59,9 @@ pub fn load_inputs(dir: &Path, prepared: &Prepared) -> Result<Vec<(String, Value
     Ok(out)
 }
 
-/// Reads `path` as little-endian 64-bit words into an array of `elem`.
-fn load_words(path: &Path, elem: ScalarType) -> Result<Array, String> {
+/// Reads `path` as little-endian 64-bit words into an array of `elem`, flipping bit 63 of each
+/// word when `flip_sign` is set.
+fn load_words(path: &Path, elem: ScalarType, flip_sign: bool) -> Result<Array, String> {
     let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     if bytes.len() % 8 != 0 {
         return Err(format!(
@@ -55,7 +79,8 @@ fn load_words(path: &Path, elem: ScalarType) -> Result<Array, String> {
             .iter_mut()
             .zip(bytes.as_chunks::<8>().0)
         {
-            *dst = u64::from_le_bytes(*src).to_ne_bytes();
+            let word = u64::from_le_bytes(*src);
+            *dst = if flip_sign { word ^ (1 << 63) } else { word }.to_ne_bytes();
         }
         Ok(())
     })
@@ -128,7 +153,7 @@ mod tests {
                  export n = length(a);",
             )
             .unwrap();
-        let got = load_inputs(&dir, &p).unwrap();
+        let got = load_inputs(&dir, &p, &[]).unwrap();
         let names: Vec<&str> = got.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["a", "b", "s_bytes"]);
         assert_eq!(
@@ -151,8 +176,70 @@ mod tests {
         let p = interp
             .prepare("input x_bytes_bytes: u8[]; export n = length(x_bytes_bytes);")
             .unwrap();
-        let got = load_inputs(&dir, &p).unwrap();
+        let got = load_inputs(&dir, &p, &[]).unwrap();
         assert_eq!(got[0].1, Value::Array(Array::from_vec(b"ab".to_vec())));
+    }
+
+    #[test]
+    fn load_inputs_flips_only_listed_columns() {
+        let dir = scratch("flip");
+        let flip = 1u64 << 63;
+        // -1, 5, and i64::MIN as `prepare.py` stores a signed column.
+        fs::write(dir.join("s.u64"), words(&[u64::MAX ^ flip, 5 ^ flip, 0])).unwrap();
+        fs::write(dir.join("t.u64"), words(&[u64::MAX ^ flip, 5 ^ flip, 0])).unwrap();
+        let interp = Interpreter::new(Options::default()).unwrap();
+        let p = interp
+            .prepare("input s: i64[]; input t: i64[]; export n = length(s);")
+            .unwrap();
+        let got = load_inputs(&dir, &p, &["s"]).unwrap();
+        assert_eq!(
+            got[0].1,
+            Value::Array(Array::from_vec(vec![-1i64, 5, i64::MIN]))
+        );
+        // The unlisted column keeps its stored words.
+        assert_eq!(
+            got[1].1,
+            Value::Array(Array::from_vec(vec![i64::MAX, 5 ^ i64::MIN, 0]))
+        );
+    }
+
+    #[test]
+    fn load_inputs_never_flips_ends() {
+        let dir = scratch("flip-ends");
+        fs::write(dir.join("x.ends"), words(&[3, 3, 7])).unwrap();
+        let interp = Interpreter::new(Options::default()).unwrap();
+        let p = interp
+            .prepare("input x_ends: i64[]; export n = length(x_ends);")
+            .unwrap();
+        let got = load_inputs(&dir, &p, &["x_ends", "x"]).unwrap();
+        assert_eq!(got[0].1, Value::Array(Array::from_vec(vec![3i64, 3, 7])));
+    }
+
+    #[test]
+    fn load_inputs_ends_takes_precedence_over_a_u64_file() {
+        let dir = scratch("ends-precedence");
+        fs::write(dir.join("x.ends"), words(&[3, 3, 7])).unwrap();
+        fs::write(dir.join("x_ends.u64"), words(&[9, 9, 9])).unwrap();
+        let interp = Interpreter::new(Options::default()).unwrap();
+        let p = interp
+            .prepare("input x_ends: i64[]; export n = length(x_ends);")
+            .unwrap();
+        let got = load_inputs(&dir, &p, &[]).unwrap();
+        assert_eq!(got[0].1, Value::Array(Array::from_vec(vec![3i64, 3, 7])));
+    }
+
+    #[test]
+    fn load_inputs_strips_the_ends_suffix_once() {
+        let dir = scratch("ends-suffix");
+        fs::write(dir.join("x_ends.ends"), words(&[1, 2])).unwrap();
+        // A column named `x` must not be read for the input `x_ends_ends`.
+        fs::write(dir.join("x.ends"), words(&[5])).unwrap();
+        let interp = Interpreter::new(Options::default()).unwrap();
+        let p = interp
+            .prepare("input x_ends_ends: i64[]; export n = length(x_ends_ends);")
+            .unwrap();
+        let got = load_inputs(&dir, &p, &[]).unwrap();
+        assert_eq!(got[0].1, Value::Array(Array::from_vec(vec![1i64, 2])));
     }
 
     #[test]
@@ -164,7 +251,7 @@ mod tests {
         let p = interp
             .prepare("input s_bytes: u8[]; export n = length(s_bytes);")
             .unwrap();
-        let err = load_inputs(&dir, &p).unwrap_err();
+        let err = load_inputs(&dir, &p, &[]).unwrap_err();
         assert!(err.contains("not one byte per row"), "{err}");
     }
 
@@ -175,7 +262,7 @@ mod tests {
         let p = interp
             .prepare("input x: f64[]; export n = length(x);")
             .unwrap();
-        let err = load_inputs(&dir, &p).unwrap_err();
+        let err = load_inputs(&dir, &p, &[]).unwrap_err();
         assert!(err.contains("input 'x'"), "{err}");
     }
 }

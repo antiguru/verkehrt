@@ -1,0 +1,39 @@
+// sql: SELECT CounterID, AVG(octet_length(URL)) AS l, COUNT(*) AS c FROM hits WHERE URL <> '' GROUP BY CounterID
+// sql:   HAVING COUNT(*) > 1000 ORDER BY l DESC, CounterID LIMIT 25
+// output: [u,f,u]
+input CounterID: i64[];
+input URL_ends: i64[];
+
+// A row's length is the difference of its end offset and the previous one, and an empty URL has
+// length 0, so URL <> '' is len > 0.
+let len = URL_ends - prev(URL_ends, 0);
+let keep = len > 0;
+let c = compress(CounterID, keep);
+let l = compress(len, keep);
+// A key with a small range becomes a bucket index by subtracting its minimum, and the bucket count
+// comes from the shifted keys. An empty filter has no groups.
+let base = if length(c) > 0 { reduce(c, min) } else { 0 };
+let shifted = c - base;
+let nb = if length(shifted) > 0 { reduce(shifted, max) + 1 } else { 0 };
+let counts = histogram(shifted, nb);
+let sums = reduce_into(shifted, l, nb, add);
+// HAVING COUNT(*) > 1000. `where` lists the surviving buckets in ascending CounterID order.
+let groups = where(counts > 1000);
+let n = gather(counts, groups);
+let avg = cast_f64(gather(sums, groups)) / cast_f64(n);
+// `argsort` has no kernel for f64, so the sort key is built from two integers with two stable sorts.
+// Every average is at least 1 because `len > 0`, so `hi = cast_i64(avg)` is its floor and cannot
+// overflow. The remainder `avg - hi` is exact in f64, and it is a multiple of ulp(avg), which is at
+// least 2^-52 for avg >= 1 and below 2^53. Scaling by 2^52 is exact, so `lo` is an integer in
+// [0, 2^52) that holds the whole fractional part and distinct averages get distinct (hi, lo) pairs
+// in the same order. Sorting by `lo` first and `hi` second, both descending and both stable, orders
+// the groups by average descending and keeps the CounterID order among equal averages.
+let hi = cast_i64(avg);
+let lo = cast_i64((avg - cast_f64(hi)) * 4503599627370496.0);
+let o1 = argsort(0 - lo);
+let o2 = argsort(0 - gather(hi, o1));
+let order = gather(o1, o2);
+let top = slice(order, 0, min(length(order), 25));
+export CounterID = gather(groups, top) + base;
+export l = gather(avg, top);
+export c = gather(n, top);
