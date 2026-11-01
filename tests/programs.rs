@@ -1,9 +1,7 @@
-//! Golden program tests and the library API contract. Nothing here depends on trace timings.
-
-use std::fs;
+//! Golden programs in the files of `tests/programs` (every non-hidden file is read) and the library API contract. Nothing here depends on trace timings.
 
 use verkehrt::error::ErrorKind;
-use verkehrt::kernels::{Feature, FeatureSet, Isa};
+use verkehrt::kernels::{Backend, Feature, FeatureSet, Isa, Variant};
 use verkehrt::value::{Array, Value};
 use verkehrt::{Interpreter, Options, Prepared};
 
@@ -29,53 +27,129 @@ fn f64s(v: &[f64]) -> Value {
     Value::Array(Array::from_vec(v.to_vec()))
 }
 
-#[test]
-fn golden_programs() {
-    let mut count = 0;
-    for entry in fs::read_dir("tests/programs").expect("programs dir") {
-        let path = entry.unwrap().path();
-        if path.extension().is_none_or(|e| e != "vk") {
-            continue;
-        }
-        let src = fs::read_to_string(&path).unwrap();
-        let want = fs::read_to_string(path.with_extension("out")).unwrap();
-        let (r, out, _) = run_with(Options::default(), &src);
-        r.unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        assert_eq!(out, want, "{}", path.display());
-        count += 1;
+/// Every instruction set the CPU supports, each with both backends. Scalar has one variant,
+/// and comes first so that it is the reference.
+fn variants() -> Vec<Variant> {
+    let variants: Vec<Variant> = Isa::ALL
+        .into_iter()
+        .filter(|isa| isa.is_available())
+        .flat_map(|isa| {
+            let backends: &[Backend] = if isa == Isa::Scalar {
+                &[Backend::Intrinsics]
+            } else {
+                &[Backend::Auto, Backend::Intrinsics]
+            };
+            backends
+                .iter()
+                .map(move |&backend| Variant { isa, backend })
+        })
+        .collect();
+    assert_eq!(variants[0].isa, Isa::Scalar, "scalar is the reference");
+    variants
+}
+
+/// What a program did: its output, then the error that stopped it, if any, as
+/// `<kind> error at <line>:<col>: <message>`.
+fn outcome(variant: Variant, src: &str) -> (String, Option<String>) {
+    let opts = Options {
+        isa: Some(variant.isa),
+        backend: variant.backend,
+        ..Options::default()
+    };
+    let (r, out, _) = run_with(opts, src);
+    let err = r.err().map(|e| match e.span {
+        Some(s) => format!("{:?} error at {}:{}: {}", e.kind, s.line, s.col, e.message),
+        None => format!("{:?} error: {}", e.kind, e.message),
+    });
+    (out, err)
+}
+
+/// Runs `src` on every variant, one thread each, and returns the outcome that all of them share.
+/// Panics, naming the variants, if one differs from the scalar run. The threads share nothing,
+/// each owns its interpreter, so the egglog planning of the variants overlaps.
+fn run_everywhere(src: &str) -> (String, Option<String>) {
+    let variants = variants();
+    let outcomes: Vec<_> = std::thread::scope(|s| {
+        let handles: Vec<_> = variants
+            .iter()
+            .map(|&v| {
+                std::thread::Builder::new()
+                    .name(v.to_string())
+                    .spawn_scoped(s, move || outcome(v, src))
+                    .expect("spawn variant thread")
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("variant thread panicked"))
+            .collect()
+    });
+    let want = &outcomes[0];
+    let differing: Vec<usize> = (1..variants.len())
+        .filter(|&i| outcomes[i] != *want)
+        .collect();
+    if let Some(&first) = differing.first() {
+        let names: Vec<String> = differing
+            .iter()
+            .map(|&i| format!("[{}]", variants[i]))
+            .collect();
+        panic!(
+            "{} differ from [{}] on:\n{src}\nscalar: {want:?}\n[{}]: {:?}",
+            names.join(" "),
+            variants[0],
+            variants[first],
+            outcomes[first],
+        );
     }
-    assert!(count >= 5, "found only {count} programs");
+    if variants.len() == 1 {
+        static NOTE: std::sync::Once = std::sync::Once::new();
+        NOTE.call_once(|| {
+            eprintln!("note: only scalar is available, no cross-variant comparison ran")
+        });
+    }
+    outcomes.into_iter().next().unwrap()
 }
 
+/// Runs the `run` and `error` directives on every file in `tests/programs`. The input is a
+/// program. `run` prints its output and requires that it succeeds. `error` prints the output
+/// written before the error, if any, then the error, and requires that the program fails.
 #[test]
-fn group_id_length_mismatch_is_a_runtime_error() {
-    let src = "let a = [1, 2, 3];\nlet b = [1, 2];\nprint(group_id(a, b));\n";
-    let (r, out, _) = run_with(Options::default(), src);
-    let e = r.unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Runtime);
-    assert!(e.message.contains("length mismatch: 3 vs 2"), "{e}");
-    assert_eq!(e.span.unwrap().line, 3);
-    assert_eq!(out, "");
-}
-
-#[test]
-fn runtime_error_carries_statement_line() {
-    let src = "let x = [1.0, 2.0];\nlet y = [1.0, 2.0, 3.0];\nprint(sum(x + y));\n";
-    let (r, out, _) = run_with(Options::default(), src);
-    let e = r.unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Runtime);
-    assert_eq!(e.span.unwrap().line, 3);
-    assert_eq!(out, "");
-}
-
-#[test]
-fn type_errors_come_before_any_output() {
-    let src = "print(1.0);\nlet x = [1.0];\nlet y = [1];\nprint(x + y);\n";
-    let (r, out, _) = run_with(Options::default(), src);
-    let e = r.unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Type);
-    assert_eq!(e.span.unwrap().line, 4);
-    assert_eq!(out, "");
+fn datadriven_programs() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs");
+    // `walk` runs nothing for a missing or empty directory, which would pass vacuously.
+    let has_file = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("cannot read {dir}: {e}"))
+        .filter_map(Result::ok)
+        .any(|e| !e.file_name().to_string_lossy().starts_with('.'));
+    assert!(has_file, "{dir} holds no files");
+    let mut cases = 0usize;
+    datadriven::walk(dir, |f| {
+        f.run(|tc| {
+            cases += 1;
+            assert!(
+                tc.args.is_empty(),
+                "directive {} takes no arguments, got {:?}",
+                tc.directive,
+                tc.args.keys().collect::<Vec<_>>()
+            );
+            let (out, err) = run_everywhere(&tc.input);
+            match (tc.directive.as_str(), err) {
+                ("run", None) => out,
+                ("run", Some(e)) => panic!("{e}\nafter output:\n{out}"),
+                ("error", Some(e)) if out.is_empty() => format!("{e}\n"),
+                ("error", Some(e)) => format!("{out}{e}\n"),
+                ("error", None) => panic!("the program succeeded with output:\n{out}"),
+                (d, _) => panic!("unknown directive {d}"),
+            }
+        })
+    });
+    // One `RUN` value applies to every harness and may match nothing here, so a filter that
+    // matches nothing is reported rather than failed.
+    if std::env::var_os("RUN").is_none() {
+        assert!(cases > 0, "no test case ran in {dir}");
+    } else if cases == 0 {
+        eprintln!("note: RUN matched no test case in {dir}");
+    }
 }
 
 #[test]
@@ -356,34 +430,8 @@ fn failed_repl_input_keeps_old_bindings() {
     assert_eq!(interp.get("z").unwrap().to_string(), "[9.0]");
 }
 
-fn run_ok(src: &str) -> String {
-    let (r, out, _) = run_with(Options::default(), src);
-    r.unwrap_or_else(|e| panic!("{src}: {e}"));
-    out
-}
-
-fn run_err(src: &str) -> verkehrt::error::Error {
-    let (r, out, _) = run_with(Options::default(), src);
-    assert_eq!(out, "", "{src}");
-    r.unwrap_err()
-}
-
 #[test]
-fn if_with_mask_condition_is_an_array() {
-    let src = "let m = [true, false, true];\nlet y = if m { 1.0 } else { 2.0 };\nprint(y);\nprint(y + 1.0);\n";
-    assert_eq!(run_ok(src), "[1.0, 2.0, 1.0]\n[2.0, 3.0, 2.0]\n");
-    let masked_src =
-        "let m = [true, false, true];\nlet y: f64 = if m { 1.0 } else { 2.0 };\nprint(sum(y));\n";
-    let e = run_err(masked_src);
-    assert_eq!(e.kind, ErrorKind::Type, "{e}");
-    assert_eq!(e.span.map(|s| (s.line, s.col)), Some((2, 1)), "{e}");
-}
-
-#[test]
-fn if_with_mask_condition_in_function_and_export() {
-    let src = "fn f(m: bool[]) -> f64[] { if m { 1.0 } else { 2.0 } }\n\
-               let m = [true, false];\nprint(f(m) + 1.0);\n";
-    assert_eq!(run_ok(src), "[2.0, 3.0]\n");
+fn if_with_mask_condition_in_export() {
     let interp = Interpreter::new(Options::default()).unwrap();
     let p = interp
         .prepare("input m: bool[]; export y = if m { 1.0 } else { 2.0 };")
@@ -394,25 +442,7 @@ fn if_with_mask_condition_in_function_and_export() {
 }
 
 #[test]
-fn zip_map_checks_lengths_whatever_the_body() {
-    for (body, want) in [
-        ("|a, b| a", "[1.0, 2.0, 3.0]"),
-        ("|a, b| b", "[4.0, 5.0, 6.0]"),
-        ("|a, b| 1.0", "[1.0, 1.0, 1.0]"),
-        ("|a, b| a + b", "[5.0, 7.0, 9.0]"),
-    ] {
-        let ok = format!(
-            "let x = [1.0, 2.0, 3.0];\nlet y = [4.0, 5.0, 6.0];\nprint(zip_map(x, y, {body}));\n"
-        );
-        assert_eq!(run_ok(&ok), format!("{want}\n"), "{ok}");
-        let bad =
-            format!("let x = [1.0, 2.0, 3.0];\nlet y = [4.0];\nprint(zip_map(x, y, {body}));\n");
-        let e = run_err(&bad);
-        assert_eq!(e.kind, ErrorKind::Runtime, "{bad}: {e}");
-        assert!(e.message.contains("length mismatch"), "{bad}: {e}");
-        assert_eq!(e.span.unwrap().line, 3, "{bad}: {e}");
-    }
-    // The length checks do not prevent fusion.
+fn zip_map_length_checks_do_not_prevent_fusion() {
     let src =
         "let x = [1.0, 2.0];\nlet y = [3.0, 4.0];\nprint(sum(zip_map(x, y, |a, b| a * b)));\n";
     let (r, out, diag) = run_with(
@@ -428,49 +458,7 @@ fn zip_map_checks_lengths_whatever_the_body() {
 }
 
 #[test]
-fn huge_lengths_are_runtime_errors() {
-    for src in [
-        "print(length(iota(9223372036854775807)));",
-        "print(length(fill(4611686018427387904, 1.0)));",
-        "print(length(rand_i64(2305843009213693952, 1)));",
-        "print(length(rand_f64(9223372036854775807, 1)));",
-    ] {
-        let e = run_err(src);
-        assert_eq!(e.kind, ErrorKind::Runtime, "{src}: {e}");
-        assert!(e.message.contains("is too large"), "{src}: {e}");
-    }
-}
-
-#[test]
-fn scalar_condition_if_evaluates_only_the_taken_branch() {
-    for (src, want) in [
-        (
-            "let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) } else { 0.0 });\n",
-            "0.0\n",
-        ),
-        ("print(if true { [1.0] } else { [1.0, 2.0] });\n", "[1.0]\n"),
-        (
-            "print(if false { [1.0] } else { [1.0, 2.0] });\n",
-            "[1.0, 2.0]\n",
-        ),
-        // A subterm repeated inside a branch stays inside it.
-        (
-            "let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) + reduce(e, max) } else { 0.0 });\n",
-            "0.0\n",
-        ),
-        // A conditional nested in an operation and in a function body.
-        (
-            "fn safe_max(e: f64[]) -> f64 { if length(e) > 0 { reduce(e, max) } else { 0.0 } }\n\
-             let x = [1.0, 2.0];\nprint(safe_max(fill(0, 1.0)) + safe_max(x));\nprint(x * safe_max(x));\n",
-            "2.0\n[2.0, 4.0]\n",
-        ),
-        (
-            "let x = [1.0, 2.0];\nprint(sum(x * if length(x) > 1 { x } else { [0.0] }));\n",
-            "5.0\n",
-        ),
-    ] {
-        assert_eq!(run_ok(src), want, "{src}");
-    }
+fn scalar_condition_if_plans_only_the_taken_branch() {
     let src = "let e = fill(0, 0.0);\nprint(if length(e) > 0 { reduce(e, max) } else { 0.0 });\n";
     let (r, _, diag) = run_with(
         Options {
@@ -492,47 +480,15 @@ fn scalar_condition_if_evaluates_only_the_taken_branch() {
     );
 }
 
-/// Runs `src` and returns its output.
-fn output_of(src: &str) -> String {
-    let (r, out, _) = run_with(Options::default(), src);
-    r.unwrap_or_else(|e| panic!("{src}: {e}"));
-    out
-}
-
+/// The printed output is in `programs/arith.dd`. The test checks the bytes of the exported array.
 #[test]
-fn bitwise_on_integers() {
-    let src = "print(and(12, 10));\nprint(or(12, 10));\nprint(xor(12, 10));\n\
-               print(not(0u8));\nprint(not(0));\n\
-               let a = [12, 5];\nlet b = [10, 3];\n\
-               print(and(a, b));\nprint(or(a, b));\nprint(xor(a, b));\nprint(not(a));\n\
-               print(not([0u8, 255u8]));\n\
-               print(and([12u64, 5u64], 10u64));\nprint(xor([12i32], [10i32]));\n";
-    assert_eq!(
-        output_of(src),
-        "8\n14\n6\n255\n-1\n[8, 1]\n[14, 7]\n[6, 6]\n[-13, -6]\n[255, 0]\n[8, 0]\n[6]\n"
-    );
-}
-
-#[test]
-fn xor_on_bool() {
-    let src = "export r = xor([true, true, false], [true, false, false]);\nprint(r);\n";
+fn xor_on_bool_exports_bool_bytes() {
+    let src = "export r = xor([true, true, false], [true, false, false]);\n";
     let mut interp = Interpreter::new(Options::default()).unwrap();
     let (mut out, mut diag) = (Vec::new(), Vec::new());
     interp.run(src, &mut out, &mut diag).unwrap();
-    assert_eq!(String::from_utf8(out).unwrap(), "[false, true, false]\n");
     let Some(Value::Array(a)) = interp.get("r") else {
         panic!("expected an array");
     };
     assert_eq!(a.as_bool_bytes(), &[0, 1, 0]);
-}
-
-#[test]
-fn reduce_bitwise_on_integers() {
-    let src = "let x = [12, 10, 6];\n\
-               print(reduce(x, and));\nprint(reduce(x, or));\nprint(reduce(x, xor));\n\
-               let e = filter(x, |v| v > 100);\n\
-               print(reduce(e, and));\nprint(reduce(e, or));\nprint(reduce(e, xor));\n\
-               let u = filter([1u8], |v| v > 100u8);\n\
-               print(reduce(u, and));\n";
-    assert_eq!(output_of(src), "0\n14\n0\n-1\n0\n0\n255\n");
 }

@@ -1,0 +1,118 @@
+# Result types and arity of builtins, scans, reductions, sorting, and grouping.
+
+# reduce_op_names
+type
+let m = reduce([1.0], max);
+----
+f64
+
+type
+let m = reduce([1.0], foo);
+----
+error: unknown reduce operation 'foo' at 1:23
+
+# builtins_result_types
+type
+let n = length([1.0]);
+----
+i64
+
+type
+let n = where([true]);
+----
+i64[]
+
+type
+let n = count([true]);
+----
+i64
+
+type
+let n = cast_f64([1]);
+----
+f64[]
+
+type
+let n = fill(3, 1.0);
+----
+f64[]
+
+type
+let n = compress([1.0], [true]);
+----
+f64[]
+
+type
+let n = min([1.0]);
+----
+error: 'min' takes 2 arguments, got 1 at 1:9
+
+# scan_add_f64_has_no_kernel
+type
+let x = [1.0, 2.0]; let s = scan(x, add);
+----
+error: no kernel for 'scan' on f64[] at 1:29
+
+# scan_rejects_unknown_operations
+type
+let x = [1, 2]; let s = scan(x, foo);
+----
+error: unknown scan operation 'foo' at 1:33
+
+type
+let x = [1, 2]; let s = scan_by(x, [true, false], foo);
+----
+error: unknown scan_by operation 'foo' at 1:51
+
+# reduce_into_add_f64_has_no_kernel
+type
+let k = [0, 1]; let v = [1.0, 2.0]; let s = reduce_into(k, v, 2, add);
+----
+error: no kernel for 'reduce_into' on i64[], f64[], i64 at 1:45
+
+# argsort_f64_has_no_kernel
+type
+let x = [1.0]; let y = argsort(x);
+----
+error: no kernel for 'argsort' on f64[] at 1:24
+
+# group_id_takes_one_or_two_key_columns
+type
+let x = [3, 1, 3]; let g = group_id(x);
+----
+i64[]
+
+type
+let a = [1, 2]; let b = [2u8, 1u8]; let g = group_id(a, b);
+----
+i64[]
+
+type
+let a = [1i32]; let b = [2u64]; let g = group_id(a, b);
+----
+i64[]
+
+type
+let g = group_id();
+----
+error: 'group_id' takes 1 to 2 arguments, got 0 at 1:9
+
+type
+let x = [1]; let g = group_id(x, x, x);
+----
+error: 'group_id' takes 1 to 2 arguments, got 3 at 1:22
+
+type
+let x = [1.0]; let g = group_id(x);
+----
+error: no kernel for 'group_id' on f64[] at 1:24
+
+type
+let x = [1]; let g = group_id(x, [true]);
+----
+error: no kernel for 'group_id' on i64[], bool[] at 1:22
+
+type
+let g = group_id(1);
+----
+error: no kernel for 'group_id' on i64 at 1:9

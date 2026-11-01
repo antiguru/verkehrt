@@ -1,4 +1,0 @@
-let ends = [3, 3, 7, 7, 8];
-let len = ends - prev(ends, 0);
-print(len);
-print(len != 0);

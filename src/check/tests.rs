@@ -1,9 +1,8 @@
 use super::*;
-use crate::error::{Error, ErrorKind, Span};
+use crate::error::{Error, ErrorKind};
 use crate::syntax::parse;
 use crate::value::{ScalarType, ValueType};
 
-const F64: ValueType = ValueType::Scalar(ScalarType::F64);
 const F64A: ValueType = ValueType::Array(ScalarType::F64);
 
 fn run(src: &str) -> Result<(TProgram, Globals), Error> {
@@ -13,209 +12,43 @@ fn run(src: &str) -> Result<(TProgram, Globals), Error> {
     check(&prog, &reg, &mut g).map(|p| (p, g))
 }
 
-/// The type of the last `let` or `export` in the program.
-fn last_type(src: &str) -> ValueType {
-    let (p, _) = run(src).unwrap_or_else(|e| panic!("{src}: {e}"));
-    match p.stmts.last().unwrap() {
-        TStmt::Let { value, .. } | TStmt::Export { value, .. } => value.ty,
-        other => panic!("unexpected {other:?}"),
+/// Renders the type of the last `let` or `export` in `src`, or the type error with its
+/// span as `error: <message> at <line>:<col>`. Any other error kind is a failure.
+fn type_of(src: &str) -> String {
+    match run(src) {
+        Ok((p, _)) => match p.stmts.last().unwrap() {
+            TStmt::Let { value, .. } | TStmt::Export { value, .. } => value.ty.to_string(),
+            other => panic!("unexpected {other:?}"),
+        },
+        Err(e) => {
+            assert_eq!(e.kind, ErrorKind::Type, "{e}");
+            match e.span {
+                Some(s) => format!("error: {} at {}:{}", e.message, s.line, s.col),
+                None => format!("error: {}", e.message),
+            }
+        }
     }
 }
 
-fn type_err(src: &str, needle: &str) -> Error {
-    let e = run(src).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Type, "{e}");
-    assert!(
-        e.message.contains(needle),
-        "{:?} lacks {needle:?}",
-        e.message
+/// Runs the `type` directive on every file in `testdata`. The input is a program, the
+/// output is one line from `type_of`.
+#[test]
+fn datadriven_types() {
+    crate::testutil::run_dir(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/check/testdata"),
+        |tc| {
+            crate::testutil::reject_unknown_args(tc, &[]);
+            match tc.directive.as_str() {
+                "type" => format!("{}\n", type_of(&tc.input)),
+                d => panic!("unknown directive {d}"),
+            }
+        },
     );
-    e
-}
-
-#[test]
-fn elementwise_array_scalar() {
-    assert_eq!(last_type("let x = [1.0, 2.0]; let y = x * 2.0;"), F64A);
-}
-
-#[test]
-fn no_implicit_conversion_at_operator() {
-    let e = type_err("let x = [1.0]; let y = x * 2;", "no implicit conversion");
-    assert_eq!(e.span, Some(Span { line: 1, col: 26 }));
-    assert!(e.message.contains("f64[] * i64"), "{}", e.message);
-}
-
-#[test]
-fn no_kernel() {
-    type_err("let x = [1i8]; let y = x * x;", "no kernel for '*' on i8[]");
-}
-
-#[test]
-fn and_on_f64_has_no_kernel() {
-    type_err(
-        "let x = [1.0]; let y = and(x, x);",
-        "no kernel for 'and' on f64[]",
-    );
-}
-
-#[test]
-fn scalar_kernels_for_every_type() {
-    assert_eq!(
-        last_type("let a = 2u64; let b = a + a;"),
-        ValueType::Scalar(ScalarType::U64)
-    );
-}
-
-#[test]
-fn reduction_widens() {
-    assert_eq!(
-        last_type("let x = [1u8, 2u8]; let s = sum(x);"),
-        ValueType::Scalar(ScalarType::U64)
-    );
-}
-
-#[test]
-fn map_lambda() {
-    assert_eq!(
-        last_type("let x = [1.0]; let m = map(x, |v| (v * 2.0) + 1.0);"),
-        F64A
-    );
-}
-
-#[test]
-fn lambda_rejects_reduction() {
-    type_err(
-        "let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * sum(y));",
-        "'sum' cannot be used inside a lambda",
-    );
-}
-
-#[test]
-fn prev_is_rejected_inside_a_lambda() {
-    type_err(
-        "let x = [1, 2]; let m = map(x, |v| prev(v, 0));",
-        "'prev' cannot be used inside a lambda",
-    );
-}
-
-#[test]
-fn lambda_rejects_array_capture() {
-    type_err(
-        "let x = [1.0]; let y = [2.0]; let m = map(x, |v| v * y);",
-        "captures array 'y'",
-    );
-}
-
-#[test]
-fn lambda_captures_scalar() {
-    assert_eq!(
-        last_type("let t = 0.5; let f = filter([1.0], |v| v > t);"),
-        F64A
-    );
-}
-
-#[test]
-fn filter_needs_bool() {
-    type_err("let f = filter([1.0], |v| v * 2.0);", "bool");
-}
-
-#[test]
-fn direct_recursion() {
-    type_err("fn f(a: f64) -> f64 { f(a) }", "recursive function 'f'");
-}
-
-#[test]
-fn mutual_recursion() {
-    type_err(
-        "fn f(a: f64) -> f64 { g(a) } fn g(a: f64) -> f64 { f(a) }",
-        "recursive function",
-    );
-}
-
-#[test]
-fn forward_reference_without_cycle() {
-    assert_eq!(
-        last_type("fn f(a: f64) -> f64 { g(a) } fn g(a: f64) -> f64 { a } let r = f(1.0);"),
-        F64
-    );
-}
-
-#[test]
-fn map_with_function_name() {
-    assert_eq!(
-        last_type("fn sq(v: f64) -> f64 { v * v } let m = map([1.0], sq);"),
-        F64A
-    );
-}
-
-#[test]
-fn lambda_calls_non_liftable_function() {
-    type_err(
-        "fn s(a: f64) -> f64 { sum([a]) } let m = map([1.0], |v| s(v));",
-        "'s' cannot be used inside a lambda",
-    );
-}
-
-#[test]
-fn reduce_op_names() {
-    assert_eq!(last_type("let m = reduce([1.0], max);"), F64);
-    type_err("let m = reduce([1.0], foo);", "foo");
-}
-
-#[test]
-fn unknown_name_span() {
-    let e = type_err("let a = 1.0;\nlet y = a + z;", "unknown name 'z'");
-    assert_eq!(e.span, Some(Span { line: 2, col: 13 }));
-}
-
-#[test]
-fn input_and_export() {
-    assert_eq!(last_type("input x: f64[]; export s = sum(x);"), F64);
-}
-
-#[test]
-fn input_no_implicit_conversion() {
-    type_err("input x: f64[]; let y = x * 2;", "no implicit conversion");
-}
-
-#[test]
-fn export_name_visible_later() {
-    assert_eq!(last_type("export a = 1.0; let b = a + a;"), F64);
-}
-
-#[test]
-fn let_annotation_must_match() {
-    assert_eq!(last_type("let x: f64[] = [1.0];"), F64A);
-    type_err("let x: f64 = [1.0];", "f64");
-}
-
-#[test]
-fn if_rules() {
-    assert_eq!(last_type("let r = if 1.0 < 2.0 { 1.0 } else { 2.0 };"), F64);
-    type_err("let r = if 1.0 { 1.0 } else { 2.0 };", "bool");
-    type_err("let r = if true { 1.0 } else { 2 };", "branch");
-    assert_eq!(
-        last_type("let m = [true]; let r = if m { 1.0 } else { 2.0 };"),
-        F64A
-    );
-    type_err(
-        "let m = [true]; let r = if m { [1i8] } else { [2i8] };",
-        "no kernel for 'if'",
-    );
-}
-
-#[test]
-fn array_literal_rules() {
-    type_err("let a = [1.0, 2];", "same");
 }
 
 #[test]
 fn function_scope_and_shadowing() {
-    type_err(
-        "let t = 1.0; fn f(a: f64) -> f64 { a + t }",
-        "unknown name 't'",
-    );
-    type_err("fn sum(a: f64) -> f64 { a }", "builtin");
+    // The errors of this case are in `testdata/functions.dd`.
     let (p, g) = run("let a = 1.0; let a = [2.0];").unwrap();
     let vars: Vec<VarId> = p
         .stmts
@@ -230,16 +63,6 @@ fn function_scope_and_shadowing() {
 }
 
 #[test]
-fn load_and_print_top_level_only() {
-    assert_eq!(last_type("let a = load_f64(\"x.bin\");"), F64A);
-    type_err("fn f(a: f64) -> f64 { sum(load_f64(\"x\")) }", "top level");
-    type_err(
-        "let a = map([1.0], |v| sum(load_f64(\"x\")));",
-        "inside a lambda",
-    );
-}
-
-#[test]
 fn globals_persist_and_declare() {
     let reg = Registry::new();
     let mut g = Globals::new();
@@ -251,298 +74,4 @@ fn globals_persist_and_declare() {
     // A failed check leaves the globals untouched.
     assert!(check(&parse("let w = nope;").unwrap(), &reg, &mut g).is_err());
     assert!(g.lookup("w").is_none());
-}
-
-#[test]
-fn builtins_result_types() {
-    let i = ValueType::Scalar(ScalarType::I64);
-    assert_eq!(last_type("let n = length([1.0]);"), i);
-    assert_eq!(
-        last_type("let n = where([true]);"),
-        ValueType::Array(ScalarType::I64)
-    );
-    assert_eq!(last_type("let n = count([true]);"), i);
-    assert_eq!(last_type("let n = cast_f64([1]);"), F64A);
-    assert_eq!(last_type("let n = fill(3, 1.0);"), F64A);
-    assert_eq!(last_type("let n = compress([1.0], [true]);"), F64A);
-    type_err("let n = min([1.0]);", "takes 2 arguments");
-}
-
-#[test]
-fn zip_map_types() {
-    assert_eq!(
-        last_type("let m = zip_map([1.0], [2.0], |a, b| a + b);"),
-        F64A
-    );
-    type_err("let m = zip_map([1.0], [2.0], |a| a);", "parameter");
-}
-
-#[test]
-fn duplicate_input_and_export_are_rejected() {
-    let e = type_err(
-        "input x: f64[]; input x: i64[];",
-        "input 'x' is declared twice",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 17 }));
-    let second_err = type_err(
-        "export a = 1.0; export a = 2.0;",
-        "export 'a' is declared twice",
-    );
-    assert_eq!(second_err.span, Some(Span { line: 1, col: 17 }));
-    // An input and an export are different namespaces of the host interface.
-    run("input a: f64; export b = a; let b = 1.0;").unwrap();
-}
-
-#[test]
-fn scan_add_f64_has_no_kernel() {
-    type_err(
-        "let x = [1.0, 2.0]; let s = scan(x, add);",
-        "no kernel for 'scan' on f64[]",
-    );
-}
-
-#[test]
-fn scan_rejects_unknown_operations() {
-    type_err(
-        "let x = [1, 2]; let s = scan(x, foo);",
-        "unknown scan operation 'foo'",
-    );
-    type_err(
-        "let x = [1, 2]; let s = scan_by(x, [true, false], foo);",
-        "unknown scan_by operation 'foo'",
-    );
-}
-
-#[test]
-fn scan_is_rejected_inside_a_lambda() {
-    type_err(
-        "let x = [1, 2]; let m = map(x, |v| scan(v, add));",
-        "'scan' cannot be used inside a lambda",
-    );
-}
-
-#[test]
-fn reduce_into_add_f64_has_no_kernel() {
-    type_err(
-        "let k = [0, 1]; let v = [1.0, 2.0]; let s = reduce_into(k, v, 2, add);",
-        "no kernel for 'reduce_into' on i64[], f64[], i64",
-    );
-}
-
-#[test]
-fn div_const_rejects_an_array_divisor() {
-    type_err(
-        "let x = [1, 2]; let y = div_const(x, x);",
-        "no kernel for 'div_const' on i64[], i64[]",
-    );
-}
-
-#[test]
-fn div_const_in_a_lambda_rejects_a_parameter_divisor() {
-    // Lifted over arrays, a parameter divisor is an array, which the kernel does not take.
-    let e = type_err(
-        "let x = [1, 2]; let m = map(x, |v| div_const(v, v));",
-        "no kernel for 'div_const' on i64[], i64[]",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 36 }));
-}
-
-#[test]
-fn div_const_in_a_lambda_rejects_a_constant_dividend_with_a_parameter_divisor() {
-    let e = type_err(
-        "let x = [1, 2]; let m = map(x, |v| div_const(60, v));",
-        "no kernel for 'div_const' on i64, i64[]",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 36 }));
-}
-
-#[test]
-fn div_const_in_a_lambda_rejects_a_divisor_derived_from_a_parameter() {
-    let e = type_err(
-        "let x = [1, 2]; let m = map(x, |v| { let d = v + 1; div_const(v, d) });",
-        "no kernel for 'div_const' on i64[], i64[]",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 53 }));
-    let inline = type_err(
-        "let x = [1, 2]; let m = map(x, |v| div_const(v, v + 1));",
-        "no kernel for 'div_const' on i64[], i64[]",
-    );
-    assert_eq!(inline.span, Some(Span { line: 1, col: 36 }));
-}
-
-#[test]
-fn div_const_in_a_lambda_accepts_a_constant_or_captured_divisor() {
-    let i64a = ValueType::Array(ScalarType::I64);
-    assert_eq!(
-        last_type("let x = [1, 2]; let m = map(x, |v| div_const(v, 60));"),
-        i64a
-    );
-    assert_eq!(
-        last_type("let x = [1, 2]; let k = 7; let m = map(x, |v| div_const(v + 1, k));"),
-        i64a
-    );
-    // A block let that does not read the parameter stays uniform.
-    assert_eq!(
-        last_type("let x = [1, 2]; let m = map(x, |v| { let d = 3 + 4; div_const(v, d) });"),
-        i64a
-    );
-}
-
-#[test]
-fn div_const_in_a_function_called_from_a_lambda_with_a_constant_divisor() {
-    assert_eq!(
-        last_type(
-            "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, 3));"
-        ),
-        ValueType::Array(ScalarType::I64)
-    );
-}
-
-#[test]
-fn div_const_in_a_function_called_from_a_lambda_with_a_parameter_divisor() {
-    let e = type_err(
-        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(v, v));",
-        "no kernel for 'div_const' on i64[], i64[] (in 'f' at 1:31)",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 73 }));
-    type_err(
-        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let m = map([1, 2], |v| f(3, v));",
-        "no kernel for 'div_const' on i64, i64[] (in 'f' at 1:31)",
-    );
-}
-
-#[test]
-fn function_is_checked_per_uniformity_pattern() {
-    // The same function is fine with a constant divisor and rejected with a varying one.
-    type_err(
-        "fn f(a: i64, b: i64) -> i64 { div_const(a, b) } \
-         let m = map([1, 2], |v| f(v, 3) + f(v, v));",
-        "(in 'f' at 1:31)",
-    );
-    // Outside a lambda the function is checked as before.
-    assert_eq!(
-        last_type("fn f(a: i64, b: i64) -> i64 { div_const(a, b) } let r = f(7, 7);"),
-        ValueType::Scalar(ScalarType::I64)
-    );
-}
-
-#[test]
-fn div_const_through_a_function_chain() {
-    let src = "fn g(a: i64, b: i64) -> i64 { div_const(a, b) } \
-               fn f(a: i64, b: i64) -> i64 { g(a + 1, b) } ";
-    assert_eq!(
-        last_type(&format!("{src} let m = map([1, 2], |v| f(v, 3));")),
-        ValueType::Array(ScalarType::I64)
-    );
-    assert_eq!(
-        last_type(&format!(
-            "{src} let c = 5; let m = map([1, 2], |v| f(v, c * 2));"
-        )),
-        ValueType::Array(ScalarType::I64)
-    );
-    let e = type_err(
-        &format!("{src} let m = map([1, 2], |v| f(v, v));"),
-        "no kernel for 'div_const' on i64[], i64[] (in 'g' at 1:31) (in 'f' at 1:79)",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 118 }));
-}
-
-#[test]
-fn function_name_as_lambda_is_checked_with_a_varying_parameter() {
-    assert_eq!(
-        last_type("fn f(a: i64) -> i64 { div_const(a, 60) } let m = map([1, 2], f);"),
-        ValueType::Array(ScalarType::I64)
-    );
-    type_err(
-        "fn f(a: i64) -> i64 { div_const(60, a) } let m = map([1, 2], f);",
-        "no kernel for 'div_const' on i64, i64[] (in 'f' at 1:23)",
-    );
-}
-
-#[test]
-fn lambda_inside_a_function_body_is_checked_lifted() {
-    type_err(
-        "fn f(x: i64[]) -> i64[] { map(x, |v| div_const(60, v)) } let r = f([1, 2]);",
-        "no kernel for 'div_const' on i64, i64[]",
-    );
-}
-
-#[test]
-fn zip_map_checks_the_length_of_both_arrays() {
-    // The body ignores the i8 array, but lowering still reads its length.
-    let e = type_err(
-        "let x = [1, 2]; let y = [1i8, 2i8]; print(zip_map(x, y, |a, b| a + 1));",
-        "'zip_map' compares the lengths of its i64[] and i8[] arrays: \
-         no kernel for 'length' on i8[]",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 43 }));
-}
-
-#[test]
-fn map_over_i8_has_no_array_kernel() {
-    // The scalar kernel exists, but lifting multiplies arrays, which has no i8 kernel.
-    let e = type_err(
-        "let x = [1i8]; print(map(x, |v| v * v));",
-        "no kernel for '*' on i8[], i8[]",
-    );
-    assert_eq!(e.span, Some(Span { line: 1, col: 35 }));
-    // A uniform body stays scalar and is filled to the array's length, which i8 lacks.
-    let fill = type_err(
-        "let x = [1i8]; let c = 2i8; let m = map(x, |v| c * c);",
-        "the lambda body does not use its parameters, so 'map' fills its i8 value to the \
-         length of the i8[] array: no kernel for 'length' on i8[]",
-    );
-    assert_eq!(fill.span, Some(Span { line: 1, col: 37 }));
-    type_err(
-        "let x = [1]; let c = 2; let m = map(x, |v| cast_i8(c));",
-        "the lambda body does not use its parameters, so 'map' fills its i8 value to the \
-         length of the i64[] array: no kernel for 'fill' on i64, i8",
-    );
-    assert_eq!(
-        last_type("let x = [1]; let c = 2; let m = map(x, |v| c * c);"),
-        ValueType::Array(ScalarType::I64)
-    );
-}
-
-#[test]
-fn argsort_f64_has_no_kernel() {
-    type_err(
-        "let x = [1.0]; let y = argsort(x);",
-        "no kernel for 'argsort' on f64[]",
-    );
-}
-
-#[test]
-fn group_id_takes_one_or_two_key_columns() {
-    let i64a = ValueType::Array(ScalarType::I64);
-    assert_eq!(last_type("let x = [3, 1, 3]; let g = group_id(x);"), i64a);
-    assert_eq!(
-        last_type("let a = [1, 2]; let b = [2u8, 1u8]; let g = group_id(a, b);"),
-        i64a
-    );
-    assert_eq!(
-        last_type("let a = [1i32]; let b = [2u64]; let g = group_id(a, b);"),
-        i64a
-    );
-    type_err(
-        "let g = group_id();",
-        "'group_id' takes 1 to 2 arguments, got 0",
-    );
-    type_err(
-        "let x = [1]; let g = group_id(x, x, x);",
-        "'group_id' takes 1 to 2 arguments, got 3",
-    );
-    type_err(
-        "let x = [1.0]; let g = group_id(x);",
-        "no kernel for 'group_id' on f64[]",
-    );
-    type_err(
-        "let x = [1]; let g = group_id(x, [true]);",
-        "no kernel for 'group_id' on i64[], bool[]",
-    );
-    type_err("let g = group_id(1);", "no kernel for 'group_id' on i64");
-    type_err(
-        "let x = [1]; let y = map(x, |v| group_id(v));",
-        "'group_id' cannot be used inside a lambda",
-    );
 }

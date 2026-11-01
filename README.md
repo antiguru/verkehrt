@@ -31,7 +31,7 @@ Because floats use one canonical summation order and no kernel uses fused multip
 
 ## Example
 
-The program below matches the style of the test programs in `tests/programs/`.
+The program below matches the style of the golden programs, which live in datadriven files in `tests/programs/`.
 It generates two random arrays, then computes a dot product, a count, and a filter over them.
 The intermediate `t` has one use, so lowering inlines it into `sum`.
 The lambda passed to `filter` is lifted into a whole-array comparison, so the planner sees `compress(x, x > 0.99)`.
@@ -141,11 +141,11 @@ Release builds use LTO, so they take longer than debug builds.
 
 ```
 CARGO_INCREMENTAL=0 cargo build --release
-CARGO_INCREMENTAL=0 cargo run --release -- run tests/programs/dot.vk
+CARGO_INCREMENTAL=0 cargo run --release -- run tests/cli/dot.vk
 CARGO_INCREMENTAL=0 cargo run --release -- repl
 ```
 
-The test suite covers the parser, type checker, planner, kernels, and the example programs in `tests/programs/`.
+The test suite covers the parser, type checker, planner, kernels, and the golden programs, which live in datadriven files in `tests/programs/`.
 The ISA variant test is worth running in release mode too, since the `auto` backend depends on what the optimizer vectorizes.
 The benchmarks compare against native loops and corgi, which they pull from Git as a dev-dependency.
 

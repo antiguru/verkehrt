@@ -1,0 +1,19 @@
+# Plans that stay on single-op kernels.
+
+plan
+print(sum(x + y));
+----
+reduce_add_f64: (reduce_add_f64 (add_f64 x y))
+
+# A single-op kernel keeps the broadcast operand.
+plan
+print(x * 2.0);
+----
+mul_f64: (mul_f64 x 2.0)
+
+# Also pins the `Arr` guard: `dot_f64` needs two arrays, so it must not cover a
+# broadcast operand.
+plan
+print(sum([1.0, 2.0] * 2.0));
+----
+reduce_add_f64: (reduce_add_f64 (mul_f64 <f64[2]> 2.0))

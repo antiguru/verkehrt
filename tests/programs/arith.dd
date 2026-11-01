@@ -1,0 +1,112 @@
+# Integer and bitwise arithmetic, constant division, and sorting.
+
+# bitwise
+run
+let x = [12, 10, 6];
+let y = [10, 3, 5];
+print(map(x, |v| and(v, 10)));
+print(zip_map(x, y, |a, b| xor(or(a, b), and(a, b))));
+print(map(x, |v| not(v)));
+----
+[8, 10, 2]
+[6, 9, 3]
+[-13, -11, -7]
+
+# div_lambda
+run
+fn per(a: i64, b: i64) -> i64 { div_const(a, b) }
+fn bucket(a: i64, b: i64) -> i64 { per(a - 1, b * 2) }
+let x = [60, 125, 7, 3600];
+let c = 60;
+print(map(x, |v| div_const(v, 60)));
+print(map(x, |v| div_const(v, c)));
+print(map(x, |v| per(v, 3)));
+print(map(x, |v| bucket(v, 5)));
+print(per(100, 7));
+----
+[1, 2, 0, 60]
+[1, 2, 0, 60]
+[20, 41, 2, 1200]
+[5, 12, 0, 359]
+14
+
+# div_sort
+run
+let c = [5, 3, 9, 3, 7];
+print(div_const(c, 2));
+print(div_const(0 - c, 2));
+print(div_const(c, 0 - 2));
+print(map(c, |v| div_const(v, 3)));
+print(div_const(100, 7));
+print(argsort(c));
+print(argsort(0 - c));
+print(gather(c, argsort(c)));
+print(argsort(cast_u8(c)));
+----
+[2, 1, 4, 1, 3]
+[-2, -1, -4, -1, -3]
+[-2, -1, -4, -1, -3]
+[1, 1, 3, 1, 2]
+14
+[1, 3, 0, 4, 2]
+[2, 4, 0, 1, 3]
+[3, 3, 5, 7, 9]
+[1, 3, 0, 4, 2]
+
+# bitwise_on_integers
+run
+print(and(12, 10));
+print(or(12, 10));
+print(xor(12, 10));
+print(not(0u8));
+print(not(0));
+let a = [12, 5];
+let b = [10, 3];
+print(and(a, b));
+print(or(a, b));
+print(xor(a, b));
+print(not(a));
+print(not([0u8, 255u8]));
+print(and([12u64, 5u64], 10u64));
+print(xor([12i32], [10i32]));
+----
+8
+14
+6
+255
+-1
+[8, 1]
+[14, 7]
+[6, 6]
+[-13, -6]
+[255, 0]
+[8, 0]
+[6]
+
+# xor_on_bool
+run
+export r = xor([true, true, false], [true, false, false]);
+print(r);
+----
+[false, true, false]
+
+# reduce_bitwise_on_integers
+run
+let x = [12, 10, 6];
+print(reduce(x, and));
+print(reduce(x, or));
+print(reduce(x, xor));
+let e = filter(x, |v| v > 100);
+print(reduce(e, and));
+print(reduce(e, or));
+print(reduce(e, xor));
+let u = filter([1u8], |v| v > 100u8);
+print(reduce(u, and));
+----
+0
+14
+0
+-1
+0
+0
+255

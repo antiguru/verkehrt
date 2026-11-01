@@ -1,0 +1,31 @@
+# Fusion of sum over a product into dot and sumsq.
+
+plan
+print(sum(x * y));
+----
+dot_f64: (dot_f64 x y)
+
+# The operand order of a commutative product comes from a deterministic egglog tie-break.
+# An egglog upgrade may change it, and `REWRITE=1` is the fix when it does.
+plan
+print(sum(y * x));
+----
+dot_f64: (dot_f64 y x)
+
+plan
+print(sum(x * x));
+----
+sumsq_f64: (sumsq_f64 x)
+
+# A single-use let fuses across its binding.
+plan
+let t = x * y; print(sum(t));
+----
+dot_f64: (dot_f64 x y)
+
+# A shared let stays a leaf.
+plan
+let t = x * y; print(sum(t)); print(t);
+----
+reduce_add_f64: (reduce_add_f64 t)
+-: t

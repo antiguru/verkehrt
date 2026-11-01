@@ -1,0 +1,26 @@
+# Comparisons fused into count, filter, and conditional sum kernels.
+
+plan
+print(count(x > 0.5));
+----
+count_gt_f64: (count_gt_f64 x 0.5)
+
+plan
+print(count(0.5 < x));
+----
+count_gt_f64: (count_gt_f64 x 0.5)
+
+plan
+print(count(0.5 <= x));
+----
+count_ge_f64: (count_ge_f64 x 0.5)
+
+plan
+print(filter(x, |v| v > 0.5));
+----
+filter_gt_f64: (filter_gt_f64 x 0.5)
+
+plan
+print(sum(map(x, |v| if v > 0.5 { v } else { 0.0 })));
+----
+condsum_gt_f64: (condsum_gt_f64 x 0.5 0.0)

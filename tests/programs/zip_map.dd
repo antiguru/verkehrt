@@ -1,0 +1,73 @@
+# zip_map checks lengths whatever the body.
+
+# zip_map_first_operand
+run
+let x = [1.0, 2.0, 3.0];
+let y = [4.0, 5.0, 6.0];
+print(zip_map(x, y, |a, b| a));
+----
+[1.0, 2.0, 3.0]
+
+# zip_map_first_operand_length_mismatch
+error
+let x = [1.0, 2.0, 3.0];
+let y = [4.0];
+print(zip_map(x, y, |a, b| a));
+----
+Runtime error at 3:1: length mismatch: 3 vs 1
+
+# zip_map_second_operand
+run
+let x = [1.0, 2.0, 3.0];
+let y = [4.0, 5.0, 6.0];
+print(zip_map(x, y, |a, b| b));
+----
+[4.0, 5.0, 6.0]
+
+# zip_map_second_operand_length_mismatch
+error
+let x = [1.0, 2.0, 3.0];
+let y = [4.0];
+print(zip_map(x, y, |a, b| b));
+----
+Runtime error at 3:1: length mismatch: 1 vs 3
+
+# zip_map_constant_body
+run
+let x = [1.0, 2.0, 3.0];
+let y = [4.0, 5.0, 6.0];
+print(zip_map(x, y, |a, b| 1.0));
+----
+[1.0, 1.0, 1.0]
+
+# zip_map_constant_body_length_mismatch
+error
+let x = [1.0, 2.0, 3.0];
+let y = [4.0];
+print(zip_map(x, y, |a, b| 1.0));
+----
+Runtime error at 3:1: length mismatch: 3 vs 1
+
+# zip_map_sum
+run
+let x = [1.0, 2.0, 3.0];
+let y = [4.0, 5.0, 6.0];
+print(zip_map(x, y, |a, b| a + b));
+----
+[5.0, 7.0, 9.0]
+
+# zip_map_sum_length_mismatch
+error
+let x = [1.0, 2.0, 3.0];
+let y = [4.0];
+print(zip_map(x, y, |a, b| a + b));
+----
+Runtime error at 3:1: length mismatch: 3 vs 1
+
+# zip_map_fused_with_a_product
+run
+let x = [1.0, 2.0];
+let y = [3.0, 4.0];
+print(sum(zip_map(x, y, |a, b| a * b)));
+----
+11.0

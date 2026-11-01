@@ -1,0 +1,49 @@
+# User functions: recursion, scope, and use from lambdas.
+
+# direct_recursion
+type
+fn f(a: f64) -> f64 { f(a) }
+----
+error: recursive function 'f' at 1:1
+
+# mutual_recursion
+type
+fn f(a: f64) -> f64 { g(a) } fn g(a: f64) -> f64 { f(a) }
+----
+error: recursive function 'f' at 1:1
+
+# forward_reference_without_cycle
+type
+fn f(a: f64) -> f64 { g(a) } fn g(a: f64) -> f64 { a } let r = f(1.0);
+----
+f64
+
+# map_with_function_name
+type
+fn sq(v: f64) -> f64 { v * v } let m = map([1.0], sq);
+----
+f64[]
+
+# lambda_calls_non_liftable_function
+type
+fn s(a: f64) -> f64 { sum([a]) } let m = map([1.0], |v| s(v));
+----
+error: 's' cannot be used inside a lambda, its body uses 'reduce(add)' at 1:57
+
+# unknown_name_span
+type
+let a = 1.0;
+let y = a + z;
+----
+error: unknown name 'z' at 2:13
+
+# function_scope_and_shadowing
+type
+let t = 1.0; fn f(a: f64) -> f64 { a + t }
+----
+error: unknown name 't' at 1:40
+
+type
+fn sum(a: f64) -> f64 { a }
+----
+error: cannot define function 'sum', it is a builtin at 1:1

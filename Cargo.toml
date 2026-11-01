@@ -19,6 +19,7 @@ rustyline = "19.0.0"
 assert_cmd = "2.2.2"
 corgi = { git = "https://github.com/frankmcsherry/WIP", rev = "2751e04e8501d47b33219be23049bf4afa7a4428" }
 criterion = "0.8"
+datadriven = "0.9"
 proptest = "1.12.0"
 
 [lints.clippy]
@@ -103,3 +104,46 @@ harness = false
 [[bench]]
 name = "acceptance"
 harness = false
+
+# egglog plans every program at run time, which dominates the debug test time.
+[profile.dev.package.egglog]
+opt-level = 3
+
+[profile.dev.package.egglog-bridge]
+opt-level = 3
+
+[profile.dev.package.egglog-core-relations]
+opt-level = 3
+
+[profile.dev.package.egglog-numeric-id]
+opt-level = 3
+
+[profile.dev.package.egglog-concurrency]
+opt-level = 3
+
+[profile.dev.package.egglog-union-find]
+opt-level = 3
+
+[profile.dev.package.egglog-reports]
+opt-level = 3
+
+[profile.dev.package.egglog-ast]
+opt-level = 3
+
+[profile.dev.package.egraph-serialize]
+opt-level = 3
+
+[profile.dev.package.hashbrown]
+opt-level = 3
+
+[profile.dev.package.indexmap]
+opt-level = 3
+
+[profile.dev.package.im-rc]
+opt-level = 3
+
+[profile.dev.package.smallvec]
+opt-level = 3
+
+[profile.dev.package.rustc-hash]
+opt-level = 3
