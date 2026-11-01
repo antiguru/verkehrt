@@ -6,15 +6,10 @@ input ClientIP: i64[];
 input IsRefresh: i64[];
 input ResolutionWidth: i64[];
 
-// The number of groups is the largest id plus one. `reduce` rejects an empty array, so a single
-// bucket (every key 0) holds the maximum instead. It is the identity for an empty array, which
-// clamps to 0.
-fn groups(ids: i64[]) -> i64 { max(reduce(reduce_into(ids * 0, ids, 1, max), max) + 1, 0) }
-
 // Group by hashing. `group_id` of the two keys gives each row the dense id of its (WatchID,
 // ClientIP) pair, numbered by first occurrence. An empty input gives no groups and empty outputs.
 let ids = group_id(WatchID, ClientIP);
-let ng = groups(ids);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
 let counts = histogram(ids, ng);
 let refreshes = reduce_into(ids, IsRefresh, ng, add);
 let widths = reduce_into(ids, ResolutionWidth, ng, add);

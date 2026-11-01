@@ -3,20 +3,15 @@
 // output: [i,i,i,i,u]
 input ClientIP: i64[];
 
-// The number of groups is the largest id plus one. `reduce` rejects an empty array, so a single
-// bucket (every key 0) holds the maximum instead. It is the identity for an empty array, which
-// clamps to 0.
-fn groups(ids: i64[]) -> i64 { max(reduce(reduce_into(ids * 0, ids, 1, max), max) + 1, 0) }
-
 // The offsets are functions of ClientIP, so grouping by ClientIP alone gives the same groups. They
 // are computed after the top 10 is picked, in i64 where no ClientIP can overflow.
+// An empty column gives no groups and empty outputs.
 let ids = group_id(ClientIP);
-let ng = groups(ids);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
 let counts = histogram(ids, ng);
 // Every row of a group has the same address, so the minimum recovers it.
 let gk = reduce_into(ids, ClientIP, ng, min);
 // Sorting the groups by address and then stably by descending count breaks ties by address.
-// An empty column gives no groups and empty outputs.
 let ko = argsort(gk);
 let co = argsort(0 - gather(counts, ko));
 let top = gather(ko, slice(co, 0, min(ng, 10)));

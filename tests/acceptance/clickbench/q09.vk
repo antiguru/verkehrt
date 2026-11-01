@@ -6,18 +6,13 @@ input AdvEngineID: i64[];
 input ResolutionWidth: i64[];
 input UserID: i64[];
 
-// The number of groups is the largest id plus one. `reduce` rejects an empty array, so a single
-// bucket (every key 0) holds the maximum instead. It is the identity for an empty array, which
-// clamps to 0.
-fn groups(ids: i64[]) -> i64 { max(reduce(reduce_into(ids * 0, ids, 1, max), max) + 1, 0) }
-
 // `group_id` of the pair numbers each distinct (RegionID, UserID) pair once. The region id of each
 // pair, counted per region, is the distinct user count. An empty column gives no groups and empty
 // outputs.
 let g = group_id(RegionID);
-let ng = groups(g);
+let ng = if length(g) > 0 { reduce(g, max) + 1 } else { 0 };
 let p = group_id(RegionID, UserID);
-let np = groups(p);
+let np = if length(p) > 0 { reduce(p, max) + 1 } else { 0 };
 let users = histogram(reduce_into(p, g, np, min), ng);
 let counts = histogram(g, ng);
 let advs = reduce_into(g, AdvEngineID, ng, add);
