@@ -22,8 +22,9 @@ pub const HOLE: &str = "Hole";
 /// Relation holding the e-classes whose value is a materialized array, as opposed to a
 /// broadcast scalar or a scalar.
 const ARR: &str = "Arr";
-/// Relation holding the array e-classes that are not a hole. A plan may evaluate one of them
-/// twice, which a hole's cost of 0 would hide.
+/// Relation holding the array e-classes that are not themselves a hole. A hole nested deeper
+/// inside such an e-class still counts. A plan may evaluate one of them twice, which a hole's
+/// cost of 0 would hide.
 const PLAIN: &str = "Plain";
 
 fn kernel_ctor(name: &str) -> String {
@@ -150,8 +151,8 @@ fn sum_rules(reg: &Registry, t: ScalarType) -> String {
         return String::new();
     };
     // The guard keeps `x` an array, so `k` is the only broadcast. A hole costs 0, so
-    // extraction would not see that a conditional `x` runs twice, and the guard excludes it
-    // too. Each right-hand side names
+    // extraction would not see that a conditional `x` runs twice, and the guard excludes an
+    // `x` that is itself a hole. Each right-hand side names
     // `x` and `k` in the order of its left-hand side, so the plan evaluates them in that
     // order unless commutativity swaps them.
     let when = format!(":when (({PLAIN} ?x))");

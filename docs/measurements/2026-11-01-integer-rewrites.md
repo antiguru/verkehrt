@@ -14,7 +14,7 @@ What remains is ninety `reduce_add_i64` passes over one column.
 | Frequency scaling | boost off, governor `powersave`, 3.0 GHz under load (user-reported, the sandbox cannot read cpufreq) |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
 | Verkehrt build | the branch with the exact integer sum rewrites: broadcast scalars move out of `i64` and `u64` sums, and conditionals are excluded from the rewrite |
-| Before | the numbers of `2026-10-31-clickbench-now.md` (q29 row and `stats.txt`), taken on the build before the rewrites |
+| Before | the numbers of `2026-10-31-clickbench-now.md` (q29 row and `stats.txt`), taken on an earlier main. The intervening changes leave q29's kernels unchanged: `reduce_add_i64` is 7988.9 us before and 8184.5 us after. |
 | corgi and DuckDB | the figures of `2026-10-31-clickbench-now.md` (corgi 33.14 ms at its pinned revision, DuckDB one-thread 7.24 ms), reused and not re-run |
 | Data | `hits_0.parquet`, 1,000,000 rows, the same prepared data directory |
 
@@ -58,7 +58,7 @@ The four non-scalar variants span 8.03 to 8.26 ms in run a, a 3% spread, so the 
 
 Ratios below 1.0 mean Verkehrt is faster, and the after ratios use the 8.03 ms of run a.
 Against corgi, Verkehrt is now 4.1 times faster, because corgi still runs the ninety passes as written.
-Against DuckDB, q29 is 11% slower, which is at the edge of the noise band, so this document calls it level with a slight lead for DuckDB and does not claim a gap.
+Against DuckDB, q29 is 11% slower, just outside the 10% noise band. The DuckDB figure is a best-of time from the earlier round, and criterion means run a few percent above a best-of time, so this document claims neither a gap nor parity.
 
 ## The q29 plan
 
@@ -90,7 +90,7 @@ The criterion mean (8.03 ms) is 2% below the kernel total, so the stats timer an
 
 ## What remains
 
-The ninety `reduce_add_i64` calls read the same `ResolutionWidth` column ninety times and return the same value each time, because the rewritten sums share the reduction and differ only in the scalar term.
+The ninety `reduce_add_i64` calls read the same `ResolutionWidth` column ninety times and return the same value each time, because every rewritten sum contains the same `reduce_add_i64 ResolutionWidth` and differs only in the scalar term.
 The planner does not yet recognise the repeated reduction, so the program pays 99.7% of its kernel time on ninety identical passes.
 Sharing one reduction across the ninety plans (issue #39) would leave one pass of about 0.09 ms plus the scalar work, an estimate from the per-pass time above that this document did not measure.
 That would put q29 below DuckDB's 7.24 ms, but only a measurement after #39 can confirm it.

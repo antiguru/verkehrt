@@ -15,7 +15,7 @@ ClickBench q29 sums `ResolutionWidth + k` for ninety constants `k`, and Verkehrt
   * `sum(x * k)` to `sum(x) * k`,
 
   where `x` is an array and `k` a broadcast scalar. Commutativity, which the planner already has, covers `k + x` and `k * x`. Extraction picks the rewritten form by its lower cost. `i32` and `u8` are excluded because they sum into a wider type after wrapping each element, which no product of the count and `k` reproduces.
-* **Visible result.** q29 is re-measured against DuckDB and corgi on the same host and method as `2026-10-31-clickbench-now.md`. The expected outcome is about 8 ms, because ninety `reduce_add_i64` passes remain. Sharing the one `sum(x)` across statements is #39's job.
+* **Visible result.** q29 is re-measured on the same host and method as `2026-10-31-clickbench-now.md`, and compared against the DuckDB and corgi figures of that record, which are reused rather than re-run. The expected outcome is about 8 ms, because ninety `reduce_add_i64` passes remain. Sharing the one `sum(x)` across statements is #39's job.
 * **Oracle coverage.** The unfused planner of #35 also drops these rewrites, so oracle 2 compares plans with and without them. The generator produces `sum` over `x ± k`, `k - x`, and `x * k` often enough that every rewrite fires in each CI run, and the test fails if one does not.
 * **Planner tests.** Datadriven `plan` cases show each rewrite and the unfused plan beside it, and a float case shows that no rewrite fires.
 

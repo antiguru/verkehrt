@@ -1,6 +1,7 @@
 # Sums of an integer array combined with a broadcast scalar. The planner moves the scalar out
 # of the `i64` and `u64` sums, and the values overflow each width, so the outputs pin that
-# the rewritten plans wrap exactly like the elementwise ones.
+# the rewritten plans wrap exactly like the elementwise ones. The `filter` lines pin the
+# empty-array result, not a rewrite.
 
 # i64
 run
