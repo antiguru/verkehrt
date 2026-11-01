@@ -11,9 +11,11 @@
 //!   mismatch its own way.
 //! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
 //!   evaluator of `eval` computes from the typed program. On success the output and the
-//!   exports must be equal. On failure the error must be a runtime error whose category is
-//!   one the evaluator met, and its output a prefix of the evaluator's, because the base spec
-//!   leaves open which of several errors is reported and how much output precedes it.
+//!   exports must be equal. Whether an error occurs and which statement raises it are fixed,
+//!   so on failure the error must be a runtime error at the line of the evaluator's failing
+//!   statement, in one of the categories the evaluator met there. Which of several errors
+//!   within that statement surfaces may differ, and output printed before an error may be
+//!   incomplete, so the pipeline's output must only be a prefix of the evaluator's.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -288,10 +290,12 @@ impl Engine {
         let reference_skipped = match evaluate(false) {
             Err(reason) => Some(reason),
             Ok(r) if agrees(&r, f) => None,
-            // Pending a ruling: the pipeline evaluates top-level lets it does not inline.
-            Ok(_) if evaluate(true).is_ok_and(|r| agrees(&r, f)) => {
-                Some("the pipeline evaluates an unread top-level let".to_string())
-            }
+            // Until #40 (errors as data), the pipeline computes top-level lets it does not
+            // inline. Such a case is skipped only when eager evaluation of the top-level lets
+            // reproduces the pipeline's failure exactly.
+            Ok(r) if eager_reproduces(&r, f, &evaluate(true)) => Some(
+                "until #40, the pipeline computes a top-level let it does not inline".to_string(),
+            ),
             Ok(r) => {
                 return Err(format!(
                     "oracle 3: the reference evaluator differs from the pipeline\n{}\n\
@@ -307,6 +311,28 @@ impl Engine {
             reference_skipped,
         })
     }
+}
+
+/// Whether the pipeline's failure `o` is the one eager evaluation of top-level lets gives, at
+/// the same line and with the same output, while the lazy evaluation `lazy` succeeds or fails
+/// only at a later statement.
+fn eager_reproduces(lazy: &Reference, o: &Outcome, eager: &Result<Reference, String>) -> bool {
+    let (Err(f), Ok(eager)) = (&o.result, eager) else {
+        return false;
+    };
+    let Err(failed) = &eager.result else {
+        return false;
+    };
+    // The two evaluations share every statement before the lazy failure except the lets, so
+    // an eager failure before it comes from a let that the lazy evaluation reads later.
+    if lazy.result.as_ref().is_err_and(|l| l.line <= failed.line) {
+        return false;
+    }
+    let category = Category::of(&f.message);
+    f.kind == ErrorKind::Runtime
+        && f.span.map(|s| s.line) == Some(failed.line)
+        && failed.errors.iter().any(|(c, _)| *c == category)
+        && eager.printed == o.printed
 }
 
 fn export(name: &str, v: &Value) -> Export {
@@ -326,10 +352,11 @@ fn agrees(r: &Reference, o: &Outcome) -> bool {
             r.printed == o.printed && want == *got
         }
         // Every printed line ends with a newline, so a prefix of the text is one of lines.
-        (Err(errors), Err(f)) => {
+        (Err(failed), Err(f)) => {
             let category = Category::of(&f.message);
             f.kind == ErrorKind::Runtime
-                && errors.iter().any(|(c, _)| *c == category)
+                && f.span.map(|s| s.line) == Some(failed.line)
+                && failed.errors.iter().any(|(c, _)| *c == category)
                 && r.printed.starts_with(&o.printed)
         }
         _ => false,
@@ -344,9 +371,12 @@ fn show_reference(r: &Reference) -> String {
                 s.push_str(&format!("\n  export {name}: {} = {v}", v.ty()));
             }
         }
-        Err(errors) => {
-            for (_, message) in errors {
-                s.push_str(&format!("\n  possible error: {message}"));
+        Err(failed) => {
+            for (_, message) in &failed.errors {
+                s.push_str(&format!(
+                    "\n  possible error at line {}: {message}",
+                    failed.line
+                ));
             }
         }
     }

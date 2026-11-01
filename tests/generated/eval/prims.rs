@@ -101,21 +101,41 @@ fn per_element(op: Op, args: &[&Scalar]) -> Scalar {
 /// An elementwise op. Scalar operands next to arrays repeat to the arrays' length, which
 /// must be equal. A phantom operand, see `Val::Phantom`, gives a phantom result.
 fn elementwise(op: Op, args: &[Val], ty: ValueType) -> Result<Val, Stop> {
-    // The divisor is a scalar operand even inside a lambda, so it is known in every case.
-    if op == Op::DivConst && is_zero(scalar(&args[1])) {
-        return Err(Stop::error("div_const: division by zero".to_string()));
-    }
-    if args.iter().any(|a| matches!(a, Val::Phantom)) {
-        return Ok(Val::Phantom);
+    let mut stop = None;
+    if op == Op::DivConst {
+        match &args[1] {
+            Val::Scalar(d) if is_zero(d) => {
+                stop = Some(Stop::error("div_const: division by zero".to_string()));
+            }
+            Val::Scalar(_) => {}
+            // The checker takes the divisor as a scalar operand, which inside a lambda must
+            // not depend on a parameter, so no phantom divisor should reach this point.
+            other => {
+                return Err(Stop::Unsupported(format!("div_const by {other:?}")));
+            }
+        }
     }
     let mut len = None;
     for a in args {
         if let Val::Array(_, r) = a {
             match len {
-                Some(n) if n != r.len() => return Err(mismatch(n, r.len())),
+                Some(n) if n != r.len() => {
+                    let e = mismatch(n, r.len());
+                    stop = Some(match stop {
+                        None => e,
+                        Some(s) => s.merge(e),
+                    });
+                    break;
+                }
                 _ => len = Some(r.len()),
             }
         }
+    }
+    if let Some(s) = stop {
+        return Err(s);
+    }
+    if args.iter().any(|a| matches!(a, Val::Phantom)) {
+        return Ok(Val::Phantom);
     }
     let at = |i: usize| -> Vec<&Scalar> {
         args.iter()
@@ -291,20 +311,24 @@ fn scan(r: ReduceOp, x: &Val, starts: Option<&Val>, out: ScalarType) -> Result<V
     Ok(array(out, result))
 }
 
-/// The bucket of each key, checked against the bucket count `n`.
+/// The bucket of each key, checked against the bucket count `n`. A negative count and a key
+/// out of range are both possible errors.
 fn buckets(keys: &[Scalar], n: i64) -> Result<(Vec<usize>, usize), Stop> {
-    if n < 0 {
-        return Err(Stop::error(format!("negative bucket count {n}")));
-    }
+    let negative = (n < 0).then(|| Stop::error(format!("negative bucket count {n}")));
     let mut ids = Vec::with_capacity(keys.len());
     for k in keys {
         let k = i64_of(k);
         if !(0..n).contains(&k) {
-            return Err(Stop::error(format!(
-                "bucket key {k} out of range for {n} buckets"
-            )));
+            let e = Stop::error(format!("bucket key {k} out of range for {n} buckets"));
+            return Err(match negative {
+                None => e,
+                Some(s) => s.merge(e),
+            });
         }
         ids.push(usize::try_from(k).expect("checked above"));
+    }
+    if let Some(s) = negative {
+        return Err(s);
     }
     let count = count(n, ScalarType::I64, "negative bucket count")?;
     Ok((ids, count))

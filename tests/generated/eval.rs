@@ -30,12 +30,14 @@
 //!
 //! # Errors
 //!
-//! Which error a program reports is unspecified when several would occur, and output printed
-//! before the error may be incomplete. The evaluator therefore evaluates every operand of an
-//! operation and every statement even after an error, and collects the category (see
-//! `oracles::Category`) of every error it meets. Output stops at the first failing statement.
-//! The pipeline agrees when it fails with one of the collected categories and its output is
-//! a prefix of the evaluator's.
+//! Whether an error occurs is fixed, and so is the statement that raises it: the first
+//! statement whose evaluation fails. Which of several errors within that statement surfaces
+//! may differ between plans. The evaluator therefore evaluates every operand of an operation
+//! even after one fails, runs a lambda body with phantom parameters even when its arrays
+//! failed, and collects the category (see `oracles::Category`) of every error it meets in the
+//! failing statement. It stops after that statement. The pipeline agrees when it fails at the
+//! same line with one of the collected categories, and its output is a prefix of the
+//! evaluator's, because output printed before an error may be incomplete.
 //!
 //! # Unsupported
 //!
@@ -228,25 +230,29 @@ impl<'p> Evaluator<'p> {
                 self.eval(&f.body, &inner, lambda)
             }
             TExprKind::Map(x, lam) => {
-                let x = self.eval(x, env, lambda)?;
+                let x = self
+                    .eval(x, env, lambda)
+                    .map_err(|s| self.with_body(s, lam, env))?;
                 let rows = self.apply(lam, &[array_rows(&x)], env)?;
                 Ok(Val::Array(elem(e.ty), Rc::new(rows)))
             }
             TExprKind::ZipMap(x, y, lam) => {
-                let vals = self.all([&**x, &**y], env, lambda)?;
+                let vals = self
+                    .all([&**x, &**y], env, lambda)
+                    .map_err(|s| self.with_body(s, lam, env))?;
                 let (xs, ys) = (array_rows(&vals[0]), array_rows(&vals[1]));
                 if xs.len() != ys.len() {
-                    return Err(Stop::error(format!(
-                        "length mismatch: {} vs {}",
-                        xs.len(),
-                        ys.len()
-                    )));
+                    let mismatch =
+                        Stop::error(format!("length mismatch: {} vs {}", xs.len(), ys.len()));
+                    return Err(self.with_body(mismatch, lam, env));
                 }
                 let rows = self.apply(lam, &[xs, ys], env)?;
                 Ok(Val::Array(elem(e.ty), Rc::new(rows)))
             }
             TExprKind::Filter(x, lam) => {
-                let x = self.eval(x, env, lambda)?;
+                let x = self
+                    .eval(x, env, lambda)
+                    .map_err(|s| self.with_body(s, lam, env))?;
                 let xs = array_rows(&x);
                 let mask = self.apply(lam, &[xs], env)?;
                 let kept = xs
@@ -279,6 +285,25 @@ impl<'p> Evaluator<'p> {
         }
     }
 
+    /// The lambda body once with phantom parameters, which raises the errors of its uniform
+    /// parts, see the module doc.
+    fn phantom(&self, lam: &'p TLambda, env: &Env<'p>) -> Result<(), Stop> {
+        let mut inner = env.clone();
+        for p in &lam.params {
+            inner = inner.bind(*p, Thunk::done(Val::Phantom));
+        }
+        self.eval(&lam.body, &inner, true).map(|_| ())
+    }
+
+    /// `stop`, which keeps the lambda's arrays from existing, with the errors of the lambda
+    /// body's uniform parts, which lifting computes regardless.
+    fn with_body(&self, stop: Stop, lam: &'p TLambda, env: &Env<'p>) -> Stop {
+        match self.phantom(lam, env) {
+            Ok(()) => stop,
+            Err(body) => stop.merge(body),
+        }
+    }
+
     /// The lambda's body for each row of the equally long columns, with the parameters bound
     /// to the row's elements.
     fn apply(
@@ -290,11 +315,7 @@ impl<'p> Evaluator<'p> {
         let rows = cols[0].len();
         if rows == 0 {
             // The lifted body runs once over the empty arrays, see the module doc.
-            let mut inner = env.clone();
-            for p in &lam.params {
-                inner = inner.bind(*p, Thunk::done(Val::Phantom));
-            }
-            return self.eval(&lam.body, &inner, true).map(|_| Vec::new());
+            return self.phantom(lam, env).map(|()| Vec::new());
         }
         let mut out = Vec::with_capacity(rows);
         let mut stop = None;
@@ -367,19 +388,28 @@ fn to_value(v: &Val) -> Value {
     }
 }
 
+/// The first statement whose evaluation failed.
+pub struct Failed {
+    /// The line of the statement's span.
+    pub line: u32,
+    /// Every error that may surface in the statement, with its message, one per category.
+    pub errors: Vec<(Category, String)>,
+}
+
 /// What the evaluator computed for a program.
 pub struct Reference {
     /// The output of the statements before the first failing one.
     pub printed: String,
-    /// The exports in source order, or every error that may occur, with its message.
-    pub result: Result<Vec<(String, Value)>, Vec<(Category, String)>>,
+    /// The exports in source order, or the failing statement.
+    pub result: Result<Vec<(String, Value)>, Failed>,
 }
 
 /// Evaluates `source` on `inputs`. Fails with the reason when the program uses something the
 /// evaluator does not support. `reg` only serves type checking.
 ///
-/// With `eager_lets`, every top-level let is evaluated at its statement, as the pipeline
-/// currently does for a let it does not inline. This only classifies a known divergence.
+/// With `eager_lets`, every top-level let is evaluated at its statement. Until #40 (errors as
+/// data), the pipeline computes top-level lets it does not inline, and this mode only serves
+/// to recognize that divergence.
 pub fn evaluate(
     reg: &Registry,
     source: &str,
@@ -394,9 +424,8 @@ pub fn evaluate(
     let mut env = Env::default();
     let mut printed = String::new();
     let mut exports = Vec::new();
-    let mut stop = None;
     for s in &program.stmts {
-        match s {
+        let outcome = match s {
             TStmt::Input { var, .. } => {
                 let name = globals.name(*var);
                 let (_, value) = inputs
@@ -404,42 +433,54 @@ pub fn evaluate(
                     .find(|(n, _)| n == name)
                     .unwrap_or_else(|| panic!("input {name} is not supplied"));
                 env = env.bind(*var, Thunk::done(from_value(value)));
+                Ok(())
             }
             TStmt::Let { var, value, .. } => {
                 let t = Thunk::pending(value, env.clone(), false);
                 env = env.bind(*var, Rc::clone(&t));
-                if eager_lets && let Err(e) = ev.force(&t) {
-                    merge_into(&mut stop, e);
+                if eager_lets {
+                    ev.force(&t).map(|_| ())
+                } else {
+                    Ok(())
                 }
             }
             TStmt::Export { var, value, .. } => {
                 let t = Thunk::pending(value, env.clone(), false);
                 env = env.bind(*var, Rc::clone(&t));
-                match ev.force(&t) {
-                    Ok(v) => exports.push((globals.name(*var).to_string(), to_value(&v))),
-                    Err(e) => merge_into(&mut stop, e),
-                }
+                ev.force(&t)
+                    .map(|v| exports.push((globals.name(*var).to_string(), to_value(&v))))
             }
-            TStmt::Print { value, .. } => match ev.eval(value, &env, false) {
-                Ok(v) if stop.is_none() => {
-                    writeln!(printed, "{}", to_value(&v)).expect("writing to a string");
-                }
-                Ok(_) => {}
-                Err(e) => merge_into(&mut stop, e),
-            },
+            TStmt::Print { value, .. } => ev.eval(value, &env, false).map(|v| {
+                writeln!(printed, "{}", to_value(&v)).expect("writing to a string");
+            }),
             // Its value reaches no print or export.
-            TStmt::Expr { .. } => {}
+            TStmt::Expr { .. } => Ok(()),
+        };
+        match outcome {
+            Ok(()) => {}
+            Err(Stop::Unsupported(reason)) => return Err(reason),
+            Err(Stop::Errors(errors)) => {
+                return Ok(Reference {
+                    printed,
+                    result: Err(Failed {
+                        line: stmt_line(s),
+                        errors,
+                    }),
+                });
+            }
         }
     }
-    match stop {
-        None => Ok(Reference {
-            printed,
-            result: Ok(exports),
-        }),
-        Some(Stop::Unsupported(reason)) => Err(reason),
-        Some(Stop::Errors(errors)) => Ok(Reference {
-            printed,
-            result: Err(errors),
-        }),
-    }
+    Ok(Reference {
+        printed,
+        result: Ok(exports),
+    })
+}
+
+fn stmt_line(s: &TStmt) -> u32 {
+    let (TStmt::Let { span, .. }
+    | TStmt::Input { span, .. }
+    | TStmt::Export { span, .. }
+    | TStmt::Print { span, .. }
+    | TStmt::Expr { span, .. }) = s;
+    span.line
 }
