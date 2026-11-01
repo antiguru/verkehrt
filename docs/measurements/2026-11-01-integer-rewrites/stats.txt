@@ -1,0 +1,9 @@
+load start: 2.52 3.22 5.26 2/2544 1377810
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.06s
+     Running `target/release/examples/acceptance_stats q29`
+query q29 total kernel time 8208.5 us
+stats add_i64_s calls=89 bytes=0 time=8.8
+stats length_i64 calls=89 bytes=712000000 time=4.9
+stats mul_i64_s calls=89 bytes=0 time=10.3
+stats reduce_add_i64 calls=90 bytes=720000000 time=8184.5
+load end: 2.40 3.16 5.21 1/2559 1377830
