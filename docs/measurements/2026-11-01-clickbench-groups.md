@@ -13,7 +13,7 @@ The comparison with #20 spans two sessions on the same host, and the last sectio
 | CPU | AMD Ryzen AI MAX+ 395 (Zen 5, 32 logical CPUs), AVX2 and AVX-512 |
 | Frequency scaling | boost off, governor `powersave`, 3.0 GHz under load (user-reported, the sandbox cannot read cpufreq) |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
-| Verkehrt commit | `62bdfd7` (branch `acceptance/clickbench-groups`) |
+| Verkehrt build | this branch with the programs in this PR. Only documentation changed after the timing run |
 | corgi revision | `2751e04e8501d47b33219be23049bf4afa7a4428`, checkout `~/dev/repos/data/verkehrt/corgi-wip`, the same as in the #20 round |
 | DuckDB | one-thread times from `duckdb.tsv` of the prepared data directory |
 | Data | `hits_0.parquet`, 1,000,000 rows, the data directory of the #20 round |
@@ -75,7 +75,7 @@ The four queries of the #20 round still gain from the ISA levels, with `x86-64-v
 
 ## Change against #20
 
-The #20 times are the five-variant rows of `2026-10-31-clickbench-now.md`, measured in an earlier session on the same host with Verkehrt at `8c695db`.
+The #20 times are the five-variant rows of `2026-10-31-clickbench-now.md`, measured in an earlier session on the same host with the build described there.
 The comparison therefore spans sessions and builds, and only changes above the 10% noise band are claimed.
 The corgi column is a drift check, not part of the comparison: corgi's times for q30, q31, q40 and q41 were 5.18, 4.89, 5.36 and 4.93 ms then and are 5.20, 4.86, 5.31 and 4.96 ms now, all within 1%.
 
