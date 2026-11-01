@@ -8,7 +8,10 @@
 //!   and error. An error must have the same kind, come from the same statement (each statement
 //!   sits on its own line, so the line of its span), and fall in the same category, see
 //!   `Category`. The message text is not compared, because a fused kernel words a length
-//!   mismatch its own way.
+//!   mismatch its own way. Requiring the same category is stricter than the base spec, which
+//!   leaves open which of several errors in a statement surfaces. It assumes that fusion keeps
+//!   the order in which a kernel's children are evaluated, which #30 must revisit when fused
+//!   kernels reorder their operands.
 //! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
 //!   evaluator of `eval` computes from the typed program. On success the output and the
 //!   exports must be equal. Whether an error occurs and which statement raises it are fixed,
@@ -210,7 +213,7 @@ pub struct Verdict {
     pub error: Option<(ErrorKind, String)>,
     /// Whether the fused plan differs from the unfused one in some statement.
     pub fusion_changed_plan: bool,
-    /// Why oracle 3 skipped the case, if it did.
+    /// Why oracle 3 skipped the case, which only the #40 stopgap does.
     pub reference_skipped: Option<String>,
 }
 
@@ -288,7 +291,14 @@ impl Engine {
         }
         let evaluate = |eager| eval::evaluate(&self.reg, &case.source, &case.inputs, eager);
         let reference_skipped = match evaluate(None) {
-            Err(reason) => Some(reason),
+            // The generator produces nothing unsupported, so a skip here would quietly turn
+            // the oracle off.
+            Err(reason) => {
+                return Err(format!(
+                    "oracle 3: the reference evaluator does not support the program: {reason}\n{}",
+                    describe(case),
+                ));
+            }
             Ok(r) if agrees(&r, f) => None,
             // Until #40 (errors as data), the pipeline computes top-level lets it does not
             // inline. Such a case is skipped only when evaluating the top-level let on the

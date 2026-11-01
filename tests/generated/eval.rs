@@ -44,7 +44,8 @@
 //!
 //! Every primitive that the generator produces is supported, so generation for oracle 3
 //! excludes nothing. Strings, `load_*`, and arrays longer than `prims::MAX_ROWS` make a case
-//! unsupported, and oracle 3 skips it. The generator produces none of them.
+//! unsupported, which fails it, because the generator produces none of them and a silent skip
+//! would hide a gap in the oracle.
 
 mod prims;
 mod scalar;
@@ -89,7 +90,12 @@ impl Stop {
 
     fn merge(self, other: Stop) -> Stop {
         match (self, other) {
-            (Stop::Unsupported(r), _) | (_, Stop::Unsupported(r)) => Stop::Unsupported(r),
+            // A real error is a result the pipeline must match, so it wins over a part the
+            // evaluator does not support.
+            (Stop::Errors(a), Stop::Unsupported(_)) | (Stop::Unsupported(_), Stop::Errors(a)) => {
+                Stop::Errors(a)
+            }
+            (Stop::Unsupported(r), Stop::Unsupported(_)) => Stop::Unsupported(r),
             (Stop::Errors(mut a), Stop::Errors(b)) => {
                 for e in b {
                     if !a.iter().any(|(c, _)| *c == e.0) {
