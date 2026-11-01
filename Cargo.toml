@@ -118,6 +118,15 @@ opt-level = 3
 [profile.dev.package.egglog-numeric-id]
 opt-level = 3
 
+[profile.dev.package.egglog-concurrency]
+opt-level = 3
+
+[profile.dev.package.egglog-union-find]
+opt-level = 3
+
+[profile.dev.package.egglog-reports]
+opt-level = 3
+
 [profile.dev.package.egglog-ast]
 opt-level = 3
 

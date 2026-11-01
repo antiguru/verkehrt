@@ -73,20 +73,19 @@ fn lower_output(src: &str, mode: Mode) -> String {
 /// `repl`, and the output is one line per statement from `dump`.
 #[test]
 fn datadriven_lowering() {
-    datadriven::walk(
+    crate::testutil::run_dir(
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/lower/testdata"),
-        |f| {
-            f.run(|tc| match tc.directive.as_str() {
-                "lower" => {
-                    let mode = match tc.args["mode"][0].as_str() {
-                        "run" => Mode::Run,
-                        "repl" => Mode::Repl,
-                        m => panic!("unknown mode {m}"),
-                    };
-                    lower_output(&tc.input, mode)
-                }
-                d => panic!("unknown directive {d}"),
-            })
+        |tc| match tc.directive.as_str() {
+            "lower" => {
+                crate::testutil::reject_unknown_args(tc, &["mode"]);
+                let mode = match tc.args["mode"][0].as_str() {
+                    "run" => Mode::Run,
+                    "repl" => Mode::Repl,
+                    m => panic!("unknown mode {m}"),
+                };
+                lower_output(&tc.input, mode)
+            }
+            d => panic!("unknown directive {d}"),
         },
     );
 }

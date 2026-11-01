@@ -8,6 +8,8 @@ pub mod lower;
 pub mod ops;
 pub mod plan;
 pub mod syntax;
+#[cfg(test)]
+mod testutil;
 pub mod value;
 
 pub use interp::{Interpreter, Options, Prepared};

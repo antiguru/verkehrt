@@ -1,4 +1,4 @@
-//! Golden programs in `tests/programs/*.dd` and the library API contract. Nothing here depends on trace timings.
+//! Golden programs in the files of `tests/programs` (every non-hidden file is read) and the library API contract. Nothing here depends on trace timings.
 
 use verkehrt::error::ErrorKind;
 use verkehrt::kernels::{Backend, Feature, FeatureSet, Isa, Variant};
@@ -30,7 +30,7 @@ fn f64s(v: &[f64]) -> Value {
 /// Every instruction set the CPU supports, each with both backends. Scalar has one variant,
 /// and comes first so that it is the reference.
 fn variants() -> Vec<Variant> {
-    Isa::ALL
+    let variants: Vec<Variant> = Isa::ALL
         .into_iter()
         .filter(|isa| isa.is_available())
         .flat_map(|isa| {
@@ -43,7 +43,9 @@ fn variants() -> Vec<Variant> {
                 .iter()
                 .map(move |&backend| Variant { isa, backend })
         })
-        .collect()
+        .collect();
+    assert_eq!(variants[0].isa, Isa::Scalar, "scalar is the reference");
+    variants
 }
 
 /// What a program did: its output, then the error that stopped it, if any, as
@@ -70,7 +72,12 @@ fn run_everywhere(src: &str) -> (String, Option<String>) {
     let outcomes: Vec<_> = std::thread::scope(|s| {
         let handles: Vec<_> = variants
             .iter()
-            .map(|&v| s.spawn(move || outcome(v, src)))
+            .map(|&v| {
+                std::thread::Builder::new()
+                    .name(v.to_string())
+                    .spawn_scoped(s, move || outcome(v, src))
+                    .expect("spawn variant thread")
+            })
             .collect();
         handles
             .into_iter()
@@ -108,22 +115,38 @@ fn run_everywhere(src: &str) -> (String, Option<String>) {
 /// written before the error, if any, then the error, and requires that the program fails.
 #[test]
 fn datadriven_programs() {
-    datadriven::walk(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs"),
-        |f| {
-            f.run(|tc| {
-                let (out, err) = run_everywhere(&tc.input);
-                match (tc.directive.as_str(), err) {
-                    ("run", None) => out,
-                    ("run", Some(e)) => panic!("{e}\nafter output:\n{out}"),
-                    ("error", Some(e)) if out.is_empty() => format!("{e}\n"),
-                    ("error", Some(e)) => format!("{out}{e}\n"),
-                    ("error", None) => panic!("the program succeeded with output:\n{out}"),
-                    (d, _) => panic!("unknown directive {d}"),
-                }
-            })
-        },
-    );
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/programs");
+    // `walk` runs nothing for a missing or empty directory, which would pass vacuously.
+    let has_file = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("cannot read {dir}: {e}"))
+        .filter_map(Result::ok)
+        .any(|e| !e.file_name().to_string_lossy().starts_with('.'));
+    assert!(has_file, "{dir} holds no files");
+    let mut cases = 0usize;
+    datadriven::walk(dir, |f| {
+        f.run(|tc| {
+            cases += 1;
+            assert!(
+                tc.args.is_empty(),
+                "directive {} takes no arguments, got {:?}",
+                tc.directive,
+                tc.args.keys().collect::<Vec<_>>()
+            );
+            let (out, err) = run_everywhere(&tc.input);
+            match (tc.directive.as_str(), err) {
+                ("run", None) => out,
+                ("run", Some(e)) => panic!("{e}\nafter output:\n{out}"),
+                ("error", Some(e)) if out.is_empty() => format!("{e}\n"),
+                ("error", Some(e)) => format!("{out}{e}\n"),
+                ("error", None) => panic!("the program succeeded with output:\n{out}"),
+                (d, _) => panic!("unknown directive {d}"),
+            }
+        })
+    });
+    // One `RUN` value applies to every harness and may match nothing here.
+    if std::env::var_os("RUN").is_none() {
+        assert!(cases > 0, "no test case ran in {dir}");
+    }
 }
 
 #[test]

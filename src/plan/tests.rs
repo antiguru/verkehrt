@@ -95,16 +95,17 @@ fn assert_broadcasts_fit(reg: &Registry, node: &PlanNode) {
 /// where the root is `-` for a bare leaf or conditional.
 #[test]
 fn datadriven_plans() {
-    datadriven::walk(
+    crate::testutil::run_dir(
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/plan/testdata"),
-        |f| {
-            f.run(|tc| match tc.directive.as_str() {
+        |tc| {
+            crate::testutil::reject_unknown_args(tc, &[]);
+            match tc.directive.as_str() {
                 "plan" => plan_prints(&tc.input)
                     .into_iter()
                     .map(|(root, plan)| format!("{root}: {plan}\n"))
                     .collect::<String>(),
                 d => panic!("unknown directive {d}"),
-            })
+            }
         },
     );
 }

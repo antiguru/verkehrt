@@ -34,13 +34,14 @@ fn type_of(src: &str) -> String {
 /// output is one line from `type_of`.
 #[test]
 fn datadriven_types() {
-    datadriven::walk(
+    crate::testutil::run_dir(
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/check/testdata"),
-        |f| {
-            f.run(|tc| match tc.directive.as_str() {
+        |tc| {
+            crate::testutil::reject_unknown_args(tc, &[]);
+            match tc.directive.as_str() {
                 "type" => format!("{}\n", type_of(&tc.input)),
                 d => panic!("unknown directive {d}"),
-            })
+            }
         },
     );
 }
