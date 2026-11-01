@@ -1,7 +1,0 @@
-let x = [3.0, 1.0, 4.0, 1.0, 5.0];
-print(reduce(x, max));
-print(reduce(x, min));
-print(reduce(x, mul));
-let b = [200u8, 100u8];
-print(sum(b));
-print(argmin(x));

@@ -15,7 +15,7 @@ fn stderr_of(a: &assert_cmd::assert::Assert) -> String {
 #[test]
 fn run_prints_result() {
     verkehrt()
-        .args(["run", "tests/programs/dot.vk"])
+        .args(["run", "tests/cli/dot.vk"])
         .assert()
         .success()
         .stdout("32.0\n");
@@ -24,7 +24,7 @@ fn run_prints_result() {
 #[test]
 fn plan_goes_to_stderr() {
     let a = verkehrt()
-        .args(["run", "--plan", "tests/programs/dot.vk"])
+        .args(["run", "--plan", "tests/cli/dot.vk"])
         .assert()
         .success()
         .stdout("32.0\n");
@@ -66,7 +66,7 @@ fn disabling_a_level_feature_rejects_the_forced_level() {
             "x86-64-v4",
             "--disable",
             "avx512dq",
-            "tests/programs/dot.vk",
+            "tests/cli/dot.vk",
         ])
         .assert()
         .failure();
@@ -86,7 +86,7 @@ fn undetected_disable_prints_a_note() {
     };
     let name = feature.name();
     let a = verkehrt()
-        .args(["run", "--disable", name, "tests/programs/dot.vk"])
+        .args(["run", "--disable", name, "tests/cli/dot.vk"])
         .assert()
         .success()
         .stdout("32.0\n");
@@ -160,7 +160,7 @@ fn neon_auto_runs_the_scalar_entry() {
             "--backend",
             "auto",
             "--trace",
-            "tests/programs/dot.vk",
+            "tests/cli/dot.vk",
         ])
         .assert()
         .success()

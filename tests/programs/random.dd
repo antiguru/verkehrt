@@ -1,0 +1,9 @@
+# Seeded random arrays are deterministic.
+
+# rand
+run
+print(length(rand_f64(10, 1)));
+print(rand_i64(2, 0));
+----
+10
+[-2152535657050944081, -7995527694508729151]

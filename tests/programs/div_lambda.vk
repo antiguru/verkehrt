@@ -1,9 +1,0 @@
-fn per(a: i64, b: i64) -> i64 { div_const(a, b) }
-fn bucket(a: i64, b: i64) -> i64 { per(a - 1, b * 2) }
-let x = [60, 125, 7, 3600];
-let c = 60;
-print(map(x, |v| div_const(v, 60)));
-print(map(x, |v| div_const(v, c)));
-print(map(x, |v| per(v, 3)));
-print(map(x, |v| bucket(v, 5)));
-print(per(100, 7));

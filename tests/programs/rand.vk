@@ -1,2 +1,0 @@
-print(length(rand_f64(10, 1)));
-print(rand_i64(2, 0));

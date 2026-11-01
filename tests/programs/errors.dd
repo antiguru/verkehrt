@@ -1,0 +1,58 @@
+# Errors raised by a program. Type errors come before any output, runtime errors carry the line of their statement.
+
+# group_id_length_mismatch_is_a_runtime_error
+error
+let a = [1, 2, 3];
+let b = [1, 2];
+print(group_id(a, b));
+----
+Runtime error at 3:1: length mismatch: 3 vs 2
+
+# runtime_error_carries_statement_line
+error
+let x = [1.0, 2.0];
+let y = [1.0, 2.0, 3.0];
+print(sum(x + y));
+----
+Runtime error at 3:1: length mismatch: 2 vs 3
+
+# type_errors_come_before_any_output
+error
+print(1.0);
+let x = [1.0];
+let y = [1];
+print(x + y);
+----
+Type error at 4:9: no implicit conversion: f64[] + i64[]
+
+# if_with_mask_condition_does_not_type_as_a_scalar
+error
+let m = [true, false, true];
+let y: f64 = if m { 1.0 } else { 2.0 };
+print(sum(y));
+----
+Type error at 2:1: 'y' is declared f64 but its value is f64[]
+
+# huge_iota
+error
+print(length(iota(9223372036854775807)));
+----
+Runtime error at 1:1: array of 9223372036854775807 elements is too large
+
+# huge_fill
+error
+print(length(fill(4611686018427387904, 1.0)));
+----
+Runtime error at 1:1: array of 4611686018427387904 elements is too large
+
+# huge_rand_i64
+error
+print(length(rand_i64(2305843009213693952, 1)));
+----
+Runtime error at 1:1: array of 2305843009213693952 elements is too large
+
+# huge_rand_f64
+error
+print(length(rand_f64(9223372036854775807, 1)));
+----
+Runtime error at 1:1: array of 9223372036854775807 elements is too large

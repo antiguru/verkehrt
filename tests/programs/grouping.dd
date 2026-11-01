@@ -1,0 +1,56 @@
+# Scans, grouping, and bucketed reductions.
+
+# scan
+run
+let x = [1, 2, 3, 4, 5];
+print(scan(x, add));
+print(scan_by(x, [false, false, true, false, true], add));
+----
+[1, 3, 6, 10, 15]
+[1, 3, 3, 7, 5]
+
+# group_sorted
+run
+let k = [1, 1, 2, 2, 2, 5];
+let v = [1, 2, 3, 4, 5, 6];
+let n = length(k);
+let s = or(k != prev(k, 0), iota(n) == 0);
+let e = or(k != gather(k, min(iota(n) + 1, n - 1)), iota(n) == (n - 1));
+print(compress(scan_by(v, s, add), e));
+print(reduce_into(scan(cast_i64(s), add) - 1, v, count(s), add));
+print(compress(k, s));
+----
+[3, 12, 6]
+[3, 12, 6]
+[1, 2, 5]
+
+# group_id
+run
+let k = [7, -1, 7, 3, -1, 7];
+let g = group_id(k);
+print(g);
+print(reduce(g, max) + 1);
+print(group_id([1, 2, 1, 2], [2, 1, 2, 2]));
+print(group_id([5u8, 5u8, 9u8], [-1i32, -1i32, -1i32]));
+print(length(group_id(compress(k, k > 100))));
+----
+[0, 1, 0, 2, 1, 0]
+3
+[0, 1, 0, 2]
+[0, 0, 1]
+0
+
+# buckets
+run
+let keys = [1, 0, 1, 3, 1];
+print(histogram(keys, 5));
+print(reduce_into(keys, [5, 7, 9, 2, 1], 4, add));
+print(reduce_into(keys, [1.5, 2.5, 0.5, 9.0, 4.0], 4, min));
+print(reduce_into(keys, [true, false, true, true, true], 4, and));
+print(length(histogram(keys, 4)));
+----
+[1, 3, 0, 1, 0]
+[7, 15, 0, 2]
+[2.5, 0.5, inf, 9.0]
+[false, true, true, true]
+4

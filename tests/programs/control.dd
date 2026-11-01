@@ -1,0 +1,62 @@
+# Conditionals: a mask condition selects per element, a scalar condition selects a branch.
+
+# if_with_mask_condition_is_an_array
+run
+let m = [true, false, true];
+let y = if m { 1.0 } else { 2.0 };
+print(y);
+print(y + 1.0);
+----
+[1.0, 2.0, 1.0]
+[2.0, 3.0, 2.0]
+
+# if_with_mask_condition_in_function
+run
+fn f(m: bool[]) -> f64[] { if m { 1.0 } else { 2.0 } }
+let m = [true, false];
+print(f(m) + 1.0);
+----
+[2.0, 3.0]
+
+# scalar_condition_skips_the_untaken_branch_of_an_empty_reduce
+run
+let e = fill(0, 0.0);
+print(if length(e) > 0 { reduce(e, max) } else { 0.0 });
+----
+0.0
+
+# scalar_condition_true
+run
+print(if true { [1.0] } else { [1.0, 2.0] });
+----
+[1.0]
+
+# scalar_condition_false
+run
+print(if false { [1.0] } else { [1.0, 2.0] });
+----
+[1.0, 2.0]
+
+# A subterm repeated inside a branch stays inside it.
+run
+let e = fill(0, 0.0);
+print(if length(e) > 0 { reduce(e, max) + reduce(e, max) } else { 0.0 });
+----
+0.0
+
+# A conditional nested in an operation and in a function body.
+run
+fn safe_max(e: f64[]) -> f64 { if length(e) > 0 { reduce(e, max) } else { 0.0 } }
+let x = [1.0, 2.0];
+print(safe_max(fill(0, 1.0)) + safe_max(x));
+print(x * safe_max(x));
+----
+2.0
+[2.0, 4.0]
+
+# scalar_condition_in_an_operand
+run
+let x = [1.0, 2.0];
+print(sum(x * if length(x) > 1 { x } else { [0.0] }));
+----
+5.0

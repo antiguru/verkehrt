@@ -141,7 +141,7 @@ Release builds use LTO, so they take longer than debug builds.
 
 ```
 CARGO_INCREMENTAL=0 cargo build --release
-CARGO_INCREMENTAL=0 cargo run --release -- run tests/programs/dot.vk
+CARGO_INCREMENTAL=0 cargo run --release -- run tests/cli/dot.vk
 CARGO_INCREMENTAL=0 cargo run --release -- repl
 ```
 

@@ -1,3 +1,0 @@
-let x = iota(5);
-print(prev([1, 2, 3], 0));
-print(x - prev(x, 0));
