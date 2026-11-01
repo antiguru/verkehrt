@@ -1,0 +1,10 @@
+// sql: SELECT COUNT(DISTINCT UserID) FROM hits
+// output: u
+input UserID: i64[];
+
+// Sorting makes equal ids adjacent, so the distinct count is the number of run starts. An empty
+// column has no rows, hence no run starts and a count of 0.
+let s = gather(UserID, argsort(UserID));
+let n = length(s);
+let start = or(s != prev(s, 0), iota(n) == 0);
+export u = count(start);

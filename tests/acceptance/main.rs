@@ -312,3 +312,187 @@ fn q41_pages_past_ten_thousand_groups() {
         expected
     );
 }
+
+/// Runs the real ClickBench program `name` on the given columns, `(file, values, signed)`.
+fn run_clickbench(name: &str, columns: &[(&str, &[i64], bool)]) -> String {
+    let dir = scratch(name);
+    for (file, values, signed) in columns {
+        if *signed {
+            write_signed(&dir, file, values);
+        } else {
+            let words: Vec<u64> = values.iter().map(|x| x.cast_unsigned()).collect();
+            write_u64(&dir, file, &words);
+        }
+    }
+    let program = PathBuf::from(format!("tests/acceptance/clickbench/{name}.vk"));
+    run_query(&dir, &program, CLICKBENCH_SIGNED).unwrap()
+}
+
+/// The real q04 on repeated ids at both ends of the signed range, and on an empty column.
+#[test]
+fn q04_counts_distinct_ids() {
+    let ids = [i64::MAX, 3, i64::MIN, 3, -1, i64::MAX, i64::MIN, 0, 3];
+    assert_eq!(run_clickbench("q04", &[("UserID.u64", &ids, true)]), "5\n");
+    assert_eq!(run_clickbench("q04", &[("UserID.u64", &[], true)]), "0\n");
+}
+
+/// The real q15 with ties among counts, signed ids, and more groups than the limit. Ties go
+/// to the smaller signed id.
+#[test]
+fn q15_breaks_count_ties_by_signed_id() {
+    let ids = [
+        5,
+        i64::MAX,
+        0,
+        -7,
+        3,
+        i64::MAX,
+        8,
+        i64::MIN,
+        5,
+        1,
+        -7,
+        2,
+        3,
+        i64::MAX,
+        4,
+        6,
+    ];
+    let got = run_clickbench("q15", &[("UserID.u64", &ids, true)]);
+    // Eleven groups, so the largest single id (8) is cut.
+    let expected = format!(
+        "{}\t3\n-7\t2\n3\t2\n5\t2\n{}\t1\n0\t1\n1\t1\n2\t1\n4\t1\n6\t1\n",
+        i64::MAX,
+        i64::MIN
+    );
+    assert_eq!(got, expected);
+    assert_eq!(run_clickbench("q15", &[("UserID.u64", &[], true)]), "");
+}
+
+/// The real q35 on addresses at the i32 edge, where `ClientIP - 3` leaves the i32 range, and
+/// on an empty column.
+#[test]
+fn q35_computes_offsets_without_overflow() {
+    let (lo, hi) = (i64::from(i32::MIN), i64::from(i32::MAX));
+    let ips = [hi, 5, lo, 0, hi, lo];
+    let got = run_clickbench("q35", &[("ClientIP.u64", &ips, true)]);
+    let expected = format!(
+        "{lo}\t{}\t{}\t{}\t2\n{hi}\t{}\t{}\t{}\t2\n0\t-1\t-2\t-3\t1\n5\t4\t3\t2\t1\n",
+        lo - 1,
+        lo - 2,
+        lo - 3,
+        hi - 1,
+        hi - 2,
+        hi - 3
+    );
+    assert_eq!(got, expected);
+    assert_eq!(run_clickbench("q35", &[("ClientIP.u64", &[], true)]), "");
+}
+
+/// The real q08 where a user appears in several regions and a region repeats its users, with
+/// ties among the distinct counts. Ties go to the smaller region.
+#[test]
+fn q08_counts_distinct_users_per_region() {
+    let (min, max) = (i64::MIN, i64::MAX);
+    // (RegionID, UserID)
+    let rows = [
+        (3, 10),
+        (1, 10),
+        (0, 1),
+        (2, 7),
+        (3, min),
+        (1, 10),
+        (0, 3),
+        (2, -5),
+        (3, min),
+        (1, 20),
+        (2, 7),
+        (0, 2),
+        (4, max),
+    ];
+    let region: Vec<i64> = rows.iter().map(|r| r.0).collect();
+    let user: Vec<i64> = rows.iter().map(|r| r.1).collect();
+    let got = run_clickbench(
+        "q08",
+        &[
+            ("RegionID.u64", &region, false),
+            ("UserID.u64", &user, true),
+        ],
+    );
+    assert_eq!(got, "0\t3\n1\t2\n2\t2\n3\t2\n4\t1\n");
+    let empty = run_clickbench(
+        "q08",
+        &[("RegionID.u64", &[], false), ("UserID.u64", &[], true)],
+    );
+    assert_eq!(empty, "");
+}
+
+/// The real q09 with equal counts in every region, so the order is the region order, and a
+/// user shared by two regions.
+#[test]
+fn q09_aggregates_per_region() {
+    let min = i64::MIN;
+    // (RegionID, AdvEngineID, ResolutionWidth, UserID)
+    let rows: [(i64, i64, i64, i64); 12] = [
+        (3, 0, 10, min),
+        (1, 2, 100, 10),
+        (0, 1, 1000, 1),
+        (2, 1, 50, -5),
+        (3, 5, 40, 10),
+        (1, 3, 200, 10),
+        (2, 0, 70, 7),
+        (0, 1, 1001, 2),
+        (3, 0, 20, min),
+        (1, 0, 300, 20),
+        (2, 4, 90, 7),
+        (0, 1, 1002, 3),
+    ];
+    let col = |f: fn(&(i64, i64, i64, i64)) -> i64| -> Vec<i64> { rows.iter().map(f).collect() };
+    let columns = [
+        ("RegionID.u64", col(|r| r.0), false),
+        ("AdvEngineID.u64", col(|r| r.1), false),
+        ("ResolutionWidth.u64", col(|r| r.2), false),
+        ("UserID.u64", col(|r| r.3), true),
+    ];
+    let args: Vec<(&str, &[i64], bool)> = columns
+        .iter()
+        .map(|(f, v, s)| (*f, v.as_slice(), *s))
+        .collect();
+    assert_eq!(
+        run_clickbench("q09", &args),
+        "0\t3\t3\t1001.0000\t3\n1\t5\t3\t200.0000\t2\n2\t5\t3\t70.0000\t2\n3\t5\t3\t23.3333\t2\n"
+    );
+    let empty: Vec<(&str, &[i64], bool)> =
+        columns.iter().map(|(f, _, s)| (*f, &[][..], *s)).collect();
+    assert_eq!(run_clickbench("q09", &empty), "");
+}
+
+/// The real q32 with ties among counts and signed keys. Ties go to the smaller (WatchID,
+/// ClientIP) pair in signed order.
+#[test]
+fn q32_breaks_count_ties_by_signed_key() {
+    // (WatchID, ClientIP, IsRefresh, ResolutionWidth)
+    let rows: [(i64, i64, i64, i64); 6] = [
+        (5, -1, 1, 100),
+        (5, 2, 0, 300),
+        (-3, 2, 0, 10),
+        (5, -1, 0, 201),
+        (-3, -1, 1, 20),
+        (-3, 2, 1, 11),
+    ];
+    let col = |f: fn(&(i64, i64, i64, i64)) -> i64| -> Vec<i64> { rows.iter().map(f).collect() };
+    let (w, ip, r, wd) = (col(|r| r.0), col(|r| r.1), col(|r| r.2), col(|r| r.3));
+    let got = run_clickbench(
+        "q32",
+        &[
+            ("WatchID.u64", &w, true),
+            ("ClientIP.u64", &ip, true),
+            ("IsRefresh.u64", &r, false),
+            ("ResolutionWidth.u64", &wd, false),
+        ],
+    );
+    assert_eq!(
+        got,
+        "-3\t2\t2\t1\t10.5000\n5\t-1\t2\t1\t150.5000\n-3\t-1\t1\t1\t20.0000\n5\t2\t1\t0\t300.0000\n"
+    );
+}
