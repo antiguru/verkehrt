@@ -4,7 +4,7 @@
 
 **Goal:** Plan `sum` over an integer array with a broadcast scalar operand as one `reduce_add` plus scalar arithmetic, and re-measure ClickBench q29.
 
-**Architecture:** The egglog prelude in `src/plan/egglog.rs` gains rewrites from `reduce_add_T (op_T x (Bcast k))` to scalar kernels over `reduce_add_T x` and `length_T x`, generated from the registry for every integer type whose kernels exist. They sit behind the same flag as the fused patterns, so the unfused planner and oracle 2 of `tests/generated/` compare plans with and without them. The generator gains the source shapes and a gate that each rewrite fires in the CI run.
+**Architecture:** The egglog prelude in `src/plan/egglog.rs` gains rewrites from `reduce_add_T (op_T x (Bcast k))` to scalar kernels over `reduce_add_T x` and `length_T x`, generated from the registry for every integer type `T` whose `sum` returns `T` (today `i64` and `u64`) and whose kernels exist. `i32` and `u8` are excluded because they sum into a wider type after wrapping each element. They sit behind the same flag as the fused patterns, so the unfused planner and oracle 2 of `tests/generated/` compare plans with and without them. The generator gains the source shapes and a gate that each rewrite fires in the CI run.
 
 **Tech Stack:** Rust, egglog, the datadriven planner tests, the `tests/generated/` oracles, criterion.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 * Rewrites must preserve every result bit. Integers only, never floats.
-* For a non-`i64` element type the count is `cast(length(x))` to that type, which wraps.
+* Rewrites exist only for an integer type `T` whose `sum` returns `T`, today `i64` and `u64`. For `u64` the count is `cast(length(x))` to `u64`, which wraps.
 * A rewrite is emitted only when every kernel on its right-hand side exists in the registry for that type.
 * `cargo test --release`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` pass before every commit. The debug CI run of the generated test stays well under 30 s.
 * No `#[path]`, no `mod.rs`, `#[expect]` not `#[allow]`. Comments have no em-dashes or structuring semicolons.

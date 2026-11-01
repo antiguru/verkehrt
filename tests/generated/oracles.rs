@@ -24,14 +24,13 @@
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
 //! compared as text, which writes every NaN as `NaN`.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use verkehrt::error::{ErrorKind, Span};
 use verkehrt::kernels::{Backend, Isa, Registry, Variant};
 use verkehrt::value::{Scalar, Value, ValueType};
 use verkehrt::{Interpreter, Options, Prepared};
-
-use std::collections::BTreeMap;
 
 use crate::eval::{self, Reference};
 use crate::r#gen::Case;

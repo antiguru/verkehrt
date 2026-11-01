@@ -41,8 +41,8 @@ pub struct Planner {
 
 impl Planner {
     /// Builds the prelude. With `fusion` off no fused pattern and no integer sum rewrite
-    /// applies, so every plan uses single-op kernels only and keeps each sum over its array. Panics on a malformed fused pattern, a bug in the kernel
-    /// tables.
+    /// applies, so every plan uses single-op kernels only and keeps each sum over its array.
+    /// Panics on a malformed fused pattern, a bug in the kernel tables.
     pub fn new(reg: &Registry, fusion: bool) -> Planner {
         let prelude =
             egglog::prelude(reg, fusion).unwrap_or_else(|e| panic!("kernel patterns: {e}"));

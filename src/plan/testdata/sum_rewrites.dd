@@ -255,3 +255,10 @@ plan fusion=on
 print(sum(2.0 - x));
 ----
 reduce_add_f64: (reduce_add_f64 (sub_f64 2.0 x))
+
+# A conditional is planned as a hole of cost 0, and the rewritten plan would evaluate it
+# twice, so no rewrite fires on a conditional `x`.
+plan fusion=on
+let a = [1, 2, 3]; print(sum((if length(a) > 1 { a } else { a * 2 }) + 3));
+----
+reduce_add_i64: (reduce_add_i64 (add_i64 (if (lt_i64_s 1 (length_i64 a)) then a else (mul_i64 a 2)) 3))

@@ -5,8 +5,10 @@
 //! `(add_i64_s (reduce_add_i64 x) (mul_i64_s (length_i64 x) k))`. A program can also write
 //! that shape itself, and the unfused planner, which drops the rewrites, keeps it. So a
 //! rewrite fired in a statement when the fused plan holds more of its right-hand sides than
-//! the unfused plan does. Fused kernels that absorb a right-hand side's sum can only lower
-//! the count, so the gate may miss a firing but never counts one that did not happen.
+//! the unfused plan does. A right-hand side matches only when its count is the length of
+//! the array it sums, compared structurally. Fused kernels that absorb a right-hand side's
+//! sum, and the shapes the matcher leaves out, can only lower the count, so the gate may miss
+//! a firing but never counts one that did not happen.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -66,6 +68,8 @@ impl fmt::Display for Rewrite {
 /// Every rewrite the planner emits: the four rules on each integer type whose sum keeps the
 /// element type.
 pub fn expected(reg: &Registry) -> Vec<Rewrite> {
+    // This mirrors only the output-type gating of the planner's `sum_rules`. A type lacking
+    // another kernel would appear here and fail the gate, which is how it gets noticed.
     ScalarType::ARRAY_TYPES
         .into_iter()
         .filter(|t| {
@@ -110,7 +114,7 @@ fn count(rewrites: &[Rewrite], line: &str) -> BTreeMap<Rewrite, usize> {
     out
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Sexp {
     Atom(String),
     List(Vec<Sexp>),
@@ -157,8 +161,39 @@ fn call(e: &Sexp) -> Option<(&str, &[Sexp])> {
     }
 }
 
-fn is_call(e: &Sexp, head: &str) -> bool {
-    call(e).is_some_and(|(h, _)| h == head)
+/// The argument of `e` when it is a call to `head` with one argument.
+fn arg_of<'a>(e: &'a Sexp, head: &str) -> Option<&'a Sexp> {
+    match call(e) {
+        Some((h, [x])) if h == head => Some(x),
+        _ => None,
+    }
+}
+
+/// The array that `e` sums, for element type `t`.
+fn summed<'a>(e: &'a Sexp, t: &str) -> Option<&'a Sexp> {
+    arg_of(e, &format!("reduce_add_{t}"))
+}
+
+/// The array whose length `e` counts, for element type `t`.
+fn counted<'a>(e: &'a Sexp, t: &str) -> Option<&'a Sexp> {
+    let length = format!("length_{t}");
+    // `length` is `i64`, which other types cast to the element type.
+    arg_of(e, &length)
+        .or_else(|| arg_of(e, &format!("cast_i64_{t}_s")).and_then(|c| arg_of(c, &length)))
+}
+
+/// Whether `s` sums an array `x` and `p` is the length of the same `x` times some scalar, in
+/// either operand order, with `x` compared structurally.
+fn sum_and_count(s: &Sexp, p: &Sexp, t: &str) -> bool {
+    let Some(x) = summed(s, t) else {
+        return false;
+    };
+    match call(p) {
+        Some((h, [a, b])) if h == format!("mul_{t}_s") => {
+            counted(a, t) == Some(x) || counted(b, t) == Some(x)
+        }
+        _ => false,
+    }
 }
 
 /// Whether `node` is the right-hand side of `rw`. Scalar `+` and `*` commute, so their
@@ -168,30 +203,19 @@ fn matches_rhs(rw: Rewrite, node: &Sexp) -> bool {
     let Some((head, [a, b])) = call(node) else {
         return false;
     };
-    let sum = |e: &Sexp| is_call(e, &format!("reduce_add_{t}"));
-    let length = |e: &Sexp| is_call(e, &format!("length_{t}"));
-    // `length` is `i64`, which other types cast to the element type.
-    let count = |e: &Sexp| {
-        length(e)
-            || call(e).is_some_and(|(h, args)| {
-                h == format!("cast_i64_{t}_s") && args.len() == 1 && length(&args[0])
-            })
-    };
-    let times_count = |e: &Sexp| {
-        call(e).is_some_and(|(h, args)| {
-            h == format!("mul_{t}_s") && args.len() == 2 && (count(&args[0]) || count(&args[1]))
-        })
-    };
     match rw.rule {
         Rule::Add => {
-            head == format!("add_{t}_s")
-                && ((sum(a) && times_count(b)) || (times_count(a) && sum(b)))
+            head == format!("add_{t}_s") && (sum_and_count(a, b, t) || sum_and_count(b, a, t))
         }
-        Rule::Sub => head == format!("sub_{t}_s") && sum(a) && times_count(b),
-        Rule::SubFrom => head == format!("sub_{t}_s") && times_count(a) && sum(b),
-        // The product of a count with a sum `k` is part of another rule's right-hand side.
+        Rule::Sub => head == format!("sub_{t}_s") && sum_and_count(a, b, t),
+        Rule::SubFrom => head == format!("sub_{t}_s") && sum_and_count(b, a, t),
+        // The product of a count with a sum `k` is part of another rule's right-hand side, so
+        // a product of a sum with any count is left out. That misses `sum(x * length(y))`,
+        // which only lowers the count.
         Rule::Mul => {
-            head == format!("mul_{t}_s") && ((sum(a) && !count(b)) || (sum(b) && !count(a)))
+            head == format!("mul_{t}_s")
+                && ((summed(a, t).is_some() && counted(b, t).is_none())
+                    || (summed(b, t).is_some() && counted(a, t).is_none()))
         }
     }
 }
@@ -217,15 +241,22 @@ fn fired_counts_rewritten_plans_only() {
     let fused = "plan 1: (add_i64_s (reduce_add_i64 a) (mul_i64_s (length_i64 a) 3))\n\
                  plan 2: (sub_u64_s (mul_u64_s 3 (cast_i64_u64_s (length_u64 a))) (reduce_add_u64 a))\n\
                  plan 3: (mul_i64_s (reduce_add_i64 a) (length_i64 a))\n\
-                 plan 4: (mul_i64_s (reduce_add_i64 a) k)\n";
+                 plan 4: (mul_i64_s (reduce_add_i64 a) k)\n\
+                 plan 5: (add_i64_s (reduce_add_i64 z) (mul_i64_s (reduce_add_i64 x) (length_i64 y)))\n\
+                 plan 6: (sub_u64_s (reduce_add_u64 z) (mul_u64_s (cast_i64_u64_s (length_u64 y)) 3))\n";
     let unfused = "plan 1: (reduce_add_i64 (add_i64 a 3))\n\
                    plan 2: (reduce_add_u64 (sub_u64 3 a))\n\
                    plan 3: (mul_i64_s (reduce_add_i64 a) (length_i64 a))\n\
-                   plan 4: (mul_i64_s (reduce_add_i64 a) k)\n";
+                   plan 4: (mul_i64_s (reduce_add_i64 a) k)\n\
+                   plan 5: (add_i64_s (reduce_add_i64 z) (reduce_add_i64 (mul_i64 x (length_i64 y))))\n\
+                   plan 6: (sub_u64_s (reduce_add_u64 z) w)\n";
     let got: Vec<String> = fired(&rws, fused, unfused)
         .into_iter()
         .map(|(rw, n)| format!("{rw}: {n}"))
         .collect();
-    // Plans 3 and 4 hold the same shapes in both plans, written by the program.
+    // Plans 3 and 4 hold the same shapes in both plans, written by the program. Plan 5 is
+    // `sum(z) + sum(x * length(y))`, whose count is not the length of the summed `z`. Plan 6
+    // is the same for a cast count, and its unfused plan lacks the shape too, so only the
+    // structural comparison keeps it from counting.
     assert_eq!(got, ["sum(x + k) on i64: 1", "sum(k - x) on u64: 1"]);
 }

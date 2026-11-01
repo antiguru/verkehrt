@@ -22,13 +22,16 @@ pub const HOLE: &str = "Hole";
 /// Relation holding the e-classes whose value is a materialized array, as opposed to a
 /// broadcast scalar or a scalar.
 const ARR: &str = "Arr";
+/// Relation holding the array e-classes that are not a hole. A plan may evaluate one of them
+/// twice, which a hole's cost of 0 would hide.
+const PLAIN: &str = "Plain";
 
 fn kernel_ctor(name: &str) -> String {
     format!("{KERNEL_PREFIX}{name}")
 }
 
-/// The datatype with one constructor per kernel, the `Arr` relation, then the exact
-/// rewrites and, when `fusion` is set, the integer sum rewrites of `sum_rules` and one
+/// The datatype with one constructor per kernel, the `Arr` and `Plain` relations, then the
+/// exact rewrites and, when `fusion` is set, the integer sum rewrites of `sum_rules` and one
 /// rewrite per fused kernel pattern.
 pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
     let mut out = format!(
@@ -46,6 +49,7 @@ pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
     }
     out.push_str(")\n");
     writeln!(out, "(relation {ARR} (Expr))").expect("writing to a String cannot fail");
+    writeln!(out, "(relation {PLAIN} (Expr))").expect("writing to a String cannot fail");
     for (_, def) in reg.iter() {
         if def.commutative && def.op.is_some() && def.inputs.len() == 2 {
             let k = kernel_ctor(&def.name);
@@ -92,7 +96,8 @@ pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
 /// `sum(k - x)` to `n * k - sum(x)`, and `sum(x * k)` to `sum(x) * k`, where `n` is
 /// `length(x)` cast to `t`. Every operation of a right-hand side is a scalar kernel of
 /// type `t`. Empty for a float type, for a sum whose result is not of type `t`, and for a
-/// type that lacks one of the kernels.
+/// type that lacks one of the kernels. `x` is never a conditional, because the right-hand
+/// side evaluates `x` twice.
 fn sum_rules(reg: &Registry, t: ScalarType) -> String {
     // Integer arithmetic wraps, so it is a ring modulo 2^w, in which these identities hold
     // bit for bit. Float arithmetic does not associate.
@@ -144,10 +149,12 @@ fn sum_rules(reg: &Registry, t: ScalarType) -> String {
     else {
         return String::new();
     };
-    // The guard keeps `x` an array, so `k` is the only broadcast. Each right-hand side names
+    // The guard keeps `x` an array, so `k` is the only broadcast. A hole costs 0, so
+    // extraction would not see that a conditional `x` runs twice, and the guard excludes it
+    // too. Each right-hand side names
     // `x` and `k` in the order of its left-hand side, so the plan evaluates them in that
     // order unless commutativity swaps them.
-    let when = format!(":when (({ARR} ?x))");
+    let when = format!(":when (({PLAIN} ?x))");
     [
         format!("(rewrite ({sum} ({add} ?x ({BCAST} ?k))) ({add_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
         format!("(rewrite ({sum} ({sub} ?x ({BCAST} ?k))) ({sub_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
@@ -197,14 +204,16 @@ fn fused_rule(def: &KernelDef) -> Result<Option<String>, String> {
 }
 
 /// The per-statement commands for `term`: one `let` per node in post-order, with an `Arr`
-/// fact for every node that is an array and not a broadcast. Each op is written as the
+/// fact for every node that is an array and not a broadcast, and a `Plain` fact for every
+/// such node that is not a conditional. Each op is written as the
 /// kernel that `Registry::lookup` resolves for its argument types, and each conditional as a
 /// hole. Returns the commands, the name bound to the root, and the conditionals in hole order.
 pub fn emit(reg: &Registry, term: &Term) -> Result<(String, String, Vec<Term>), String> {
     // Facts per original node suffice because every rewrite either adds a single constructor
     // over existing e-classes, or, as the integer sum rewrites do, creates e-classes that
     // hold scalars only. So every array e-class has an original node, and no rule that
-    // guards an operand with `Arr` matches a created e-class as an array.
+    // guards an operand with `Arr` or `Plain` matches a created e-class as an array. No
+    // rewrite puts a hole into another e-class, so a `Plain` e-class never holds a hole.
     let mut out = String::new();
     let mut next = 0;
     let mut holes = Vec::new();
@@ -247,6 +256,9 @@ fn emit_node(
     writeln!(out, "(let {name} {expr})").expect("writing to a String cannot fail");
     if matches!(term.ty, ValueType::Array(_)) && !matches!(term.kind, TermKind::Bcast(_)) {
         writeln!(out, "({ARR} {name})").expect("writing to a String cannot fail");
+        if !matches!(term.kind, TermKind::Cond(..)) {
+            writeln!(out, "({PLAIN} {name})").expect("writing to a String cannot fail");
+        }
     }
     Ok(name)
 }

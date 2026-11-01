@@ -550,7 +550,7 @@ impl<'a> Gen<'a, '_> {
 
     fn scalar_expr(&mut self, cx: &mut Ctx, t: ScalarType) -> Option<E> {
         let want = ValueType::Scalar(t);
-        match self.c.weighted(&[3, 4, 5, 3, 1, 3, 1, 1, 9]) {
+        match self.c.weighted(&[3, 4, 5, 3, 1, 3, 1, 1, 15]) {
             0 => None,
             1 => self.generic(cx, want, None, is_elementwise),
             2 => self.generic(cx, want, None, is_reduction),
@@ -1391,7 +1391,7 @@ impl<'a> Gen<'a, '_> {
     fn bcast_sum(&mut self, cx: &mut Ctx, t: ScalarType) -> Option<E> {
         // `INTS` is `i64`, `i32`, `u8`, `u64`. Each CI run must fire every rewrite, which
         // exist for `i64` and `u64` only, so those are favoured.
-        let s = INTS[self.c.weighted(&[3, 1, 1, 3])];
+        let s = INTS[self.c.weighted(&[4, 1, 1, 4])];
         // Subtraction has one rewrite per operand order, the commutative ops one for both.
         let (op, k_first) = [
             (Op::Add, false),
@@ -1400,7 +1400,7 @@ impl<'a> Gen<'a, '_> {
             (Op::Mul, false),
             (Op::Add, true),
             (Op::Mul, true),
-        ][self.c.weighted(&[1, 2, 2, 1, 1, 1])];
+        ][self.c.weighted(&[2, 4, 4, 2, 2, 2])];
         let x = self.expr(cx, ValueType::Array(s), None);
         // The largest literals of a type overflow it in every operation, so the count times
         // `k` wraps.
