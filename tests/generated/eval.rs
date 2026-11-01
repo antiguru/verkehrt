@@ -12,9 +12,10 @@
 //!   block lets, and function arguments are therefore thunks, evaluated when first read and
 //!   then shared. A value that nothing reads never runs, so its errors are not raised, and an
 //!   expression statement is not evaluated either.
-//! * **Conditionals.** Outside lambdas, an `if` on a scalar `bool` evaluates the condition
-//!   and then only the branch it picks. An `if` on a `bool[]`, and every `if` inside a
-//!   lambda, computes both branches and selects per element.
+//! * **Conditionals.** An `if` on a scalar `bool` evaluates the condition and then only the
+//!   branch it picks. Inside a lambda that holds for a uniform condition, one that does not
+//!   depend on a lambda parameter. An `if` on a `bool[]`, and an `if` inside a lambda whose
+//!   condition depends on a parameter, computes both branches and selects per element.
 //! * **Lambdas** apply per element, with each parameter bound to one element's scalar and
 //!   captured scalars read from the enclosing scope. The base spec defines a lambda by lifting
 //!   it over whole arrays, so a part of the body that does not depend on a parameter runs once
@@ -49,6 +50,7 @@ mod prims;
 mod scalar;
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
@@ -107,10 +109,43 @@ fn merge_into(acc: &mut Option<Stop>, e: Stop) {
     });
 }
 
+/// Inside a lambda body, the variables whose values depend on a lambda parameter: the
+/// parameters, block lets computed from them, and the parameters of a function called with
+/// such arguments. `None` outside lambdas.
+type Lambda = Option<Rc<HashSet<VarId>>>;
+
+/// Whether `e` depends on one of the variables `dep`.
+fn depends(e: &TExpr, dep: &HashSet<VarId>) -> bool {
+    match &e.kind {
+        TExprKind::Lit(_) | TExprKind::Str(_) => false,
+        TExprKind::Var(v) => dep.contains(v),
+        // A function body sees only its parameters, so a call depends through its arguments.
+        TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) | TExprKind::Call(_, es) => {
+            es.iter().any(|x| depends(x, dep))
+        }
+        TExprKind::Map(x, lam) | TExprKind::Filter(x, lam) => {
+            depends(x, dep) || depends(&lam.body, dep)
+        }
+        TExprKind::ZipMap(x, y, lam) => {
+            depends(x, dep) || depends(y, dep) || depends(&lam.body, dep)
+        }
+        TExprKind::If(c, t, f) => [c, t, f].into_iter().any(|x| depends(x, dep)),
+        TExprKind::Block(lets, result) => {
+            let mut dep = dep.clone();
+            for (v, x) in lets {
+                if depends(x, &dep) {
+                    dep.insert(*v);
+                }
+            }
+            depends(result, &dep)
+        }
+    }
+}
+
 /// The state of a lazily evaluated binding.
 enum Slot<'p> {
-    /// The expression, its scope, and whether it is inside a lambda body.
-    Pending(&'p TExpr, Env<'p>, bool),
+    /// The expression, its scope, and its lambda context.
+    Pending(&'p TExpr, Env<'p>, Lambda),
     Forcing,
     Done(Result<Val, Stop>),
 }
@@ -122,7 +157,7 @@ impl<'p> Thunk<'p> {
         Rc::new(Thunk(RefCell::new(Slot::Done(Ok(v)))))
     }
 
-    fn pending(e: &'p TExpr, env: Env<'p>, lambda: bool) -> Rc<Thunk<'p>> {
+    fn pending(e: &'p TExpr, env: Env<'p>, lambda: Lambda) -> Rc<Thunk<'p>> {
         Rc::new(Thunk(RefCell::new(Slot::Pending(e, env, lambda))))
     }
 }
@@ -175,7 +210,7 @@ impl<'p> Evaluator<'p> {
         let Slot::Pending(e, env, lambda) = slot else {
             unreachable!("matched above")
         };
-        let r = self.eval(e, &env, lambda);
+        let r = self.eval(e, &env, &lambda);
         *t.0.borrow_mut() = Slot::Done(r.clone());
         r
     }
@@ -185,7 +220,7 @@ impl<'p> Evaluator<'p> {
         &self,
         es: impl IntoIterator<Item = &'p TExpr>,
         env: &Env<'p>,
-        lambda: bool,
+        lambda: &Lambda,
     ) -> Result<Vec<Val>, Stop> {
         let mut vals = Vec::new();
         let mut stop = None;
@@ -201,7 +236,7 @@ impl<'p> Evaluator<'p> {
         }
     }
 
-    fn eval(&self, e: &'p TExpr, env: &Env<'p>, lambda: bool) -> Result<Val, Stop> {
+    fn eval(&self, e: &'p TExpr, env: &Env<'p>, lambda: &Lambda) -> Result<Val, Stop> {
         match &e.kind {
             TExprKind::Lit(s) => Ok(Val::Scalar(s.clone())),
             TExprKind::Str(_) => Err(Stop::Unsupported("a string".to_string())),
@@ -225,9 +260,18 @@ impl<'p> Evaluator<'p> {
                 let f = self.globals.func(*id);
                 let mut inner = Env::default();
                 for ((p, _), a) in f.params.iter().zip(args) {
-                    inner = inner.bind(*p, Thunk::pending(a, env.clone(), lambda));
+                    inner = inner.bind(*p, Thunk::pending(a, env.clone(), lambda.clone()));
                 }
-                self.eval(&f.body, &inner, lambda)
+                let body_lambda = lambda.as_ref().map(|dep| {
+                    let params = f.params.iter().zip(args);
+                    Rc::new(
+                        params
+                            .filter(|(_, a)| depends(a, dep))
+                            .map(|((p, _), _)| *p)
+                            .collect(),
+                    )
+                });
+                self.eval(&f.body, &inner, &body_lambda)
             }
             TExprKind::Map(x, lam) => {
                 let x = self
@@ -264,7 +308,11 @@ impl<'p> Evaluator<'p> {
                 Ok(Val::Array(elem(e.ty), Rc::new(kept)))
             }
             TExprKind::If(c, t, f) => {
-                if !lambda && c.ty == ValueType::Scalar(ScalarType::Bool) {
+                let lazy = match lambda {
+                    None => c.ty == ValueType::Scalar(ScalarType::Bool),
+                    Some(dep) => !depends(c, dep),
+                };
+                if lazy {
                     let taken = match self.eval(c, env, lambda)? {
                         Val::Scalar(b) => scalar::bool_of(&b),
                         other => panic!("if condition {other:?}"),
@@ -277,10 +325,18 @@ impl<'p> Evaluator<'p> {
             }
             TExprKind::Block(lets, result) => {
                 let mut inner = env.clone();
+                let mut inner_lambda = lambda.clone();
                 for (v, x) in lets {
-                    inner = inner.bind(*v, Thunk::pending(x, inner.clone(), lambda));
+                    inner = inner.bind(*v, Thunk::pending(x, inner.clone(), inner_lambda.clone()));
+                    if let Some(dep) = &inner_lambda
+                        && depends(x, dep)
+                    {
+                        let mut more = HashSet::clone(dep);
+                        more.insert(*v);
+                        inner_lambda = Some(Rc::new(more));
+                    }
                 }
-                self.eval(result, &inner, lambda)
+                self.eval(result, &inner, &inner_lambda)
             }
         }
     }
@@ -292,7 +348,7 @@ impl<'p> Evaluator<'p> {
         for p in &lam.params {
             inner = inner.bind(*p, Thunk::done(Val::Phantom));
         }
-        self.eval(&lam.body, &inner, true).map(|_| ())
+        self.eval(&lam.body, &inner, &params_of(lam)).map(|_| ())
     }
 
     /// `stop`, which keeps the lambda's arrays from existing, with the errors of the lambda
@@ -319,12 +375,13 @@ impl<'p> Evaluator<'p> {
         }
         let mut out = Vec::with_capacity(rows);
         let mut stop = None;
+        let lambda = params_of(lam);
         for i in 0..rows {
             let mut inner = env.clone();
             for (p, col) in lam.params.iter().zip(cols) {
                 inner = inner.bind(*p, Thunk::done(Val::Scalar(col[i].clone())));
             }
-            match self.eval(&lam.body, &inner, true) {
+            match self.eval(&lam.body, &inner, &lambda) {
                 Ok(Val::Scalar(s)) => out.push(s),
                 Ok(other) => panic!("lambda body gave {other:?}"),
                 Err(s) => merge_into(&mut stop, s),
@@ -335,6 +392,11 @@ impl<'p> Evaluator<'p> {
             Some(s) => Err(s),
         }
     }
+}
+
+/// The lambda context of a lambda's body, in which its parameters are the dependent variables.
+fn params_of(lam: &TLambda) -> Lambda {
+    Some(Rc::new(lam.params.iter().copied().collect()))
 }
 
 fn array_rows(v: &Val) -> &[Scalar] {
@@ -436,7 +498,7 @@ pub fn evaluate(
                 Ok(())
             }
             TStmt::Let { var, value, .. } => {
-                let t = Thunk::pending(value, env.clone(), false);
+                let t = Thunk::pending(value, env.clone(), None);
                 env = env.bind(*var, Rc::clone(&t));
                 if eager_lets {
                     ev.force(&t).map(|_| ())
@@ -445,12 +507,12 @@ pub fn evaluate(
                 }
             }
             TStmt::Export { var, value, .. } => {
-                let t = Thunk::pending(value, env.clone(), false);
+                let t = Thunk::pending(value, env.clone(), None);
                 env = env.bind(*var, Rc::clone(&t));
                 ev.force(&t)
                     .map(|v| exports.push((globals.name(*var).to_string(), to_value(&v))))
             }
-            TStmt::Print { value, .. } => ev.eval(value, &env, false).map(|v| {
+            TStmt::Print { value, .. } => ev.eval(value, &env, &None).map(|v| {
                 writeln!(printed, "{}", to_value(&v)).expect("writing to a string");
             }),
             // Its value reaches no print or export.
