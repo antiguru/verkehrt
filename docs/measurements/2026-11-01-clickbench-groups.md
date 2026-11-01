@@ -3,7 +3,7 @@
 This document times the six ClickBench queries added in plan 5 (q04, q08, q09, q15, q32, q35) against corgi and DuckDB on one thread, and re-times the four sort-bound queries of the #20 round (q30, q31, q40, q41) on the radix `argsort`.
 Of the six new queries, q35 is faster than corgi and slower than DuckDB, q32 is level with DuckDB and slower than corgi, q04, q08 and q09 are level with corgi and 2.9 to 4.9 times slower than DuckDB, and q15 is slower than both.
 In all six, `argsort_i64` is the largest kernel at 53% to 89% of kernel time, and `gather_i64` is the second largest in q08, q09, q32 and q35 at 11% to 31%.
-Compared with the #20 round, q30, q31, q40 and q41 take 28% to 48% less time on the best variant, and `argsort_i64` is no longer the largest kernel in q30, q40 and q41 and is about 30% or less of kernel time in any of the four (it was 44% to 54%).
+Compared with the #20 round, q30, q31, q40 and q41 take 28% to 51% less time on the best variant, and `argsort_i64` is no longer the largest kernel in q30, q40 and q41 and is about 30% or less of kernel time in any of the four (it was 44% to 54%).
 The comparison with #20 spans two sessions on the same host, and the last sections list the gaps.
 
 ## Setup
@@ -87,19 +87,20 @@ The corgi column is a drift check, not part of the comparison: corgi's times for
 | q31 | scalar | 12.36 | 8.77 | -29% |
 | q40 | v4-intrinsics (best) | 4.92 | 3.53 | -28% |
 | q40 | scalar | 7.97 | 6.61 | -17% |
-| q41 | v4-intrinsics (best) | 5.99 | 3.14 | -48% |
-| q41 | scalar | 8.88 | 6.09 | -31% |
+| q41 | v4-intrinsics (best) | 6.36 | 3.14 | -51% |
+| q41 | scalar | 9.02 | 6.09 | -32% |
 
+The #20 times of q41 come from the re-measurement of its final program (`bench-d.txt` and `stats-rerun.txt` in `2026-10-31-clickbench-now/`), because the first #20 round measured an older q41.
 All twenty variant rows (four queries, five variants) moved by about -17% or more (the smallest is q40 `x86-64-v3-auto`, 6.03 to 5.03 ms, -16.6%), none inside the noise band.
-The `argsort_i64` kernel time in `stats.txt` fell from 4495 to 1323 us in q30, from 4715 to 1916 us in q31, from 2339 to 941 us in q40, and from 3575 to 783 us in q41.
-The drop in `argsort_i64` is 3172, 2799, 1398 and 2792 us, against drops in the criterion mean of 3.99, 3.58, 1.39 and 2.85 ms.
+The `argsort_i64` kernel time in `stats.txt` fell from 4495 to 1323 us in q30, from 4715 to 1916 us in q31, from 2339 to 941 us in q40, and from 3556 to 783 us in q41.
+The drop in `argsort_i64` is 3172, 2799, 1398 and 2773 us, against drops in the criterion mean of 3.99, 3.58, 1.39 and 3.22 ms.
 The two sets of numbers are the same size, so the sort accounts for most of the change.
 The remaining difference is at most 0.8 ms (q30), and this document did not attribute it.
-The kernel time outside `argsort_i64` supports the cross-session reading, because it is unchanged within noise: q30 4609 to 4544 us, q31 4738 to 4405 us, q40 2963 to 3079 us, and q41 3038 to 2983 us.
+The kernel time outside `argsort_i64` supports the cross-session reading, because it is unchanged within noise: q30 4609 to 4544 us, q31 4738 to 4405 us, q40 2963 to 3079 us, and q41 2977 to 2983 us.
 `bench-b.txt` also ran at a higher load (up to 4.42) than the #20 runs (up to 3.3), so if load slowed the runs at all, it makes the speedup a conservative reading.
 
 Against the references, q30 (0.57) and q31 (0.58) are 1.7x faster than DuckDB, and q40 and q41 (both 0.82) are faster by 18%.
-In the #20 round, q30 and q31 were level with DuckDB, and q40 and q41 were 1.14x and 1.56x slower.
+In the #20 round, q30 and q31 were level with DuckDB, and q40 and q41 were 1.14x and 1.66x slower.
 Against corgi, q40 (0.67) and q41 (0.63) are faster, q30 (0.91) is level, and q31 (1.14) is slower by a little more than the noise band.
 
 ## What dominates each query
@@ -146,4 +147,4 @@ This document did not split those kernel times between the filter and the later 
 * **Top-k.** q15 and q35 sort all group counts to take ten of them. The byte counts say the count sort is small there (about 7% of the argsort bytes in q15 and 6% in q35), so a top-k primitive is unlikely to matter for these two on this data. q32 has 1M groups, but every count is 1, so its count sort runs no scatter passes, and a top-k primitive is unlikely to matter there either. The q15 and q35 statements come from byte counts, not timings, and byte share is not a sound time estimate for radix sort.
 * **Elementwise maps before a reduction, issue #30.** The count column `add_i64 (mul_i64 gid 0) 1` is materialized before `reduce_into_add_i64` in q09, q15, q32 and q35, where `add_i64` and `mul_i64` together take 1.5% (q32) to 4.6% (q15) of kernel time.
 * **Stats for the short queries.** The summed kernel time of q30, q31, q40 and q41 is 14% to 25% above the criterion mean, so their shares are rough.
-* **Output checks.** This round timed the programs and did not re-check their output against `expected/`. Correctness rests on the acceptance tests of the commits that added the queries.
+* **Output checks.** The timing round did not re-check output. After it, `clickbench_matches_duckdb` passed on this PR's programs with the prepared data set. The test needs the prepared data, which is not committed, so CI skips it and the byte-for-byte match is a local check.
