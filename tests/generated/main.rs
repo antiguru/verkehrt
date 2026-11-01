@@ -14,6 +14,7 @@
 //! is printed at the end, visible with `--nocapture`, and `VERKEHRT_GEN_SHOW` prints every
 //! program with its outcome.
 
+mod eval;
 mod r#gen;
 mod oracles;
 
@@ -150,6 +151,12 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
             }
         };
         *stats.outcomes.entry(outcome).or_default() += 1;
+        if let Some(reason) = verdict.reference_skipped {
+            *stats
+                .outcomes
+                .entry(format!("oracle 3 skipped: {reason}"))
+                .or_default() += 1;
+        }
         stats.fusion_changed_plan += usize::from(verdict.fusion_changed_plan);
         Ok(())
     });

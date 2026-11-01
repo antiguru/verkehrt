@@ -9,6 +9,11 @@
 //!   sits on its own line, so the line of its span), and fall in the same category, see
 //!   `Category`. The message text is not compared, because a fused kernel words a length
 //!   mismatch its own way.
+//! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
+//!   evaluator of `eval` computes from the typed program. On success the output and the
+//!   exports must be equal. On failure the error must be a runtime error whose category is
+//!   one the evaluator met, and its output a prefix of the evaluator's, because the base spec
+//!   leaves open which of several errors is reported and how much output precedes it.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -17,10 +22,11 @@
 use std::fmt;
 
 use verkehrt::error::{ErrorKind, Span};
-use verkehrt::kernels::{Backend, Isa, Variant};
+use verkehrt::kernels::{Backend, Isa, Registry, Variant};
 use verkehrt::value::{Scalar, Value, ValueType};
 use verkehrt::{Interpreter, Options, Prepared};
 
+use crate::eval::{self, Reference};
 use crate::r#gen::Case;
 
 /// An export: its name, type, comparable bits, and the value as printed.
@@ -60,8 +66,8 @@ struct Outcome {
 }
 
 /// What an error means, independent of the kernel that reports it.
-#[derive(Debug, PartialEq, Eq)]
-enum Category {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Category {
     LengthMismatch,
     GatherIndex,
     SliceBounds,
@@ -77,7 +83,7 @@ enum Category {
 }
 
 impl Category {
-    fn of(message: &str) -> Category {
+    pub fn of(message: &str) -> Category {
         if message.starts_with("length mismatch") {
             Category::LengthMismatch
         } else if message.starts_with("gather index") {
@@ -187,11 +193,13 @@ fn variants() -> Vec<Variant> {
     variants
 }
 
-/// The interpreters for planning and for running plans.
+/// The interpreters for planning and for running plans, and the registry that the reference
+/// evaluator type-checks with.
 pub struct Engine {
     fused: Interpreter,
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
+    reg: Registry,
 }
 
 /// What a checked case did, for the statistics.
@@ -200,6 +208,8 @@ pub struct Verdict {
     pub error: Option<(ErrorKind, String)>,
     /// Whether the fused plan differs from the unfused one in some statement.
     pub fusion_changed_plan: bool,
+    /// Why oracle 3 skipped the case, if it did.
+    pub reference_skipped: Option<String>,
 }
 
 impl Engine {
@@ -229,6 +239,7 @@ impl Engine {
             fused: planner(false),
             unfused: planner(true),
             runners,
+            reg: Registry::new(),
         }
     }
 
@@ -236,8 +247,9 @@ impl Engine {
         self.runners.len()
     }
 
-    /// Plans `case` with and without fusion, runs both plans on every variant, and applies
-    /// oracles 1 and 2. A program that does not compile is a generator bug.
+    /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
+    /// with the reference evaluator, and applies the three oracles. A program that does not
+    /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
         let (fused, fused_plan) = prepare(&self.fused, case)?;
         let (unfused, unfused_plan) = prepare(&self.unfused, case)?;
@@ -272,11 +284,73 @@ impl Engine {
                 describe(case),
             ));
         }
+        let evaluate = |eager| eval::evaluate(&self.reg, &case.source, &case.inputs, eager);
+        let reference_skipped = match evaluate(false) {
+            Err(reason) => Some(reason),
+            Ok(r) if agrees(&r, f) => None,
+            // Pending a ruling: the pipeline evaluates top-level lets it does not inline.
+            Ok(_) if evaluate(true).is_ok_and(|r| agrees(&r, f)) => {
+                Some("the pipeline evaluates an unread top-level let".to_string())
+            }
+            Ok(r) => {
+                return Err(format!(
+                    "oracle 3: the reference evaluator differs from the pipeline\n{}\n\
+                     fused plan:\n{fused_plan}pipeline: {f}\nreference: {}",
+                    describe(case),
+                    show_reference(&r),
+                ));
+            }
+        };
         Ok(Verdict {
             error: f.result.as_ref().err().map(|e| (e.kind, e.message.clone())),
             fusion_changed_plan: fused_plan != unfused_plan,
+            reference_skipped,
         })
     }
+}
+
+fn export(name: &str, v: &Value) -> Export {
+    Export {
+        name: name.to_string(),
+        ty: v.ty(),
+        bits: bits(v),
+        shown: v.to_string(),
+    }
+}
+
+/// Oracle 3: whether the pipeline's outcome `o` is one the reference evaluator allows.
+fn agrees(r: &Reference, o: &Outcome) -> bool {
+    match (&r.result, &o.result) {
+        (Ok(exports), Ok(got)) => {
+            let want: Vec<Export> = exports.iter().map(|(n, v)| export(n, v)).collect();
+            r.printed == o.printed && want == *got
+        }
+        // Every printed line ends with a newline, so a prefix of the text is one of lines.
+        (Err(errors), Err(f)) => {
+            let category = Category::of(&f.message);
+            f.kind == ErrorKind::Runtime
+                && errors.iter().any(|(c, _)| *c == category)
+                && r.printed.starts_with(&o.printed)
+        }
+        _ => false,
+    }
+}
+
+fn show_reference(r: &Reference) -> String {
+    let mut s = format!("printed: {:?}", r.printed);
+    match &r.result {
+        Ok(exports) => {
+            for (name, v) in exports {
+                s.push_str(&format!("\n  export {name}: {} = {v}", v.ty()));
+            }
+        }
+        Err(errors) => {
+            for (_, message) in errors {
+                s.push_str(&format!("\n  possible error: {message}"));
+            }
+        }
+    }
+    s
 }
 
 /// The program, its inputs, and a self-contained reproduction for a `run` case.
