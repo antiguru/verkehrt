@@ -28,8 +28,8 @@ fn kernel_ctor(name: &str) -> String {
 }
 
 /// The datatype with one constructor per kernel, the `Arr` relation, then the exact
-/// rewrites and one rewrite per fused kernel pattern.
-pub fn prelude(reg: &Registry) -> Result<String, String> {
+/// rewrites and, when `fusion` is set, one rewrite per fused kernel pattern.
+pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
     let mut out = format!(
         "(datatype Expr\n  ({LEAF} i64 :cost 0)\n  ({HOLE} i64 :cost 0)\n  ({BCAST} Expr :cost 0)\n"
     );
@@ -72,10 +72,12 @@ pub fn prelude(reg: &Registry) -> Result<String, String> {
             }
         }
     }
-    for (_, def) in reg.iter() {
-        if let Some(rule) = fused_rule(def)? {
-            out.push_str(&rule);
-            out.push('\n');
+    if fusion {
+        for (_, def) in reg.iter() {
+            if let Some(rule) = fused_rule(def)? {
+                out.push_str(&rule);
+                out.push('\n');
+            }
         }
     }
     Ok(out)

@@ -28,6 +28,8 @@ pub struct Options {
     /// CPU features to treat as absent, so no kernel entry that needs one is selected and
     /// an instruction set whose level needs one is unavailable.
     pub disable: FeatureSet,
+    /// Plan without fused kernel patterns, so every plan uses single-op kernels only.
+    pub no_fusion: bool,
 }
 
 pub struct Interpreter {
@@ -75,7 +77,7 @@ impl Interpreter {
             None => Isa::detect_with(opts.disable),
         };
         let reg = Registry::new();
-        let planner = Planner::new(&reg);
+        let planner = Planner::new(&reg, !opts.no_fusion);
         let dispatch = reg.resolve(isa, opts.backend, opts.disable);
         Ok(Interpreter {
             opts,

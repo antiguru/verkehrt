@@ -34,16 +34,17 @@ fn egglog_smoke() {
 
 const XY: &str = "let x = [1.0, 2.0, 3.0]; let y = [4.0, 5.0, 6.0]; ";
 
-/// Plans every `print` of `XY` followed by `src` in `Mode::Run`. Returns the root kernel
+/// Plans every `print` of `XY` followed by `src` in `Mode::Run`, with fused patterns when
+/// `fusion` is set. Returns the root kernel
 /// name (`-` for a bare leaf) and the rendered plan of each, in source order.
-fn plan_prints(src: &str) -> Vec<(String, String)> {
+fn plan_prints(src: &str, fusion: bool) -> Vec<(String, String)> {
     let src = format!("{XY}{src}");
     let prog = parse(&src).unwrap_or_else(|e| panic!("{src}: {e}"));
     let reg = Registry::new();
     let mut g = Globals::new();
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
     let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
-    let planner = Planner::new(&reg);
+    let planner = Planner::new(&reg, fusion);
     lowered
         .stmts
         .iter()
@@ -92,15 +93,22 @@ fn assert_broadcasts_fit(reg: &Registry, node: &PlanNode) {
 
 /// Runs every `plan` directive in `testdata/*.dd`. The input is a source that follows
 /// `XY`. The output has one line per `print` in source order, `<root kernel>: <plan>`,
-/// where the root is `-` for a bare leaf or conditional.
+/// where the root is `-` for a bare leaf or conditional. The argument `fusion=off` plans
+/// without fused patterns.
 #[test]
 fn datadriven_plans() {
     crate::testutil::run_dir(
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/plan/testdata"),
         |tc| {
-            crate::testutil::reject_unknown_args(tc, &[]);
+            crate::testutil::reject_unknown_args(tc, &["fusion"]);
+            // `fusion=off` plans without fused patterns, the default plans with them.
+            let fusion = match tc.args.get("fusion").map(|v| v[0].as_str()) {
+                None | Some("on") => true,
+                Some("off") => false,
+                Some(v) => panic!("fusion takes on or off, not {v}"),
+            };
             match tc.directive.as_str() {
-                "plan" => plan_prints(&tc.input)
+                "plan" => plan_prints(&tc.input, fusion)
                     .into_iter()
                     .map(|(root, plan)| format!("{root}: {plan}\n"))
                     .collect::<String>(),

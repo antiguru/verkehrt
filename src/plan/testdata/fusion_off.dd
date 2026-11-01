@@ -1,0 +1,33 @@
+# Plans without fused patterns. The same programs with fusion on are in dot.dd and
+# fused_comparisons.dd. Every kernel here is a single-op kernel.
+
+plan fusion=off
+print(sum(x * y));
+----
+reduce_add_f64: (reduce_add_f64 (mul_f64 x y))
+
+plan fusion=off
+print(sum(x * x));
+----
+reduce_add_f64: (reduce_add_f64 (mul_f64 x x))
+
+plan fusion=off
+print(count(x > 0.5));
+----
+count: (count (lt_f64 0.5 x))
+
+plan fusion=off
+print(filter(x, |v| v > 0.5));
+----
+compress_f64: (compress_f64 x (lt_f64 0.5 x))
+
+plan fusion=off
+print(sum(map(x, |v| if v > 0.5 { v } else { 0.0 })));
+----
+reduce_add_f64: (reduce_add_f64 (select_f64 (lt_f64 0.5 x) x 0.0))
+
+# The exact rewrites stay on, so a flipped comparison still normalizes.
+plan fusion=off
+print(count(0.5 < x));
+----
+count: (count (lt_f64 0.5 x))
