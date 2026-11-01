@@ -5,7 +5,8 @@ print(sum(x * y));
 ----
 dot_f64: (dot_f64 x y)
 
-# The operand order of a commutative product is not pinned by the planner.
+# The operand order of a commutative product comes from a deterministic egglog tie-break.
+# An egglog upgrade may change it, and `REWRITE=1` is the fix when it does.
 plan
 print(sum(y * x));
 ----

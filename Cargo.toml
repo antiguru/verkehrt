@@ -104,3 +104,37 @@ harness = false
 [[bench]]
 name = "acceptance"
 harness = false
+
+# egglog plans every program at run time, which dominates the debug test time.
+[profile.dev.package.egglog]
+opt-level = 3
+
+[profile.dev.package.egglog-bridge]
+opt-level = 3
+
+[profile.dev.package.egglog-core-relations]
+opt-level = 3
+
+[profile.dev.package.egglog-numeric-id]
+opt-level = 3
+
+[profile.dev.package.egglog-ast]
+opt-level = 3
+
+[profile.dev.package.egraph-serialize]
+opt-level = 3
+
+[profile.dev.package.hashbrown]
+opt-level = 3
+
+[profile.dev.package.indexmap]
+opt-level = 3
+
+[profile.dev.package.im-rc]
+opt-level = 3
+
+[profile.dev.package.smallvec]
+opt-level = 3
+
+[profile.dev.package.rustc-hash]
+opt-level = 3

@@ -62,23 +62,45 @@ fn outcome(variant: Variant, src: &str) -> (String, Option<String>) {
     (out, err)
 }
 
-/// Runs `src` on every variant and returns the outcome that all of them share. Panics, naming
-/// the variants, if one differs from the scalar run.
+/// Runs `src` on every variant, one thread each, and returns the outcome that all of them share.
+/// Panics, naming the variants, if one differs from the scalar run. The threads share nothing,
+/// each owns its interpreter, so the egglog planning of the variants overlaps.
 fn run_everywhere(src: &str) -> (String, Option<String>) {
     let variants = variants();
-    let want = outcome(variants[0], src);
-    let differing: Vec<String> = variants[1..]
-        .iter()
-        .filter(|v| outcome(**v, src) != want)
-        .map(|v| format!("[{v}]"))
+    let outcomes: Vec<_> = std::thread::scope(|s| {
+        let handles: Vec<_> = variants
+            .iter()
+            .map(|&v| s.spawn(move || outcome(v, src)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("variant thread panicked"))
+            .collect()
+    });
+    let want = &outcomes[0];
+    let differing: Vec<usize> = (1..variants.len())
+        .filter(|&i| outcomes[i] != *want)
         .collect();
-    assert!(
-        differing.is_empty(),
-        "{} differ from [{}] on:\n{src}\nscalar: {want:?}",
-        differing.join(" "),
-        variants[0],
-    );
-    want
+    if let Some(&first) = differing.first() {
+        let names: Vec<String> = differing
+            .iter()
+            .map(|&i| format!("[{}]", variants[i]))
+            .collect();
+        panic!(
+            "{} differ from [{}] on:\n{src}\nscalar: {want:?}\n[{}]: {:?}",
+            names.join(" "),
+            variants[0],
+            variants[first],
+            outcomes[first],
+        );
+    }
+    if variants.len() == 1 {
+        static NOTE: std::sync::Once = std::sync::Once::new();
+        NOTE.call_once(|| {
+            eprintln!("note: only scalar is available, no cross-variant comparison ran")
+        });
+    }
+    outcomes.into_iter().next().unwrap()
 }
 
 /// Runs the `run` and `error` directives on every file in `tests/programs`. The input is a
