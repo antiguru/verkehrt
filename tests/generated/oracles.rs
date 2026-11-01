@@ -5,9 +5,10 @@
 //!   variants share the plan, so the outcomes must agree exactly, including the error message
 //!   and its location.
 //! * Oracle 2, fused against unfused: the unfused plan gives the fused plan's output, exports,
-//!   and error kind. The message of an error may legitimately differ, because a fused kernel
-//!   reports a length mismatch in its own words, and the base spec lets runtime errors
-//!   surface in any order. So only whether an error occurs and its kind are compared.
+//!   and error. An error must have the same kind, come from the same statement (each statement
+//!   sits on its own line, so the line of its span), and fall in the same category, see
+//!   `Category`. The message text is not compared, because a fused kernel words a length
+//!   mismatch its own way.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -58,12 +59,71 @@ struct Outcome {
     result: Result<Vec<Export>, Failure>,
 }
 
+/// What an error means, independent of the kernel that reports it.
+#[derive(Debug, PartialEq, Eq)]
+enum Category {
+    LengthMismatch,
+    GatherIndex,
+    SliceBounds,
+    BucketKey,
+    NegativeBucketCount,
+    NegativeLength,
+    /// A reduction without an identity on an empty array, with the reduction's name.
+    Empty(String),
+    DivisionByZero,
+    TooLarge,
+    /// Any other message, compared verbatim.
+    Other(String),
+}
+
+impl Category {
+    fn of(message: &str) -> Category {
+        if message.starts_with("length mismatch") {
+            Category::LengthMismatch
+        } else if message.starts_with("gather index") {
+            Category::GatherIndex
+        } else if message.starts_with("slice ") && message.contains("out of range") {
+            Category::SliceBounds
+        } else if message.starts_with("bucket key") {
+            Category::BucketKey
+        } else if message.starts_with("negative bucket count") {
+            Category::NegativeBucketCount
+        } else if message.starts_with("negative length") {
+            Category::NegativeLength
+        } else if let Some(what) = message.strip_suffix(" of an empty array") {
+            Category::Empty(what.to_string())
+        } else if message == "div_const: division by zero" {
+            Category::DivisionByZero
+        } else if message.contains("is too large") {
+            Category::TooLarge
+        } else {
+            Category::Other(message.to_string())
+        }
+    }
+}
+
+/// The parts of an error that oracle 2 compares.
+#[derive(Debug, PartialEq, Eq)]
+struct FusionError {
+    kind: ErrorKind,
+    line: Option<u32>,
+    category: Category,
+}
+
 impl Outcome {
-    /// The parts that oracle 2 compares: output, exports, and the error kind.
-    fn fusion_view(&self) -> (&str, Result<&[Export], ErrorKind>) {
+    /// The parts that oracle 2 compares: output, exports, and the error's kind, statement,
+    /// and category.
+    fn fusion_view(&self) -> (&str, Result<&[Export], FusionError>) {
         (
             &self.printed,
-            self.result.as_ref().map(Vec::as_slice).map_err(|f| f.kind),
+            self.result
+                .as_ref()
+                .map(Vec::as_slice)
+                .map_err(|f| FusionError {
+                    kind: f.kind,
+                    line: f.span.map(|s| s.line),
+                    category: Category::of(&f.message),
+                }),
         )
     }
 }
@@ -287,4 +347,36 @@ fn exports_compare_by_bits_and_nans_alike() {
         f(f64::from_bits(0x7ff8_0000_0000_0001)),
         "NaN payloads are alike"
     );
+}
+
+#[test]
+fn error_categories_ignore_wording_only() {
+    let c = Category::of;
+    assert_eq!(c("length mismatch: 3 vs 2"), Category::LengthMismatch);
+    assert_eq!(
+        c("length mismatch: 3 values vs 2 mask rows"),
+        Category::LengthMismatch
+    );
+    assert_eq!(
+        c("gather index 7 out of range for length 5"),
+        Category::GatherIndex
+    );
+    assert_eq!(
+        c("slice 1..0 out of range for length 0"),
+        Category::SliceBounds
+    );
+    assert_eq!(
+        c("bucket key -1 out of range for 4 buckets"),
+        Category::BucketKey
+    );
+    assert_eq!(c("div_const: division by zero"), Category::DivisionByZero);
+    assert_ne!(
+        c("reduce_max of an empty array"),
+        c("argmax of an empty array")
+    );
+    assert_ne!(
+        c("gather index 7 out of range for length 5"),
+        c("reduce_min of an empty array")
+    );
+    assert_eq!(c("planner: x"), Category::Other("planner: x".into()));
 }
