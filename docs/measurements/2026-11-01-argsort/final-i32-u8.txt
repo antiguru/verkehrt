@@ -1,0 +1,86 @@
+# final implementation (LSD8 radix, small inputs by comparison), 10M rows
+# head: 72b8180, dirty files: 6
+# command: cargo bench --bench tier1 -- 'tier2/argsort-(i32|u8)'
+# loadavg before: 2.77 3.00 2.83 2/2264 1191360
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/argsort-i32/scalar
+Benchmarking tier2/argsort-i32/scalar: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking tier2/argsort-i32/scalar: Collecting 10 samples in estimated 3.4285 s (55 iterations)
+Benchmarking tier2/argsort-i32/scalar: Analyzing
+tier2/argsort-i32/scalar
+                        time:   [62.289 ms 62.356 ms 62.440 ms]
+                        thrpt:  [610.94 MiB/s 611.76 MiB/s 612.42 MiB/s]
+                 change:
+                        time:   [−6.3659% −5.8435% −5.3107%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.6086% +6.2061% +6.7987%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking tier2/argsort-i32/x86-64-v3-auto
+Benchmarking tier2/argsort-i32/x86-64-v3-auto: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.5s or enable flat sampling.
+Benchmarking tier2/argsort-i32/x86-64-v3-auto: Collecting 10 samples in estimated 3.4503 s (55 iterations)
+Benchmarking tier2/argsort-i32/x86-64-v3-auto: Analyzing
+tier2/argsort-i32/x86-64-v3-auto
+                        time:   [62.418 ms 62.852 ms 63.353 ms]
+                        thrpt:  [602.14 MiB/s 606.94 MiB/s 611.16 MiB/s]
+                 change:
+                        time:   [−1.2842% −0.6451% +0.0145%] (p = 0.08 > 0.05)
+                        thrpt:  [−0.0145% +0.6493% +1.3009%]
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking tier2/argsort-i32/x86-64-v4-auto
+Benchmarking tier2/argsort-i32/x86-64-v4-auto: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.4s or enable flat sampling.
+Benchmarking tier2/argsort-i32/x86-64-v4-auto: Collecting 10 samples in estimated 3.4429 s (55 iterations)
+Benchmarking tier2/argsort-i32/x86-64-v4-auto: Analyzing
+tier2/argsort-i32/x86-64-v4-auto
+                        time:   [62.224 ms 62.565 ms 62.927 ms]
+                        thrpt:  [606.21 MiB/s 609.71 MiB/s 613.06 MiB/s]
+                 change:
+                        time:   [−0.3351% +0.3890% +1.3001%] (p = 0.40 > 0.05)
+                        thrpt:  [−1.2834% −0.3875% +0.3362%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/argsort-u8/scalar
+Benchmarking tier2/argsort-u8/scalar: Warming up for 500.00 ms
+Benchmarking tier2/argsort-u8/scalar: Collecting 10 samples in estimated 3.0770 s (220 iterations)
+Benchmarking tier2/argsort-u8/scalar: Analyzing
+tier2/argsort-u8/scalar time:   [13.947 ms 14.004 ms 14.066 ms]
+                        thrpt:  [678.01 MiB/s 681.02 MiB/s 683.80 MiB/s]
+                 change:
+                        time:   [+0.1405% +0.6264% +1.1532%] (p = 0.03 < 0.05)
+                        thrpt:  [−1.1400% −0.6225% −0.1403%]
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/argsort-u8/x86-64-v3-auto
+Benchmarking tier2/argsort-u8/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking tier2/argsort-u8/x86-64-v3-auto: Collecting 10 samples in estimated 3.0700 s (220 iterations)
+Benchmarking tier2/argsort-u8/x86-64-v3-auto: Analyzing
+tier2/argsort-u8/x86-64-v3-auto
+                        time:   [13.897 ms 13.932 ms 13.965 ms]
+                        thrpt:  [682.89 MiB/s 684.51 MiB/s 686.25 MiB/s]
+                 change:
+                        time:   [−1.0388% −0.5102% −0.0506%] (p = 0.06 > 0.05)
+                        thrpt:  [+0.0506% +0.5128% +1.0497%]
+                        No change in performance detected.
+Benchmarking tier2/argsort-u8/x86-64-v4-auto
+Benchmarking tier2/argsort-u8/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking tier2/argsort-u8/x86-64-v4-auto: Collecting 10 samples in estimated 3.0905 s (220 iterations)
+Benchmarking tier2/argsort-u8/x86-64-v4-auto: Analyzing
+tier2/argsort-u8/x86-64-v4-auto
+                        time:   [13.933 ms 13.978 ms 14.008 ms]
+                        thrpt:  [680.83 MiB/s 682.25 MiB/s 684.48 MiB/s]
+                 change:
+                        time:   [−0.8269% −0.0129% +0.7055%] (p = 0.98 > 0.05)
+                        thrpt:  [−0.7006% +0.0129% +0.8338%]
+                        No change in performance detected.
+# loadavg after: 2.60 2.92 2.81 2/2276 1191530

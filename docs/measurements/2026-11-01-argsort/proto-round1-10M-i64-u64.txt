@@ -1,0 +1,101 @@
+# prototype round 1, 10M rows, baseline target (no target features)
+# head: 72b8180, dirty files: 4
+# command: cargo bench --bench argsort_proto -- 'proto/(i64|u64)/10000000/'
+# loadavg before: 3.73 2.56 2.52 1/2282 1184493
+Benchmarking proto/i64/10000000/plan4
+Benchmarking proto/i64/10000000/plan4: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 7.5s.
+Benchmarking proto/i64/10000000/plan4: Collecting 10 samples in estimated 7.4594 s (10 iterations)
+Benchmarking proto/i64/10000000/plan4: Analyzing
+proto/i64/10000000/plan4
+                        time:   [745.54 ms 746.81 ms 748.33 ms]
+                        thrpt:  [101.95 MiB/s 102.16 MiB/s 102.33 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking proto/i64/10000000/gather-unstable
+Benchmarking proto/i64/10000000/gather-unstable: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.5s.
+Benchmarking proto/i64/10000000/gather-unstable: Collecting 10 samples in estimated 3.4795 s (10 iterations)
+Benchmarking proto/i64/10000000/gather-unstable: Analyzing
+proto/i64/10000000/gather-unstable
+                        time:   [347.47 ms 347.85 ms 348.30 ms]
+                        thrpt:  [219.05 MiB/s 219.33 MiB/s 219.57 MiB/s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking proto/i64/10000000/gather-stable
+Benchmarking proto/i64/10000000/gather-stable: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.2s.
+Benchmarking proto/i64/10000000/gather-stable: Collecting 10 samples in estimated 4.1508 s (10 iterations)
+Benchmarking proto/i64/10000000/gather-stable: Analyzing
+proto/i64/10000000/gather-stable
+                        time:   [412.84 ms 414.00 ms 415.17 ms]
+                        thrpt:  [183.76 MiB/s 184.28 MiB/s 184.80 MiB/s]
+Benchmarking proto/i64/10000000/lsd8
+Benchmarking proto/i64/10000000/lsd8: Warming up for 500.00 ms
+Benchmarking proto/i64/10000000/lsd8: Collecting 10 samples in estimated 4.3176 s (30 iterations)
+Benchmarking proto/i64/10000000/lsd8: Analyzing
+proto/i64/10000000/lsd8 time:   [143.84 ms 144.20 ms 144.58 ms]
+                        thrpt:  [527.68 MiB/s 529.08 MiB/s 530.42 MiB/s]
+Benchmarking proto/i64/10000000/lsd8-unchecked
+Benchmarking proto/i64/10000000/lsd8-unchecked: Warming up for 500.00 ms
+Benchmarking proto/i64/10000000/lsd8-unchecked: Collecting 10 samples in estimated 4.2770 s (30 iterations)
+Benchmarking proto/i64/10000000/lsd8-unchecked: Analyzing
+proto/i64/10000000/lsd8-unchecked
+                        time:   [141.99 ms 142.18 ms 142.36 ms]
+                        thrpt:  [535.92 MiB/s 536.61 MiB/s 537.32 MiB/s]
+Benchmarking proto/i64/10000000/lsd11
+Benchmarking proto/i64/10000000/lsd11: Warming up for 500.00 ms
+Benchmarking proto/i64/10000000/lsd11: Collecting 10 samples in estimated 4.0125 s (20 iterations)
+Benchmarking proto/i64/10000000/lsd11: Analyzing
+proto/i64/10000000/lsd11
+                        time:   [197.18 ms 197.80 ms 198.45 ms]
+                        thrpt:  [384.45 MiB/s 385.71 MiB/s 386.93 MiB/s]
+Benchmarking proto/i64/10000000/lsd11-unchecked
+Benchmarking proto/i64/10000000/lsd11-unchecked: Warming up for 500.00 ms
+Benchmarking proto/i64/10000000/lsd11-unchecked: Collecting 10 samples in estimated 4.0900 s (20 iterations)
+Benchmarking proto/i64/10000000/lsd11-unchecked: Analyzing
+proto/i64/10000000/lsd11-unchecked
+                        time:   [202.65 ms 203.89 ms 205.08 ms]
+                        thrpt:  [372.03 MiB/s 374.20 MiB/s 376.48 MiB/s]
+Benchmarking proto/i64/10000000/lsd8-split
+Benchmarking proto/i64/10000000/lsd8-split: Warming up for 500.00 ms
+Benchmarking proto/i64/10000000/lsd8-split: Collecting 10 samples in estimated 3.1123 s (20 iterations)
+Benchmarking proto/i64/10000000/lsd8-split: Analyzing
+proto/i64/10000000/lsd8-split
+                        time:   [154.90 ms 155.30 ms 155.71 ms]
+                        thrpt:  [489.99 MiB/s 491.28 MiB/s 492.53 MiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking proto/u64/10000000/plan4
+Benchmarking proto/u64/10000000/plan4: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 7.5s.
+Benchmarking proto/u64/10000000/plan4: Collecting 10 samples in estimated 7.4924 s (10 iterations)
+Benchmarking proto/u64/10000000/plan4: Analyzing
+proto/u64/10000000/plan4
+                        time:   [747.40 ms 749.85 ms 752.15 ms]
+                        thrpt:  [101.43 MiB/s 101.75 MiB/s 102.08 MiB/s]
+Benchmarking proto/u64/10000000/gather-unstable
+Benchmarking proto/u64/10000000/gather-unstable: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.5s.
+Benchmarking proto/u64/10000000/gather-unstable: Collecting 10 samples in estimated 3.4750 s (10 iterations)
+Benchmarking proto/u64/10000000/gather-unstable: Analyzing
+proto/u64/10000000/gather-unstable
+                        time:   [348.11 ms 348.58 ms 349.03 ms]
+                        thrpt:  [218.59 MiB/s 218.87 MiB/s 219.17 MiB/s]
+Benchmarking proto/u64/10000000/lsd8
+Benchmarking proto/u64/10000000/lsd8: Warming up for 500.00 ms
+Benchmarking proto/u64/10000000/lsd8: Collecting 10 samples in estimated 4.2648 s (30 iterations)
+Benchmarking proto/u64/10000000/lsd8: Analyzing
+proto/u64/10000000/lsd8 time:   [142.09 ms 142.28 ms 142.49 ms]
+                        thrpt:  [535.44 MiB/s 536.24 MiB/s 536.94 MiB/s]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking proto/u64/10000000/lsd11
+Benchmarking proto/u64/10000000/lsd11: Warming up for 500.00 ms
+Benchmarking proto/u64/10000000/lsd11: Collecting 10 samples in estimated 3.9118 s (20 iterations)
+Benchmarking proto/u64/10000000/lsd11: Analyzing
+proto/u64/10000000/lsd11
+                        time:   [192.86 ms 193.61 ms 194.46 ms]
+                        thrpt:  [392.33 MiB/s 394.06 MiB/s 395.60 MiB/s]
+# loadavg after: 2.86 2.56 2.52 1/2263 1184682

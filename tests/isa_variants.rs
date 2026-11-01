@@ -418,7 +418,10 @@ fn check_case(
     case: &Case,
 ) -> Result<(), TestCaseError> {
     let def = reg.get(id);
-    let long = (def.class == KernelClass::Selection).then_some(LONG_LEN);
+    // `argsort` on 64-bit keys switches from a comparison sort to a radix sort above 1024
+    // rows, so it needs the long length too.
+    let long = (def.class == KernelClass::Selection || def.name.starts_with("argsort_"))
+        .then_some(LONG_LEN);
     for n in LENGTHS.into_iter().chain([TILED_LEN]).chain(long) {
         for aligned in [true, false] {
             let args = args_for(def, case, aligned, n);

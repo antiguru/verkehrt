@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use crate::kernels::scalar::construct::{add_whole, i64_arg, width};
 use crate::kernels::scalar::elementwise::arity_error;
+use crate::kernels::scalar::index::radix::RadixKey;
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::scan::ScanOp;
 use crate::kernels::{
@@ -157,27 +158,36 @@ impl WholeBody for Histogram {
 /// order.
 pub(crate) struct ArgSort<T>(PhantomData<fn() -> T>);
 
-impl<T: Elem + Ord> WholeBody for ArgSort<T> {
+impl<T: RadixKey> WholeBody for ArgSort<T> {
     #[inline(always)]
     fn run(args: &[Value]) -> Result<Value, String> {
         let [xs] = args else {
             return Err(arity_error(1, args.len()));
         };
         let xs = array_arg(xs, T::TYPE)?.as_slice::<T>();
-        Array::try_build::<i64>(xs.len(), |out| {
-            for (o, i) in out.iter_mut().zip(0..) {
-                *o = i;
-            }
-            // Ties break on the position, so the unstable sort is stable, and it needs no
-            // buffer beyond the output.
-            out.sort_unstable_by_key(|&i| {
-                let row = usize::try_from(i.cast_unsigned()).unwrap_or(0);
-                (xs[row], i)
-            });
+        Array::build_bytes(xs.len(), ScalarType::I64, |out| {
+            radix::argsort_into(xs, bytemuck::cast_slice_mut(out))
         })
         .map(Value::Array)
     }
 }
+
+/// The plan 4 body of `argsort`, kept as the oracle that pins the kernel's output: the stable
+/// ascending positions of `xs`.
+#[cfg(test)]
+fn argsort_reference<T: Elem + Ord>(xs: &[T]) -> Vec<i64> {
+    let mut out: Vec<i64> = (0..).take(xs.len()).collect();
+    // Ties break on the position, so the unstable sort is stable.
+    out.sort_unstable_by_key(|&i| {
+        let row = usize::try_from(i.cast_unsigned()).unwrap_or(0);
+        (xs[row], i)
+    });
+    out
+}
+
+mod radix;
+#[cfg(test)]
+mod tests;
 
 /// The body of `reduce_into`, the fold `O` of the values per key in `0..n`. Rows of storage type
 /// `T` fold into buckets of `O::Out`, and a bucket without rows holds `O::identity`.
@@ -266,7 +276,7 @@ macro_rules! argsort {
             op: Some(Op::ArgSort),
             inputs: vec![InputSpec::Array($ty)],
             output: ValueType::Array(ScalarType::I64),
-            // One row read and one position written, ignoring the comparisons.
+            // One row read and one position written, ignoring the sort passes.
             cost: width($ty) + 8,
             commutative: false,
             pattern: None,

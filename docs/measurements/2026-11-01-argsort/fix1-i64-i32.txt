@@ -1,0 +1,36 @@
+# fix round 1: from_index via u32::try_from, scalar only, 10M rows
+# head: d93057f, dirty files: 3
+# command: cargo bench --bench tier1 -- 'tier2/argsort-(i64|i32)/scalar'
+# loadavg before: 2.02 2.27 2.65 19/2265 1194431
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier2/argsort-i64/scalar
+Benchmarking tier2/argsort-i64/scalar: Warming up for 500.00 ms
+Benchmarking tier2/argsort-i64/scalar: Collecting 10 samples in estimated 3.3101 s (20 iterations)
+Benchmarking tier2/argsort-i64/scalar: Analyzing
+tier2/argsort-i64/scalar
+                        time:   [165.11 ms 165.35 ms 165.65 ms]
+                        thrpt:  [460.57 MiB/s 461.41 MiB/s 462.07 MiB/s]
+                 change:
+                        time:   [+10.527% +10.812% +11.074%] (p = 0.00 < 0.05)
+                        thrpt:  [−9.9696% −9.7569% −9.5246%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking tier2/argsort-i32/scalar
+Benchmarking tier2/argsort-i32/scalar: Warming up for 500.00 ms
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.7s or enable flat sampling.
+Benchmarking tier2/argsort-i32/scalar: Collecting 10 samples in estimated 3.7260 s (55 iterations)
+Benchmarking tier2/argsort-i32/scalar: Analyzing
+tier2/argsort-i32/scalar
+                        time:   [66.985 ms 67.157 ms 67.380 ms]
+                        thrpt:  [566.14 MiB/s 568.03 MiB/s 569.49 MiB/s]
+                 change:
+                        time:   [+7.2726% +8.1129% +9.3157%] (p = 0.00 < 0.05)
+                        thrpt:  [−8.5218% −7.5041% −6.7795%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+# loadavg after: 2.63 2.58 2.72 1/2257 1194662
