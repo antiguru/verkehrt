@@ -127,17 +127,6 @@ pub(super) fn compare_narrowed(src: &str, names: &[&str]) -> (Outcome, Vec<u64>,
         let off = run(src, names, variant, Tiling::Off, false);
         assert_eq!(off.outcome, want, "{variant:?} untiled outcome of\n{src}");
         assert_eq!(off.regions, 0, "untiled runs tile no region");
-        // Selective evaluation needs tiles, so without them it changes nothing.
-        let untiled = run(src, names, variant, Tiling::Off, true);
-        assert_eq!(
-            untiled.outcome, want,
-            "{variant:?} untiled outcome of\n{src}"
-        );
-        assert_eq!(
-            untiled.lines, off.lines,
-            "{variant:?} untiled lines of\n{src}"
-        );
-        assert_eq!(untiled.narrowed, 0, "untiled runs narrow nothing");
         for t in tilings().into_iter().skip(1) {
             let got = run(src, names, variant, t, false);
             assert_eq!(got.outcome, want, "{variant:?} {t:?} outcome of\n{src}");

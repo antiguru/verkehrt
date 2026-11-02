@@ -291,8 +291,8 @@ impl<'a> Machine<'a> {
 
     /// Per kernel of `region` over the values `inputs`, whether it is a guard, and if so the
     /// value of its left operand's rows that leaves its result open, true for `and_bool` and
-    /// false for `or_bool`. A guard is an `and_bool` or `or_bool` whose left operand is an
-    /// array and whose right operand is a region kernel whose subtree holds only total
+    /// false for `or_bool`. A guard is a total `and_bool` or `or_bool` whose left operand is
+    /// an array and whose right operand is a region kernel whose subtree holds only total
     /// region kernels.
     fn guards(&self, region: &Region, inputs: &[Value]) -> Vec<Option<bool>> {
         // Post-order puts every kernel after the kernels it reads, so one pass finds the
@@ -320,7 +320,8 @@ impl<'a> Machine<'a> {
                 Src::Input(i) => matches!(inputs[i], Value::Array(_)),
                 Src::Kernel(_) => true,
             };
-            let guard = k.elem == ScalarType::Bool
+            let guard = def.total
+                && k.elem == ScalarType::Bool
                 && matches!(k.args[..], [left, Src::Kernel(right)]
                     if left_array(left) && total[right]);
             guards.push(guard.then_some(open));

@@ -871,3 +871,55 @@ fn the_open_span_scan_matches_a_row_by_row_scan() {
         }
     }
 }
+
+#[test]
+fn guards_over_tiles_longer_than_the_scan_blocks_narrow() {
+    // 100-row tiles over 300 rows put whole 64-row blocks without open rows at the start and
+    // the end of a tile, which the scan skips at once: rows 100 to 163 for `h`, rows 136 to
+    // 199 for `t`, and whole tiles for `a`.
+    let src = "let x = iota(300);
+let a = and(and(x >= 110, x < 190), x != 150);
+let o = or(x < 30, x != 250);
+let h = and(x >= 180, x != 190);
+let t = and(x < 130, x != 5);";
+    let inner: Vec<bool> = (0..300).map(|x| x >= 110).collect();
+    let outer: Vec<bool> = (0..300).map(|x| (110..190).contains(&x)).collect();
+    let open_or: Vec<bool> = (0..300).map(|x| x >= 30).collect();
+    let a = text((0..300).map(|x| (110..190).contains(&x) && x != 150));
+    let o = text((0..300).map(|x| x < 30 || x != 250));
+    let h = text((0..300).map(|x| x >= 180 && x != 190));
+    let t = text((0..300).map(|x| x < 130 && x != 5));
+    let open_h: Vec<bool> = (0..300).map(|x| x >= 180).collect();
+    let open_t: Vec<bool> = (0..300).map(|x| x < 130).collect();
+    let tiling = Tiling::Rows(std::num::NonZeroUsize::new(100).unwrap());
+    let want = [inner, outer, open_or, open_h, open_t]
+        .iter()
+        .map(|open| narrowed(open, 100))
+        .sum::<u64>();
+    assert!(want > 0);
+    for variant in variants() {
+        let names = ["a", "o", "h", "t"];
+        let off = run(src, &names, variant, tiling, false);
+        let on = run(src, &names, variant, tiling, true);
+        let (_, bound) = on.outcome.as_ref().unwrap();
+        let rows = [a.clone(), o.clone(), h.clone(), t.clone()];
+        assert_eq!(bound, &rows, "{variant:?}");
+        assert_eq!(on.outcome, off.outcome, "{variant:?}");
+        assert_eq!(on.regions, 4, "{variant:?}");
+        assert_eq!(on.narrowed, want, "{variant:?}");
+        assert_eq!(off.narrowed, 0, "{variant:?}");
+    }
+}
+
+#[test]
+fn selective_evaluation_without_tiles_changes_nothing() {
+    let src = "let x = iota(100);
+let m = and(and(x >= 40, x < 60), x != 50);";
+    for variant in variants() {
+        let off = run(src, &["m"], variant, Tiling::Off, false);
+        let on = run(src, &["m"], variant, Tiling::Off, true);
+        assert_eq!(on.outcome, off.outcome, "{variant:?}");
+        assert_eq!(on.lines, off.lines, "{variant:?}");
+        assert_eq!((on.regions, on.narrowed), (0, 0), "{variant:?}");
+    }
+}
