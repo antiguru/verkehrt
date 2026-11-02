@@ -22,6 +22,12 @@
 //!   within that output surfaces may differ. The prints before the failing output appear in
 //!   full, so the printed output must equal the evaluator's. Oracle 3 applies to the scalar
 //!   outcomes of both plans.
+//! * Oracle 4, tiled against untiled: on the scalar interpreter, each plan run with
+//!   `Tiling::Rows(3)` gives the output and exports of the run with `Tiling::Off`, and fails
+//!   with the same error, compared by kind, message, and span. That is stricter than oracle 2
+//!   on purpose, because a tiled run falls back to whole evaluation on any error and so must
+//!   raise the whole evaluation's error. Oracle 1 runs every variant with the same three-row
+//!   tiles, so the tiled kernels of every ISA are compared too.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -206,6 +212,10 @@ pub struct Engine {
 /// The tile row count of oracle 4.
 const TILE_ROWS: usize = 3;
 
+fn tile_rows() -> NonZeroUsize {
+    NonZeroUsize::new(TILE_ROWS).expect("the tile has rows")
+}
+
 /// What a checked case did, for the statistics.
 pub struct Verdict {
     /// The error that stopped the program, with its message.
@@ -238,6 +248,8 @@ impl Engine {
                 let interp = Interpreter::new(Options {
                     isa: Some(v.isa),
                     backend: v.backend,
+                    // Every variant tiles, so oracle 1 compares the tiled kernels too.
+                    tiling: Tiling::Rows(tile_rows()),
                     ..Options::default()
                 })
                 .expect("the variant is available");
@@ -254,9 +266,7 @@ impl Engine {
         };
         let reg = Registry::new();
         Engine {
-            tiled: scalar(Tiling::Rows(
-                NonZeroUsize::new(TILE_ROWS).expect("the tile has rows"),
-            )),
+            tiled: scalar(Tiling::Rows(tile_rows())),
             untiled: scalar(Tiling::Off),
             fused: planner(false),
             unfused: planner(true),
@@ -313,15 +323,24 @@ impl Engine {
             ));
         }
         let before = self.tiled.tiled_regions();
-        let tiled = run(&self.tiled, &fused, case);
-        let tiled_regions = self.tiled.tiled_regions() - before;
-        let untiled = run(&self.untiled, &fused, case);
-        if tiled != untiled {
-            return Err(format!(
-                "oracle 4: the run with {TILE_ROWS}-row tiles differs from the untiled run\n{}\n\
-                 fused plan:\n{fused_plan}tiled: {tiled}\nuntiled: {untiled}",
-                describe(case),
-            ));
+        let mut tiled_regions = 0;
+        for (plan, text, label) in [
+            (&fused, &fused_plan, "fused"),
+            (&unfused, &unfused_plan, "unfused"),
+        ] {
+            let tiled = run(&self.tiled, plan, case);
+            if label == "fused" {
+                tiled_regions = self.tiled.tiled_regions() - before;
+            }
+            let untiled = run(&self.untiled, plan, case);
+            if tiled != untiled {
+                return Err(format!(
+                    "oracle 4: the run with {TILE_ROWS}-row tiles differs from the untiled run \
+                     of the {label} plan\n{}\n{label} plan:\n{text}tiled: {tiled}\n\
+                     untiled: {untiled}",
+                    describe(case),
+                ));
+            }
         }
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.

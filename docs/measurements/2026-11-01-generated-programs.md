@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 48 cases on 4 workers, 7.5 s to 8.1 s in release, and in debug 10.2 s on 32 cores against 17.9 s limited to 2 cores with `taskset -c 0,1`, both measured during the final review |
+| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 13.7 s in debug with the tiled oracle, measured on the 32-core host |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -24,9 +24,9 @@ Oracle 3 compares the scalar outcome against a reference evaluator that calls no
 It shares the front end with the pipeline: the parser and `check::check`, including the lifted typing of lambda bodies through the kernel registry, and it prints values through the library's `Value` display.
 Floats compare by bits except that all NaNs are equal, per the base spec.
 A value that reaches no print or export is not computed, so errors in it are not raised, which is the ruling the evaluator follows.
-Oracle 4 runs the fused plan on the scalar interpreter with `Tiling::Rows(3)` and with `Tiling::Off`.
+Oracle 4 runs each plan on the scalar interpreter with `Tiling::Rows(3)` and with `Tiling::Off`.
 It requires equal printed text and export bits, and equal errors including the kind, message, and span, which is stricter than oracle 2 because a tiled run falls back to whole evaluation on any error.
-Tiles of three rows make most chains over the short generated arrays span several tiles.
+Oracle 1 runs every variant with the same three-row tiles, so the tiled kernels of every ISA are compared too.
 The CI run gates on region runs that complete tiled: at least 54 must do so, a third of the 163 the fixed CI seed gives.
 The 5000-case release run at seed 2000000 had no oracle failure and 13160 region runs that completed tiled.
 
