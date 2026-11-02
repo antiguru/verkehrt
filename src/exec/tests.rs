@@ -5,10 +5,21 @@ use crate::kernels::{Backend, ElementwiseBody, FeatureSet, InputSpec, Isa, Kerne
 use crate::lower::LeafId;
 use crate::{Interpreter, Options};
 
-/// The tilings every test compares, untiled first.
+/// The tilings every test compares, untiled first. 3 and 37 rows put tile boundaries at
+/// rows that are not multiples of any vector width, so tiles start unaligned and end in
+/// vector tails.
 fn tilings() -> Vec<Tiling> {
     let rows = |n| Tiling::Rows(NonZeroUsize::new(n).unwrap());
-    vec![Tiling::Off, rows(1), rows(3), rows(16)]
+    vec![Tiling::Off, rows(1), rows(3), rows(16), rows(37)]
+}
+
+/// Every instruction set this host runs, with both backends, scalar first.
+fn variants() -> Vec<(Isa, Backend)> {
+    Isa::ALL
+        .into_iter()
+        .filter(|isa| isa.is_available_with(FeatureSet::EMPTY))
+        .flat_map(|isa| [(isa, Backend::Auto), (isa, Backend::Intrinsics)])
+        .collect()
 }
 
 /// The rows of a value as text, every row in full. Floats print as `{:?}`, so distinct
@@ -24,12 +35,18 @@ fn rows(v: &Value) -> Vec<String> {
 /// names asked for, or the error.
 type Outcome = Result<(String, Vec<Vec<String>>), Error>;
 
-/// Runs `src` with `tiling` on the scalar instruction set, keeping its `let`s bound. Returns
-/// the outcome with the rows of `names`, the trace and stats lines without their times, and
-/// the tiled region count.
-fn run(src: &str, names: &[&str], tiling: Tiling) -> (Outcome, Vec<String>, u64) {
+/// Runs `src` with `tiling` on the instruction set and backend of `variant`, keeping its
+/// `let`s bound. Returns the outcome with the rows of `names`, the trace and stats lines
+/// without their times, and the tiled region count.
+fn run(
+    src: &str,
+    names: &[&str],
+    variant: (Isa, Backend),
+    tiling: Tiling,
+) -> (Outcome, Vec<String>, u64) {
     let mut interp = Interpreter::new(Options {
-        isa: Some(Isa::Scalar),
+        isa: Some(variant.0),
+        backend: variant.1,
         trace: true,
         stats: true,
         tiling,
@@ -61,20 +78,37 @@ fn run(src: &str, names: &[&str], tiling: Tiling) -> (Outcome, Vec<String>, u64)
     (outcome, lines, interp.tiled_regions())
 }
 
-/// Runs `src` under every tiling and checks that each gives the untiled outcome and the
-/// untiled trace and stats lines. Returns the untiled outcome and the tiled region count of
+/// Runs `src` under every tiling on every variant and checks that each gives the outcome
+/// of the untiled scalar run and, with `same_trace`, the trace and stats lines of the
+/// untiled run of its variant. Returns the untiled outcome and the tiled region count of
 /// each tiled run.
-fn compare(src: &str, names: &[&str]) -> (Outcome, Vec<u64>) {
-    let mut runs = tilings().into_iter().map(|t| (t, run(src, names, t)));
-    let (_, (want, want_lines, off_regions)) = runs.next().unwrap();
-    assert_eq!(off_regions, 0, "untiled runs tile no region");
+fn compare_traced(src: &str, names: &[&str], same_trace: bool) -> (Outcome, Vec<u64>) {
+    let (want, _, _) = run(src, names, (Isa::Scalar, Backend::Auto), Tiling::Off);
     let mut counts = Vec::new();
-    for (t, (got, lines, regions)) in runs {
-        assert_eq!(got, want, "{t:?} outcome of\n{src}");
-        assert_eq!(lines, want_lines, "{t:?} trace and stats of\n{src}");
-        counts.push(regions);
+    for variant in variants() {
+        let mut runs = tilings()
+            .into_iter()
+            .map(|t| (t, run(src, names, variant, t)));
+        let (_, (off, off_lines, off_regions)) = runs.next().unwrap();
+        assert_eq!(off, want, "{variant:?} untiled outcome of\n{src}");
+        assert_eq!(off_regions, 0, "untiled runs tile no region");
+        for (t, (got, lines, regions)) in runs {
+            assert_eq!(got, want, "{variant:?} {t:?} outcome of\n{src}");
+            if same_trace {
+                assert_eq!(
+                    lines, off_lines,
+                    "{variant:?} {t:?} trace and stats of\n{src}"
+                );
+            }
+            counts.push(regions);
+        }
     }
     (want, counts)
+}
+
+/// `compare_traced` with equal trace and stats lines.
+fn compare(src: &str, names: &[&str]) -> (Outcome, Vec<u64>) {
+    compare_traced(src, names, true)
 }
 
 /// Checks that `src` binds every name of `want` to its rows under every tiling, and tiles
@@ -154,7 +188,7 @@ fn chain_in_the_untaken_branch_does_not_run() {
 let r = if length(x) > 1000 { (x * 3) + 1 } else { x };";
     let (outcome, counts) = compare(src, &["r"]);
     assert_eq!(outcome.unwrap().1, [text(0..100)]);
-    assert_eq!(counts, [0, 0, 0]);
+    assert!(counts.iter().all(|&c| c == 0), "{counts:?}");
 }
 
 #[test]
@@ -182,7 +216,106 @@ fn failing_regions_raise_the_untiled_error() {
         let e = outcome.unwrap_err();
         assert_eq!(e.kind, ErrorKind::Runtime, "{src}");
         assert!(e.span.is_some(), "{src}");
-        assert_eq!(counts, [0, 0, 0], "{src}");
+        assert!(counts.iter().all(|&c| c == 0), "{counts:?} for\n{src}");
+    }
+}
+
+#[test]
+fn chains_with_unaligned_tiles_and_vector_tails() {
+    // 1003 rows end every tested tiling, and every vector width, in a partial tile.
+    let src = "let x = iota(1003);
+let a = ((cast_f64(x) * 0.25) + 1.5) - cast_f64(x);
+let b = (cast_f32(x) + cast_f32(x)) * cast_f32(x);
+let c = ((cast_i32(x) + cast_i32(x)) * cast_i32(x)) - cast_i32(x);
+let m = or(and(x > 100, x < 900), x == 1001);";
+    let a = (0..1003).map(|x| format!("{:?}", (f64::from(x) * 0.25 + 1.5) - f64::from(x)));
+    let b = (0..1003u16).map(|x| format!("{:?}", (f32::from(x) + f32::from(x)) * f32::from(x)));
+    let c = (0..1003).map(|x| (x + x) * x - x);
+    let m = (0..1003).map(|x| (x > 100 && x < 900) || x == 1001);
+    assert_tiles(
+        src,
+        &[
+            ("a", a.collect()),
+            ("b", b.collect()),
+            ("c", text(c)),
+            ("m", text(m)),
+        ],
+    );
+}
+
+/// The kernel names of the trace lines of running `src` with `tiling`, in order.
+fn trace_order(src: &str, tiling: Tiling) -> Vec<String> {
+    let mut interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        trace: true,
+        tiling,
+        ..Options::default()
+    })
+    .unwrap();
+    let mut diag = Vec::new();
+    interp.run(src, &mut std::io::sink(), &mut diag).unwrap();
+    String::from_utf8(diag)
+        .unwrap()
+        .lines()
+        .map(|l| l.split(' ').nth(1).unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn region_lines_follow_their_inputs_in_post_order() {
+    // The right operand of the root is a region kernel over a whole kernel input.
+    let src = "let x = iota(100);
+print(sum(((x * 3) - x) + (gather(x, x) * 2)));";
+    let names = |n: &[&str]| n.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(
+        trace_order(src, Tiling::Off),
+        names(&[
+            "iota",
+            "mul_i64",
+            "sub_i64",
+            "gather_i64",
+            "mul_i64",
+            "add_i64",
+            "reduce_add_i64"
+        ]),
+    );
+    for tiling in tilings().into_iter().skip(1) {
+        assert_eq!(
+            trace_order(src, tiling),
+            names(&[
+                "iota",
+                "gather_i64",
+                "mul_i64",
+                "sub_i64",
+                "mul_i64",
+                "add_i64",
+                "reduce_add_i64"
+            ]),
+            "{tiling:?}",
+        );
+    }
+}
+
+#[test]
+fn a_left_kernel_error_wins_over_a_right_input_error() {
+    // The whole evaluation fails in `div_const` before it reaches the failing right input.
+    // The tiled attempt evaluates that input first and fails there, and its fallback must
+    // still raise the `div_const` error. The attempt's extra trace lines of the right input
+    // are allowed, so traces are not compared.
+    for right in [
+        "gather(iota(40), iota(40) - 1)",
+        "load_i64(\"/nonexistent/x.bin\")",
+    ] {
+        let src = format!(
+            "let z = length(slice(iota(3), 0, 0));
+let r = div_const(iota(40) * 2, z) + {right};
+print(r);"
+        );
+        let (outcome, counts) = compare_traced(&src, &[], false);
+        let e = outcome.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Runtime, "{src}");
+        assert_eq!(e.message, "div_const: division by zero", "{src}");
+        assert!(counts.iter().all(|&c| c == 0), "{counts:?} for\n{src}");
     }
 }
 
@@ -229,10 +362,16 @@ impl ElementwiseBody for FailAt {
     }
 }
 
-/// Evaluates `node` over `leaves` with `tiling` and returns the result and the tiled
-/// region count.
-fn eval_node(reg: &Registry, node: &PlanNode, leaves: &[Leaf], tiling: Tiling) -> (Slot, u64) {
-    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
+/// Evaluates `node` over `leaves` with `tiling` on the instruction set and backend of
+/// `variant`, and returns the result and the tiled region count.
+fn eval_node(
+    reg: &Registry,
+    node: &PlanNode,
+    leaves: &[Leaf],
+    variant: (Isa, Backend),
+    tiling: Tiling,
+) -> (Slot, u64) {
+    let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
     let tiled = AtomicU64::new(0);
     let env = Env::new();
     let result = Machine {
@@ -281,26 +420,33 @@ fn kernel_failing_in_a_later_tile_raises_the_untiled_error() {
             Leaf::Const(Value::Scalar(Scalar::I64(1))),
         ]
     };
-    let (untiled, _) = eval_node(&reg, &node, &leaves(100), Tiling::Off);
+    let scalar = (Isa::Scalar, Backend::Auto);
+    let (untiled, _) = eval_node(&reg, &node, &leaves(100), scalar, Tiling::Off);
     let want = untiled.unwrap_err();
     assert_eq!(want.message, "fail_at: row 89 holds 90");
     assert_eq!(want.span, Some(Span { line: 3, col: 1 }));
-    for tiling in tilings() {
-        let (got, regions) = eval_node(&reg, &node, &leaves(100), tiling);
-        assert_eq!(got.unwrap_err(), want, "{tiling:?}");
-        assert_eq!(regions, 0, "{tiling:?}");
-    }
     // Without the failing row every tiled run completes and matches the untiled value.
-    let (passing, _) = eval_node(&reg, &node, &leaves(80), Tiling::Off);
+    let (passing, _) = eval_node(&reg, &node, &leaves(80), scalar, Tiling::Off);
     let Ok(Value::Array(whole)) = passing else {
         panic!("expected an array, got {passing:?}");
     };
-    for tiling in tilings().into_iter().skip(1) {
-        let (got, regions) = eval_node(&reg, &node, &leaves(80), tiling);
-        let Ok(Value::Array(got)) = got else {
-            panic!("expected an array, got {got:?}");
-        };
-        assert_eq!(got.as_slice::<i64>(), whole.as_slice::<i64>(), "{tiling:?}");
-        assert_eq!(regions, 1, "{tiling:?}");
+    for variant in variants() {
+        for tiling in tilings() {
+            let (got, regions) = eval_node(&reg, &node, &leaves(100), variant, tiling);
+            assert_eq!(got.unwrap_err(), want, "{variant:?} {tiling:?}");
+            assert_eq!(regions, 0, "{variant:?} {tiling:?}");
+        }
+        for tiling in tilings().into_iter().skip(1) {
+            let (got, regions) = eval_node(&reg, &node, &leaves(80), variant, tiling);
+            let Ok(Value::Array(got)) = got else {
+                panic!("expected an array, got {got:?}");
+            };
+            assert_eq!(
+                got.as_slice::<i64>(),
+                whole.as_slice::<i64>(),
+                "{variant:?} {tiling:?}"
+            );
+            assert_eq!(regions, 1, "{variant:?} {tiling:?}");
+        }
     }
 }
