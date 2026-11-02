@@ -2,7 +2,8 @@
 
 This document measures range narrowing in tiled regions (issue #49) on the mask-chain queries ClickBench q40, q41 and q42 and TPC-H q06.
 Narrowing lowers the best variant of q40, q41 and q42 by 17%, 20% and 20% (criterion means, 0.83, 0.80 and 0.80 times), and all 15 variant pairs of the three queries run more than 10% faster in each of three pairs of runs.
-The comparisons evaluate 0.497, 0.512 and 0.531 of the whole-array rows on those three and 0.998 on TPC-H q06, which matches the spec's simulation, and TPC-H q06 does not change beyond the noise band (1.01 to 1.05 times).
+The comparisons evaluate 0.497, 0.512 and 0.531 of the whole-array rows on those three and 0.998 on TPC-H q06, which matches the spec's simulation, and TPC-H q06 does not change beyond the noise band (1.00 to 1.05 times).
+On q06 the narrowing finds almost nothing to skip and still scans the left operands, a small cost this record did not attribute: `and_bool` rises from 252 to 330 us in the stats and the criterion means rise by up to 5%.
 Comparison time fell with the rows evaluated on the three ClickBench queries (0.52 to 0.60 of untiled-whole time for 0.50 to 0.53 of the rows), which is the premise the spec sets for selection vectors.
 Across both suites, 15 of 110 query and variant pairs run more than 10% faster and 2 run more than 10% slower in the first pair, and neither slower pair is a result of narrowing on this evidence: `q03` on `x86-64-v4-intrinsics` is unresolved because its repeat disagrees, and TPC-H q01 on `x86-64-v3-auto` reproduces at 1.11 and 1.12 on a query where no tile narrowed.
 The before numbers come from the same build with `VERKEHRT_SELECTIVE=off`, and the DuckDB and corgi figures are reused from earlier records and were not re-run.
@@ -23,7 +24,7 @@ The method is the one in `2026-11-02-tiled-regions.md`.
 Verkehrt times are criterion means with `sample_size(10)`, a 0.5 s warm-up and a 3 s measurement time.
 Per-kernel totals come from `acceptance_stats` on `x86-64-v4` with the default backend (best of five fresh runs by total kernel time).
 Before each timed run the 1-minute load had to be at or below 4, and every evidence file records the load at its start and end.
-The 15-minute load was 9.13 at the start of `stats-off.txt` and 3.62 at the start of `stats-other-off.txt`, and the 1-minute gate does not cover that history, so absolute times may differ from a quiet host's while the off and on runs of a pair stay adjacent.
+The 15-minute load was 9.13 at the start of `stats-off.txt`, 8.89 at the start of `bench-four-off.txt`, and 3.62 at the start of `stats-other-off.txt`, and the 1-minute gate does not cover that history, so absolute times may differ from a quiet host's while the off and on runs of a pair stay adjacent.
 Differences within about 10% count as noise.
 
 ### Evidence files
@@ -74,11 +75,11 @@ Two calls do not belong to the mask and are removed: the `iota(n) == 0` of q40's
 The fractions agree with the simulation to the third decimal, so there is no difference to explain.
 The `narrowed_tiles` counts are 110 (q40), 78 (q41), 73 (q42) and 235 (TPC-H q06), so q06's tiles narrow often, by a few rows each time.
 The `and_bool` and `or_bool` kernels read fewer bytes too: `and_bool` reads 4,138,102 bytes in q40 against 10,000,000 untiled-whole, because a guard runs only over its range.
-`eq_i64` reads 21,628,496 bytes in q40 against 40,400,896, which equals the earlier probe, and the stats record the calls as 6 in both runs, so call counts are unchanged.
+`eq_i64` reads 21,628,496 bytes in q40 against 40,400,896, and the stats record the calls as 6 in both runs, so call counts are unchanged.
 
 ## Comparison time against rows evaluated
 
-The table gives, from the same two stats files, the time in us of the mask comparison kernels (`eq_i64`, `le_i64`, `lt_i64`, including the small calls above, which are one call over 400,896 bytes in q40 and one call over 11,520 bytes in q42), and the guards `and_bool` and `or_bool`.
+The table gives, from the same two stats files, the time in us of the mask comparison kernels (`eq_i64` and `le_i64`, plus `lt_i64` in TPC-H q06 only, so q42's 11,520-byte `lt_i64` call is not in the column, while q40's `iota(n) == 0` call of 400,896 bytes is in it), and the guards `and_bool` and `or_bool`.
 
 | Query | comparison rows | comparison time off | on | on / off | `and_bool` off | `and_bool` on | total kernel time off | on |
 |---|---|---|---|---|---|---|---|---|
@@ -95,7 +96,7 @@ The total kernel time falls to 0.79, 0.80 and 0.83 of the off run, and the crite
 
 TPC-H q06 is the control for the per-tile cost, because narrowing skips 0.17% of its comparison rows but still scans the left operand of its guards in 235 narrowed guard evaluations.
 Its guard time rises from 251.9 to 330.2 us (`and_bool`) and its comparison time by 6% (970.3 to 1023.8 us), which is inside the 10% band, and its criterion means rise by 1% to 5% in each of three pairs (below).
-The earlier probe in the task that added the 64-byte block scan found `and_bool` slower with a byte scan (977 against 269 us), and with the block scan `and_bool` takes 269.9 us on against 308.9 us off in q40 and is level in q41 (291.2 against 285.2) and q42 (223.2 against 218.0), so on the ClickBench queries the guards are not slower beyond the band.
+`and_bool` takes 269.9 us on against 308.9 us off in q40 and is level in q41 (291.2 against 285.2) and q42 (223.2 against 218.0), so on the ClickBench queries the guards are not slower beyond the band.
 The `and_bool` rise on q06 is 78 us in one stats run, and the criterion rise of 3% to 5% on the best variant is inside the band, so q06 pays a small cost, which this record did not attribute, for finding almost nothing to skip.
 
 ## Results
@@ -173,7 +174,7 @@ Two pairs run more than 10% slower in the first pair, and the second pair repeat
 
 The measured premise is that comparison time falls with the rows evaluated, and it holds on q40, q41 and q42 for ranges that are contiguous because `CounterID == 62` keeps long runs of rows.
 The spec's rule makes selection vectors for TPC-H q06 the next step on this evidence, and the evidence supports that step as a premise and not as a result: q06's comparison rows are 0.998 of the whole and its comparison time did not fall, as the simulation predicted.
-If a selection-vector comparison on q06 cost time per row like the ClickBench comparisons do (0.52 to 0.60 of the time for 0.50 to 0.53 of the rows, so 1.04 to 1.13 times per row), its 0.40 of the rows would take about 0.42 to 0.45 of 970 us, which saves about 530 to 560 us of its 1961 us kernel total.
+If a selection-vector comparison on q06 cost time per row like the ClickBench comparisons do (0.52 to 0.60 of the time for 0.50 to 0.53 of the rows, so 1.02 to 1.12 times per row), its 0.40 of the rows would take about 0.41 to 0.45 of 970 us, which saves about 530 to 570 us of its 1961 us kernel total.
 That is an upper bound by inference, because the ClickBench rows are contiguous ranges that call the existing kernel entries on a slice, while selection vectors read scattered rows, and this record measured no gathered comparison.
 The spec's simulation puts the q06 rows that pass the shipdate range across the tiles, so the cost of a gather or compress before each comparison decides whether the 0.40 turns into time, and this record did not measure it.
 Beyond q06, `eq_i64` on q40, q41 and q42 still reads each column for its range, and `compress_i64`, the sorts and the second reads of `EventDate` and `TraficSourceID` (issue #39) are untouched by this layer.

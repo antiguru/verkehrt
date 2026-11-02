@@ -5,9 +5,9 @@
 //! `verkehrt run --isa` takes it. `QUERY` names a ClickBench program, or a TPC-H program as
 //! `tpch/q06`, which reads `VERKEHRT_TPCH` instead. `VERKEHRT_TILE_ROWS` is `off` or a tile row
 //! count and replaces the default tiling, `VERKEHRT_SHARING=off` turns shared evaluation off,
-//! and `VERKEHRT_SELECTIVE=off` turns selective evaluation off. The columns load as the acceptance bench loads them
-//! and are bound as interpreter globals, so `Interpreter::run` collects the statistics that
-//! `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
+//! and `VERKEHRT_SELECTIVE=off` turns selective evaluation off. The columns load as the
+//! acceptance bench loads them and are bound as interpreter globals, so `Interpreter::run`
+//! collects the statistics that `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
 //! with the least total kernel time prints, with the number of region runs that completed tiled
 //! (`Interpreter::tiled_regions`) and the guard evaluations that narrowed
 //! (`Interpreter::narrowed_tiles`). The times still differ from the criterion
