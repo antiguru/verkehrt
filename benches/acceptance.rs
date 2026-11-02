@@ -9,7 +9,8 @@
 //! `tests/acceptance/SUITE`. `VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` replace the
 //! sample size (10) and the measurement time in seconds (3) for longer runs.
 //! `VERKEHRT_TILE_ROWS` is `off` or a tile row count and replaces the default tiling of every
-//! variant. `VERKEHRT_SHARING=off` turns shared evaluation off in every variant.
+//! variant. `VERKEHRT_SHARING=off` turns shared evaluation off in every variant, and
+//! `VERKEHRT_SELECTIVE=off` turns selective evaluation off in every variant.
 
 use std::fs;
 use std::io::sink;
@@ -17,7 +18,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, sharing_from_env, tiling_from_env};
+use verkehrt::columns::{
+    CLICKBENCH_SIGNED, load_inputs, selective_from_env, sharing_from_env, tiling_from_env,
+};
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
 use verkehrt::{Interpreter, Options};
@@ -31,6 +34,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
             backend,
             tiling: tiling_from_env(),
             no_sharing: !sharing_from_env(),
+            no_selective: !selective_from_env(),
             ..Options::default()
         })
         .unwrap()
