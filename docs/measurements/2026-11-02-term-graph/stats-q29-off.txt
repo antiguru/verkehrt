@@ -1,0 +1,10 @@
+sharing: off (on means VERKEHRT_SHARING unset)
+args: q29
+load at start: 2.88 9.53 16.38
+query q29 total kernel time 8124.5 us
+tiled_regions 0
+stats add_i64_s calls=89 bytes=0 time=10.1
+stats length_i64 calls=89 bytes=712000000 time=8.2
+stats mul_i64_s calls=89 bytes=0 time=30.3
+stats reduce_add_i64 calls=90 bytes=720000000 time=8075.9
+load at end: 2.69 9.16 16.15

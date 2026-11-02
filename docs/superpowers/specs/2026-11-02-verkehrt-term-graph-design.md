@@ -25,6 +25,8 @@ The comment on `sum_rules` states this, and the `Plain` guard keeps a conditiona
 Shared evaluation removes the second evaluation without changing the rewrite.
 This is a side effect of the design and not a goal the measurement tracks.
 
+Outcome: the measurement record `docs/measurements/2026-11-02-term-graph.md` found q29 at 8.13 ms without shared evaluation and 0.123 ms with it in the best variant, so `reduce_add_i64` runs once instead of 90 times and the goal of q29 below 1 ms is met. All acceptance plans are identical to those before the change, no acceptance query loses a tiled region, and the other queries stay inside the noise band, except q03, whose same-code runs vary by more than the band and show no difference in the quietest pair. The function form at depth 7 compiles in 0.59 s and 24 MB instead of 4.84 s and 1.8 GB. The single `reduce_add_i64` call reads 224 us in the stats against about 90 us per call unshared, and the record does not explain it. The design below stands.
+
 ## Goals
 
 * **Linear compilation in repeated reads.** Lowering, hoisting, single-use inlining, egglog emission, and plan construction run in time linear in the number of distinct nodes, so a value read many times costs one node.
