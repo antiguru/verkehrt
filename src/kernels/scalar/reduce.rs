@@ -649,6 +649,7 @@ fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
         cost: width(A::IN_TYPE),
         commutative: false,
         pattern: None,
+        total: false,
         impls,
     });
 }

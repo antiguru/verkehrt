@@ -272,6 +272,7 @@ fn add_fused(
             lhs,
             vars: vars.iter().map(|v| (*v).to_string()).collect(),
         }),
+        total: false,
         impls,
     });
 }

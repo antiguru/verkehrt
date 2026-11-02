@@ -138,6 +138,7 @@ pub(crate) fn add_whole(
         cost,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::Whole(f).scalar_only(),
     });
 }

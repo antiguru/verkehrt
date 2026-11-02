@@ -244,6 +244,7 @@ macro_rules! gather {
             cost: 8 + 2 * width($ty),
             commutative: false,
             pattern: None,
+            total: false,
             impls: gather_impls::<$t, $bool>(),
         })
     };
@@ -280,6 +281,7 @@ macro_rules! argsort {
             cost: width($ty) + 8,
             commutative: false,
             pattern: None,
+            total: false,
             impls: KernelImpl::whole::<ArgSort<$t>>(),
         })
     };
@@ -303,6 +305,7 @@ pub(crate) fn register(reg: &mut Registry) {
         cost: 8 + 2 * 8,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::whole::<Histogram>(),
     });
     gather!(reg, f64, false, ScalarType::F64);

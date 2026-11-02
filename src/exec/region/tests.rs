@@ -306,6 +306,7 @@ fn kernel_failing_in_a_later_tile_raises_the_untiled_error() {
         cost: 16,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::elementwise_scalar::<FailAt>().scalar_only(),
     });
     let add = reg.by_name("add_i64").unwrap();
@@ -385,6 +386,7 @@ fn probe_registry() -> (Registry, KernelId, KernelId, KernelId) {
         cost: 16,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::elementwise_scalar::<FailAt>().scalar_only(),
     });
     let probe = reg.add(KernelDef {
@@ -396,6 +398,7 @@ fn probe_registry() -> (Registry, KernelId, KernelId, KernelId) {
         cost: 16,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::whole::<Probe>(),
     });
     let add = reg.by_name("add_i64").unwrap();

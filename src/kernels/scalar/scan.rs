@@ -68,6 +68,7 @@ fn register_prev<T: Elem, const BOOL: bool>(reg: &mut Registry) {
         cost: 2 * width(ty),
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::scan::<Prev<T, BOOL>>(),
     });
 }
@@ -340,6 +341,7 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         cost,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::scan::<Scan<T, O, false>>(),
     });
     let mut by_impls = KernelImpl::scan::<Scan<T, O, true>>();
@@ -359,6 +361,7 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         cost: cost + 1,
         commutative: false,
         pattern: None,
+        total: false,
         impls: by_impls,
     });
     reg.add(KernelDef {
@@ -375,6 +378,7 @@ fn register_scan<T: Elem, O: ScanOp<T>>(reg: &mut Registry, r: ReduceOp) {
         cost: 8 + width(O::IN_TYPE) + 2 * width(O::OUT_TYPE),
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::whole::<ReduceInto<T, O>>(),
     });
 }
