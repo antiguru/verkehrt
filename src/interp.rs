@@ -9,7 +9,7 @@ use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, Tiling, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
-use crate::lower::{LStmt, Mode, lower};
+use crate::lower::{Mode, lower};
 use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
@@ -240,10 +240,13 @@ impl Interpreter {
         let mut plan_lines = Vec::new();
         let mut sum_rewrites = Vec::new();
         for stmt in &lowered.stmts {
-            let (LStmt::Bind { term, .. } | LStmt::Print { term, .. } | LStmt::Show { term, .. }) =
-                stmt;
             let span = stmt.span();
-            let (node, fired) = self.planner.plan_with_sum_rewrites(&self.reg, term)?;
+            let (node, fired) = self.planner.plan_with_sum_rewrites(
+                &self.reg,
+                &lowered.graph,
+                stmt.term(),
+                span,
+            )?;
             if self.opts.show_plan {
                 let text = render(&self.reg, &node, &lowered.leaves, globals);
                 plan_lines.push(format!("plan {}: {text}", span.line));

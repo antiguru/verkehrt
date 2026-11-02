@@ -16,21 +16,21 @@ fn lowered(src: &str, mode: Mode) -> (Lowered, Globals) {
 }
 
 /// Ops in lowercase, variable leaves as `L_name`, constants as `L_c`, broadcasts as `bcast(..)`.
-fn show(t: &Term, l: &Lowered, g: &Globals) -> String {
-    match &t.kind {
+fn show(t: TermId, l: &Lowered, g: &Globals) -> String {
+    match l.graph.kind(t) {
         TermKind::Leaf(id) => match &l.leaves[id.0 as usize] {
             Leaf::Var(v) => format!("L_{}", g.name(*v).trim_start_matches('_')),
             Leaf::Const(_) => "L_c".to_string(),
         },
-        TermKind::Bcast(a) => format!("bcast({})", show(a, l, g)),
+        TermKind::Bcast(a) => format!("bcast({})", show(*a, l, g)),
         TermKind::Cond(c, t, e) => format!(
             "if({}, {}, {})",
-            show(c, l, g),
-            show(t, l, g),
-            show(e, l, g)
+            show(*c, l, g),
+            show(*t, l, g),
+            show(*e, l, g)
         ),
         TermKind::Op(op, args) => {
-            let args: Vec<String> = args.iter().map(|a| show(a, l, g)).collect();
+            let args: Vec<String> = args.iter().map(|a| show(*a, l, g)).collect();
             format!("{}({})", op_name(*op), args.join(", "))
         }
     }
@@ -42,10 +42,10 @@ fn dump(l: &Lowered, g: &Globals) -> Vec<String> {
         .iter()
         .map(|s| match s {
             LStmt::Bind { var, term, .. } => {
-                format!("bind {} = {}", g.name(*var), show(term, l, g))
+                format!("bind {} = {}", g.name(*var), show(*term, l, g))
             }
-            LStmt::Print { term, .. } => format!("print {}", show(term, l, g)),
-            LStmt::Show { term, .. } => format!("show {}", show(term, l, g)),
+            LStmt::Print { term, .. } => format!("print {}", show(*term, l, g)),
+            LStmt::Show { term, .. } => format!("show {}", show(*term, l, g)),
         })
         .collect()
 }
@@ -137,20 +137,72 @@ fn input_and_export() {
 }
 
 #[test]
-fn term_equality_ignores_span() {
-    let a = Term {
-        kind: TermKind::Leaf(LeafId(0)),
-        ty: ValueType::Array(ScalarType::F64),
-        span: Span { line: 1, col: 1 },
-    };
-    let b = Term {
-        span: Span { line: 9, col: 9 },
-        ..a.clone()
-    };
+fn equal_terms_intern_to_one_node() {
+    let mut graph = TermGraph::default();
+    let ty = ValueType::Array(ScalarType::F64);
+    let a = graph.intern(TermKind::Leaf(LeafId(0)), ty);
+    let b = graph.intern(TermKind::Leaf(LeafId(0)), ty);
     assert_eq!(a, b);
-    let mut set = HashSet::new();
-    set.insert(a);
-    assert!(set.contains(&b));
+    // The type is part of the key.
+    let c = graph.intern(
+        TermKind::Leaf(LeafId(0)),
+        ValueType::Scalar(ScalarType::F64),
+    );
+    assert_ne!(a, c);
+    let sum = graph.intern(TermKind::Op(Op::Add, vec![a, b]), ty);
+    assert_eq!(graph.intern(TermKind::Op(Op::Add, vec![a, a]), ty), sum);
+    assert_eq!(graph.len(), 3);
+}
+
+/// The number of term graph nodes that `src` lowers to in `Mode::Run`.
+fn graph_len(src: &str) -> usize {
+    lowered(src, Mode::Run).0.graph.len()
+}
+
+#[test]
+fn block_let_chain_lowers_to_a_linear_graph() {
+    // Each let reads the previous one twice, so the term as a tree has 2^64 leaves.
+    let depth = 64;
+    let mut src = String::from(
+        "input a0: i64[];
+print(sum({ ",
+    );
+    for i in 1..=depth {
+        let p = i - 1;
+        src.push_str(&format!("let a{i} = a{p} + a{p}; "));
+    }
+    src.push_str(&format!(
+        "a{depth} }}));
+"
+    ));
+    // A level is its addition, and hoisting adds a temporary leaf for it.
+    let c = 4;
+    let n = graph_len(&src);
+    assert!(n <= c * depth, "{n} nodes for depth {depth}");
+}
+
+#[test]
+fn nested_calls_lower_to_a_linear_graph() {
+    // The parameter is read four times, as in the generated-program record, so the term as
+    // a tree has 4^32 copies of the innermost argument.
+    let depth = 32;
+    let mut src = String::from(
+        "fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }
+         input a: i64[];
+print(sum(",
+    );
+    src.push_str(&"f(".repeat(depth));
+    src.push('a');
+    src.push_str(&")".repeat(depth));
+    src.push_str(
+        "));
+",
+    );
+    // A level is the filter with its comparison, broadcast, and constant, the three
+    // additions, and the hoisted temporaries with their rebuilt nodes.
+    let c = 16;
+    let n = graph_len(&src);
+    assert!(n <= c * depth, "{n} nodes for depth {depth}");
 }
 
 /// Every lambda the checker accepts must also lower, so the checker and lowering cannot
@@ -289,17 +341,14 @@ fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
     let mut lw = Lowerer {
         g: &g,
         reg: &reg,
-        leaves: Leaves(Vec::new()),
+        leaves: Leaves::default(),
+        graph: TermGraph::default(),
         env: HashMap::new(),
         lifted: Vec::new(),
     };
     let span = Span { line: 1, col: 1 };
-    let xs = lw.leaf(Leaf::Var(VarId(0)), ValueType::Array(ScalarType::I64), span);
-    let d = lw.leaf(
-        Leaf::Var(VarId(1)),
-        ValueType::Scalar(ScalarType::F64),
-        span,
-    );
+    let xs = lw.leaf(Leaf::Var(VarId(0)), ValueType::Array(ScalarType::I64));
+    let d = lw.leaf(Leaf::Var(VarId(1)), ValueType::Scalar(ScalarType::F64));
     let e = lw.op(Op::DivConst, vec![xs, d], span).unwrap_err();
     assert_eq!(e.message, "no kernel for 'div_const' on i64[], f64");
 }

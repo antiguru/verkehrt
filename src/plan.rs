@@ -5,13 +5,13 @@
 mod egglog;
 mod sexpr;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use crate::check::Globals;
-use crate::error::Error;
+use crate::error::{Error, Span};
 use crate::kernels::{KernelId, Registry};
-use crate::lower::{Leaf, LeafId, Term, TermKind};
+use crate::lower::{Leaf, LeafId, TermGraph, TermId, TermKind};
 use crate::value::{ScalarType, Value};
 
 use sexpr::Sexp;
@@ -100,56 +100,92 @@ impl Planner {
         Planner { prelude }
     }
 
-    /// The cheapest cover of `term` by kernels. Every op node of the term is covered, either
-    /// by its single-op kernel or as part of a fused kernel. The condition and branches of a
-    /// conditional are planned on their own, so no kernel spans a conditional's boundary.
-    /// Errors are internal planner failures and carry the term's span.
-    pub fn plan(&self, reg: &Registry, term: &Term) -> Result<PlanNode, Error> {
-        self.plan_with_sum_rewrites(reg, term).map(|(node, _)| node)
+    /// The cheapest cover of the term at `root` of `graph` by kernels. Every op node of the
+    /// term is covered, either by its single-op kernel or as part of a fused kernel. The
+    /// condition and branches of a conditional are planned on their own, so no kernel spans
+    /// a conditional's boundary. Errors are internal planner failures and carry `span`, the
+    /// span of the statement whose term is planned.
+    pub fn plan(
+        &self,
+        reg: &Registry,
+        graph: &TermGraph,
+        root: TermId,
+        span: Span,
+    ) -> Result<PlanNode, Error> {
+        self.plan_with_sum_rewrites(reg, graph, root, span)
+            .map(|(node, _)| node)
     }
 
     /// Like `plan`, and also returns the integer sum rewrites that matched at least once
-    /// while planning `term`, the parts of its conditionals included. A matched rewrite
+    /// while planning the term, the parts of its conditionals included. A matched rewrite
     /// added its right-hand side to the e-graph, whether or not extraction chose it. This is
     /// a test hook, the plan is the one `plan` returns.
     pub fn plan_with_sum_rewrites(
         &self,
         reg: &Registry,
-        term: &Term,
+        graph: &TermGraph,
+        root: TermId,
+        span: Span,
     ) -> Result<(PlanNode, BTreeSet<SumRewrite>), Error> {
-        let mut fired = BTreeSet::new();
-        let node = self.plan_into(reg, term, &mut fired)?;
-        Ok((node, fired))
+        let mut st = PlanState {
+            graph,
+            span,
+            fired: BTreeSet::new(),
+            planned: HashMap::new(),
+        };
+        let node = self.plan_into(reg, &mut st, root)?;
+        Ok((node, st.fired))
     }
 
-    /// `plan`, adding the integer sum rewrites that matched to `fired`.
+    /// `plan` of `term`, adding the integer sum rewrites that matched to `st.fired`. A term
+    /// planned before for the same statement returns its earlier plan, and its rewrites are
+    /// in `st.fired` already.
     fn plan_into(
         &self,
         reg: &Registry,
-        term: &Term,
-        fired: &mut BTreeSet<SumRewrite>,
+        st: &mut PlanState<'_>,
+        term: TermId,
     ) -> Result<PlanNode, Error> {
-        if let TermKind::Cond(c, t, e) = &term.kind {
-            let mut part = |x: &Term| self.plan_into(reg, x, fired).map(Box::new);
-            return Ok(PlanNode::Cond(part(c)?, part(t)?, part(e)?));
+        if let Some(node) = st.planned.get(&term) {
+            return Ok(node.clone());
         }
-        let fail = |msg: String| Error::runtime(format!("planner: {msg}"), Some(term.span));
-        let (commands, root, holes) = egglog::emit(reg, term).map_err(fail)?;
-        let holes = holes
-            .iter()
-            .map(|h| self.plan_into(reg, h, fired))
-            .collect::<Result<Vec<_>, _>>()?;
-        let (extracted, matched) =
-            egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
-                .map_err(fail)?;
-        fired.extend(
-            matched
+        let graph = st.graph;
+        let node = if let TermKind::Cond(c, t, e) = *graph.kind(term) {
+            let mut part = |x: TermId| self.plan_into(reg, st, x).map(Box::new);
+            PlanNode::Cond(part(c)?, part(t)?, part(e)?)
+        } else {
+            let span = st.span;
+            let fail = |msg: String| Error::runtime(format!("planner: {msg}"), Some(span));
+            let (commands, root, holes) = egglog::emit(reg, graph, term).map_err(fail)?;
+            let holes = holes
                 .iter()
-                .filter_map(|name| egglog::sum_rewrite_named(name)),
-        );
-        let sexp = sexpr::parse(&extracted).map_err(fail)?;
-        to_node(reg, &sexp, &holes).map_err(fail)
+                .map(|&h| self.plan_into(reg, st, h))
+                .collect::<Result<Vec<_>, _>>()?;
+            let (extracted, matched) =
+                egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
+                    .map_err(fail)?;
+            st.fired.extend(
+                matched
+                    .iter()
+                    .filter_map(|name| egglog::sum_rewrite_named(name)),
+            );
+            let sexp = sexpr::parse(&extracted).map_err(fail)?;
+            to_node(reg, &sexp, &holes).map_err(fail)?
+        };
+        st.planned.insert(term, node.clone());
+        Ok(node)
     }
+}
+
+/// What planning one statement carries from term to term.
+struct PlanState<'a> {
+    graph: &'a TermGraph,
+    /// The span of the statement, which planner errors carry.
+    span: Span,
+    /// The integer sum rewrites that matched so far.
+    fired: BTreeSet<SumRewrite>,
+    /// The plan of each term planned so far, the statement's conditionals and their parts.
+    planned: HashMap<TermId, PlanNode>,
 }
 
 /// Maps an extracted egglog term back to a plan. `holes` are the plans of the conditionals

@@ -51,12 +51,12 @@ fn plan_nodes(src: &str, fusion: bool) -> (Registry, Vec<(PlanNode, String)>) {
         .stmts
         .iter()
         .filter_map(|s| match s {
-            LStmt::Print { term, .. } => Some(term),
+            LStmt::Print { term, span } => Some((*term, *span)),
             _ => None,
         })
-        .map(|term| {
+        .map(|(term, span)| {
             let node = planner
-                .plan(&reg, term)
+                .plan(&reg, &lowered.graph, term, span)
                 .unwrap_or_else(|e| panic!("{src}: {e}"));
             assert_broadcasts_fit(&reg, &node);
             let rendered = render(&reg, &node, &lowered.leaves, &g);
@@ -213,4 +213,56 @@ fn fusion_off_plans_use_single_op_kernels_only() {
         missing.is_empty(),
         "fusion on never planned fused kernels {missing:?}"
     );
+}
+
+/// The lazy-branch form of #39: a block let bound to a lazy conditional, compressed through
+/// a comparison with its own reduction, then nested lazy conditionals that each read the
+/// previous value four times in a branch. As a tree the term repeats the innermost value
+/// `4^depth` times. Emitting every term the planner emits, each distinct conditional part
+/// and hole once as `plan_into` memoizes them, writes a number of `let` commands and holes
+/// linear in the depth, and each emission has at most one hole. The test stops at emission
+/// because a `PlanNode` is a tree, which repeats the innermost value as the term tree does.
+#[test]
+fn lazy_branch_nesting_emits_linearly() {
+    let depth = 16;
+    let mut src = String::from(
+        "input a: i64[]; input s: i64;\nprint({ let b7 = if false { a } else { a }; \
+         let c0 = compress(b7, (b7 >= reduce(b7, and))); ",
+    );
+    for i in 1..=depth {
+        let p = i - 1;
+        src.push_str(&format!(
+            "let c{i} = if s > {i} {{ compress(c{p}, (c{p} >= reduce(c{p}, and))) }} \
+             else {{ c{p} }}; "
+        ));
+    }
+    src.push_str(&format!("c{depth} }});\n"));
+    let prog = parse(&src).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let reg = Registry::new();
+    let mut g = Globals::new();
+    let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let graph = &lowered.graph;
+    let (mut lets, mut holes) = (0, 0);
+    let mut seen = BTreeSet::new();
+    let mut todo: Vec<_> = lowered.stmts.iter().map(LStmt::term).collect();
+    while let Some(t) = todo.pop() {
+        if !seen.insert(t) {
+            continue;
+        }
+        if let TermKind::Cond(c, a, b) = *graph.kind(t) {
+            todo.extend([c, a, b]);
+            continue;
+        }
+        let (commands, _, hs) = egglog::emit(&reg, graph, t).unwrap();
+        lets += commands.matches("(let ").count();
+        assert!(hs.len() <= 1, "{} holes in one emission", hs.len());
+        holes += hs.len();
+        todo.extend(hs);
+    }
+    // A level emits its comparison, reduction, broadcast, compress, and condition, with the
+    // leaves they read.
+    let c = 16;
+    assert!(lets <= c * depth, "{lets} lets for depth {depth}");
+    assert!(holes <= depth + 1, "{holes} holes for depth {depth}");
 }

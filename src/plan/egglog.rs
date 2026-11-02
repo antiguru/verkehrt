@@ -1,10 +1,11 @@
 //! The egglog program text: the prelude generated from the registry, the per-statement
 //! program, and running it to an extracted term.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::kernels::{InputSpec, KernelDef, Registry};
-use crate::lower::{Term, TermKind};
+use crate::lower::{TermGraph, TermId, TermKind};
 use crate::ops::{Op, ReduceOp};
 use crate::value::{ScalarType, ValueType};
 
@@ -244,64 +245,85 @@ fn fused_rule(def: &KernelDef) -> Result<Option<String>, String> {
     Ok(Some(format!("(rewrite {lhs} {}{when})", Sexp::List(rhs))))
 }
 
-/// The per-statement commands for `term`: one `let` per node in post-order, with an `Arr`
-/// fact for every node that is an array and not a broadcast, and a `Plain` fact for every
-/// such node that is not a conditional. Each op is written as the
-/// kernel that `Registry::lookup` resolves for its argument types, and each conditional as a
-/// hole. Returns the commands, the name bound to the root, and the conditionals in hole order.
-pub fn emit(reg: &Registry, term: &Term) -> Result<(String, String, Vec<Term>), String> {
+/// The per-statement commands for the term at `root`: one `let` per distinct node reachable
+/// from it in post-order of first visit, with an `Arr` fact for every node that is an array
+/// and not a broadcast, and a `Plain` fact for every such node that is not a conditional.
+/// Each op is written as the kernel that `Registry::lookup` resolves for its argument types,
+/// and each distinct conditional as one hole. Returns the commands, the name bound to the
+/// root, and the conditionals in hole order.
+pub fn emit(
+    reg: &Registry,
+    graph: &TermGraph,
+    root: TermId,
+) -> Result<(String, String, Vec<TermId>), String> {
     // Facts per original node suffice because every rewrite either adds a single constructor
     // over existing e-classes, or, as the integer sum rewrites do, creates e-classes that
     // hold scalars only. So every array e-class has an original node, and no rule that
     // guards an operand with `Arr` or `Plain` matches a created e-class as an array. No
     // rewrite puts a hole into another e-class, so a `Plain` e-class never holds a hole.
-    let mut out = String::new();
-    let mut next = 0;
-    let mut holes = Vec::new();
-    let root = emit_node(reg, term, &mut out, &mut next, &mut holes)?;
-    Ok((out, root, holes))
+    let mut e = Emitter {
+        reg,
+        graph,
+        out: String::new(),
+        names: HashMap::new(),
+        holes: Vec::new(),
+    };
+    let root = e.node(root)?;
+    Ok((e.out, root, e.holes))
 }
 
-fn emit_node(
-    reg: &Registry,
-    term: &Term,
-    out: &mut String,
-    next: &mut usize,
-    holes: &mut Vec<Term>,
-) -> Result<String, String> {
-    let expr = match &term.kind {
-        TermKind::Leaf(id) => format!("({LEAF} {})", id.0),
-        TermKind::Bcast(inner) => {
-            format!("({BCAST} {})", emit_node(reg, inner, out, next, holes)?)
+struct Emitter<'a> {
+    reg: &'a Registry,
+    graph: &'a TermGraph,
+    out: String,
+    /// The name bound to each node already emitted.
+    names: HashMap<TermId, String>,
+    holes: Vec<TermId>,
+}
+
+impl Emitter<'_> {
+    fn node(&mut self, t: TermId) -> Result<String, String> {
+        if let Some(name) = self.names.get(&t) {
+            return Ok(name.clone());
         }
-        TermKind::Cond(..) => {
-            holes.push(term.clone());
-            format!("({HOLE} {})", holes.len() - 1)
-        }
-        TermKind::Op(op, args) => {
-            let tys: Vec<_> = args.iter().map(|a| a.ty).collect();
-            let id = reg
-                .lookup(*op, &tys)
-                .ok_or_else(|| format!("no kernel for {op:?} on {tys:?}"))?;
-            let mut expr = format!("({}", kernel_ctor(&reg.get(id).name));
-            for a in args {
-                expr.push(' ');
-                expr.push_str(&emit_node(reg, a, out, next, holes)?);
+        let graph = self.graph;
+        let kind = graph.kind(t);
+        let expr = match kind {
+            TermKind::Leaf(id) => format!("({LEAF} {})", id.0),
+            TermKind::Bcast(inner) => {
+                format!("({BCAST} {})", self.node(*inner)?)
             }
-            expr.push(')');
-            expr
+            TermKind::Cond(..) => {
+                self.holes.push(t);
+                format!("({HOLE} {})", self.holes.len() - 1)
+            }
+            TermKind::Op(op, args) => {
+                let tys: Vec<_> = args.iter().map(|&a| graph.ty(a)).collect();
+                let id = self
+                    .reg
+                    .lookup(*op, &tys)
+                    .ok_or_else(|| format!("no kernel for {op:?} on {tys:?}"))?;
+                let mut expr = format!("({}", kernel_ctor(&self.reg.get(id).name));
+                for &a in args {
+                    expr.push(' ');
+                    expr.push_str(&self.node(a)?);
+                }
+                expr.push(')');
+                expr
+            }
+        };
+        let name = format!("n{}", self.names.len());
+        let out = &mut self.out;
+        writeln!(out, "(let {name} {expr})").expect("writing to a String cannot fail");
+        if matches!(graph.ty(t), ValueType::Array(_)) && !matches!(kind, TermKind::Bcast(_)) {
+            writeln!(out, "({ARR} {name})").expect("writing to a String cannot fail");
+            if !matches!(kind, TermKind::Cond(..)) {
+                writeln!(out, "({PLAIN} {name})").expect("writing to a String cannot fail");
+            }
         }
-    };
-    let name = format!("n{next}");
-    *next += 1;
-    writeln!(out, "(let {name} {expr})").expect("writing to a String cannot fail");
-    if matches!(term.ty, ValueType::Array(_)) && !matches!(term.kind, TermKind::Bcast(_)) {
-        writeln!(out, "({ARR} {name})").expect("writing to a String cannot fail");
-        if !matches!(term.kind, TermKind::Cond(..)) {
-            writeln!(out, "({PLAIN} {name})").expect("writing to a String cannot fail");
-        }
+        self.names.insert(t, name.clone());
+        Ok(name)
     }
-    Ok(name)
 }
 
 /// Runs `prelude` and the statement `commands`, saturates for `iterations`, and returns the

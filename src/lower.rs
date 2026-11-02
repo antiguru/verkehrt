@@ -5,10 +5,10 @@
 //! inlined, and repeated subterms are hoisted so every statement's term is a tree without
 //! shared structure, except inside the branches of a conditional, which must not run
 //! unconditionally. An `if` on a scalar condition stays a lazy conditional, any other `if`
-//! becomes `select`.
+//! becomes `select`. Terms are nodes of one hash-consed `TermGraph` per program, so a value
+//! read many times is one node.
 
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::check::{Globals, TExpr, TExprKind, TLambda, TProgram, TStmt, VarId};
@@ -17,6 +17,7 @@ use crate::kernels::Registry;
 use crate::ops::Op;
 use crate::value::{ScalarType, Value, ValueType};
 
+mod graph;
 pub(crate) mod higher;
 mod leaves;
 mod passes;
@@ -26,6 +27,8 @@ mod tests;
 use higher::{Build, Higher};
 use leaves::{Leaves, array_of};
 use passes::{hoist_repeated, inline_single_use};
+
+pub use graph::{TermGraph, TermId};
 
 /// How top-level lets are treated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,38 +50,16 @@ pub enum Leaf {
     Var(VarId),
 }
 
+/// A node of a first-order term, with its children as ids in the `TermGraph`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TermKind {
-    Op(Op, Vec<Term>),
+    Op(Op, Vec<TermId>),
     Leaf(LeafId),
     /// A scalar term repeated to the length of the array operands next to it.
-    Bcast(Box<Term>),
+    Bcast(TermId),
     /// Evaluates the scalar `bool` condition, then only the branch it picks. Both branches
     /// have the type of the term.
-    Cond(Box<Term>, Box<Term>, Box<Term>),
-}
-
-/// A first-order term. Equality and hashing ignore `span`.
-#[derive(Clone, Debug)]
-pub struct Term {
-    pub kind: TermKind,
-    pub ty: ValueType,
-    pub span: Span,
-}
-
-impl PartialEq for Term {
-    fn eq(&self, other: &Term) -> bool {
-        self.kind == other.kind && self.ty == other.ty
-    }
-}
-
-impl Eq for Term {}
-
-impl Hash for Term {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.kind.hash(state);
-        self.ty.hash(state);
-    }
+    Cond(TermId, TermId, TermId),
 }
 
 #[derive(Clone, Debug)]
@@ -88,16 +69,16 @@ pub enum LStmt {
     /// until an output reads it.
     Bind {
         var: VarId,
-        term: Term,
+        term: TermId,
         span: Span,
         output: bool,
     },
     Print {
-        term: Term,
+        term: TermId,
         span: Span,
     },
     Show {
-        term: Term,
+        term: TermId,
         span: Span,
     },
 }
@@ -109,11 +90,20 @@ impl LStmt {
             self;
         *span
     }
+
+    /// The term of the statement.
+    pub fn term(&self) -> TermId {
+        let (LStmt::Bind { term, .. } | LStmt::Print { term, .. } | LStmt::Show { term, .. }) =
+            self;
+        *term
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Lowered {
     pub leaves: Vec<Leaf>,
+    /// The terms of all statements.
+    pub graph: TermGraph,
     pub stmts: Vec<LStmt>,
     /// Exported names in source order. Each variable has an `output` `Bind` in `stmts`, which
     /// places the export among the outputs in statement order.
@@ -158,7 +148,8 @@ pub fn lower(
     let mut lw = Lowerer {
         g: globals,
         reg,
-        leaves: Leaves(Vec::new()),
+        leaves: Leaves::default(),
+        graph: TermGraph::default(),
         env: HashMap::new(),
         lifted: Vec::new(),
     };
@@ -205,16 +196,21 @@ pub fn lower(
             }
         }
     }
-    let Lowerer { mut leaves, .. } = lw;
+    let Lowerer {
+        mut leaves,
+        mut graph,
+        ..
+    } = lw;
     if mode == Mode::Run {
-        stmts = inline_single_use(stmts, &leaves, &exported);
+        stmts = inline_single_use(stmts, &leaves, &mut graph, &exported);
     }
     let stmts = stmts
         .into_iter()
-        .flat_map(|s| hoist_repeated(s, &mut leaves, globals))
+        .flat_map(|s| hoist_repeated(s, &mut leaves, &mut graph, globals))
         .collect();
     Ok(Lowered {
-        leaves: leaves.0,
+        leaves: leaves.leaves,
+        graph,
         stmts,
         exports,
     })
@@ -224,25 +220,22 @@ struct Lowerer<'a> {
     g: &'a Globals,
     reg: &'a Registry,
     leaves: Leaves,
+    graph: TermGraph,
     /// Terms substituted for parameters and block locals. Other variables are top-level
     /// bindings and stay leaves.
-    env: HashMap<VarId, Term>,
+    env: HashMap<VarId, TermId>,
     /// The first parameter array of each lambda body being lifted around the current
     /// expression, innermost last.
-    lifted: Vec<Term>,
+    lifted: Vec<TermId>,
 }
 
 impl Lowerer<'_> {
-    fn leaf(&mut self, leaf: Leaf, ty: ValueType, span: Span) -> Term {
+    fn leaf(&mut self, leaf: Leaf, ty: ValueType) -> TermId {
         let id = match leaf {
             Leaf::Const(v) => self.leaves.constant(v),
             Leaf::Var(v) => self.leaves.var(v),
         };
-        Term {
-            kind: TermKind::Leaf(id),
-            ty,
-            span,
-        }
+        self.graph.intern(TermKind::Leaf(id), ty)
     }
 
     /// Builds an operation over lowered operands. The kernel lookup on the operands as given
@@ -252,8 +245,8 @@ impl Lowerer<'_> {
     /// types, unless the op has a kernel with a `Scalar` input. Then the error reports the
     /// operands as given, because the lifted types would not be the ones the user wrote.
     /// The rule is `Registry::lookup_lifted`, which the checker applies to lambda bodies too.
-    fn op(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+    fn op(&mut self, op: Op, args: Vec<TermId>, span: Span) -> Result<TermId, Error> {
+        let tys: Vec<ValueType> = args.iter().map(|&a| self.graph.ty(a)).collect();
         let lifted = self
             .reg
             .lookup_lifted(op, &tys)
@@ -261,51 +254,40 @@ impl Lowerer<'_> {
         let args = args
             .into_iter()
             .zip(lifted.bcast)
-            .map(|(a, bcast)| match a.ty {
+            .map(|(a, bcast)| match self.graph.ty(a) {
                 ValueType::Scalar(t) if bcast => {
-                    let operand_span = a.span;
-                    Term {
-                        kind: TermKind::Bcast(Box::new(a)),
-                        ty: ValueType::Array(t),
-                        span: operand_span,
-                    }
+                    self.graph.intern(TermKind::Bcast(a), ValueType::Array(t))
                 }
                 _ => a,
             })
             .collect();
-        Ok(Term {
-            kind: TermKind::Op(op, args),
-            ty: self.reg.get(lifted.kernel).output,
-            span,
-        })
+        let ty = self.reg.get(lifted.kernel).output;
+        Ok(self.graph.intern(TermKind::Op(op, args), ty))
     }
 
     /// Builds an operation over operands exactly as given, without broadcasting.
-    fn op_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
-        let tys: Vec<ValueType> = args.iter().map(|a| a.ty).collect();
+    fn op_exact(&mut self, op: Op, args: Vec<TermId>, span: Span) -> Result<TermId, Error> {
+        let tys: Vec<ValueType> = args.iter().map(|&a| self.graph.ty(a)).collect();
         let Some(id) = self.reg.lookup(op, &tys) else {
             return Err(no_kernel(op, &tys, span));
         };
-        Ok(Term {
-            kind: TermKind::Op(op, args),
-            ty: self.reg.get(id).output,
-            span,
-        })
+        let ty = self.reg.get(id).output;
+        Ok(self.graph.intern(TermKind::Op(op, args), ty))
     }
 
-    fn exprs(&mut self, es: &[TExpr]) -> Result<Vec<Term>, Error> {
+    fn exprs(&mut self, es: &[TExpr]) -> Result<Vec<TermId>, Error> {
         es.iter().map(|e| self.expr(e)).collect()
     }
 
-    fn expr(&mut self, e: &TExpr) -> Result<Term, Error> {
+    fn expr(&mut self, e: &TExpr) -> Result<TermId, Error> {
         let span = e.span;
         match &e.kind {
-            TExprKind::Lit(s) => Ok(self.leaf(Leaf::Const(Value::Scalar(s.clone())), e.ty, span)),
-            TExprKind::Str(s) => Ok(self.leaf(Leaf::Const(Value::Str(Arc::clone(s))), e.ty, span)),
+            TExprKind::Lit(s) => Ok(self.leaf(Leaf::Const(Value::Scalar(s.clone())), e.ty)),
+            TExprKind::Str(s) => Ok(self.leaf(Leaf::Const(Value::Str(Arc::clone(s))), e.ty)),
             TExprKind::ArrayLit(items) => self.array_lit(e, items),
             TExprKind::Var(v) => Ok(match self.env.get(v) {
-                Some(t) => t.clone(),
-                None => self.leaf(Leaf::Var(*v), e.ty, span),
+                Some(&t) => t,
+                None => self.leaf(Leaf::Var(*v), e.ty),
             }),
             TExprKind::Prim(op, args) => {
                 let args = self.exprs(args)?;
@@ -337,26 +319,21 @@ impl Lowerer<'_> {
                 // there may pick a uniform scalar branch next to an array branch, so the scalar
                 // one is filled to the lambda's length, which comes from its first parameter
                 // and not from the other branch, so the branch not taken never runs.
-                if c.ty == ValueType::Scalar(ScalarType::Bool)
-                    && let Some(param) = self.lifted.last().cloned()
-                {
-                    let fill = |lw: &Self, branch: Term| -> Result<Term, Error> {
-                        let len = lw.op(Op::Length, vec![param.clone()], span)?;
+                let bool_cond = self.graph.ty(c) == ValueType::Scalar(ScalarType::Bool);
+                if bool_cond && let Some(&param) = self.lifted.last() {
+                    let fill = |lw: &mut Self, branch: TermId| -> Result<TermId, Error> {
+                        let len = lw.op(Op::Length, vec![param], span)?;
                         lw.op(Op::Fill, vec![len, branch], span)
                     };
-                    match (is_array(t.ty), is_array(f.ty)) {
+                    match (is_array(self.graph.ty(t)), is_array(self.graph.ty(f))) {
                         (true, false) => f = fill(self, f)?,
                         (false, true) => t = fill(self, t)?,
                         _ => {}
                     }
                 }
-                if c.ty == ValueType::Scalar(ScalarType::Bool) && t.ty == f.ty {
-                    let ty = t.ty;
-                    return Ok(Term {
-                        kind: TermKind::Cond(Box::new(c), Box::new(t), Box::new(f)),
-                        ty,
-                        span,
-                    });
+                if bool_cond && self.graph.ty(t) == self.graph.ty(f) {
+                    let ty = self.graph.ty(t);
+                    return Ok(self.graph.intern(TermKind::Cond(c, t, f), ty));
                 }
                 self.op(Op::Select, vec![c, t, f], span)
             }
@@ -380,14 +357,14 @@ impl Lowerer<'_> {
     }
 
     /// Array literals of constants become one constant array.
-    fn array_lit(&mut self, e: &TExpr, items: &[TExpr]) -> Result<Term, Error> {
+    fn array_lit(&mut self, e: &TExpr, items: &[TExpr]) -> Result<TermId, Error> {
         let ValueType::Array(elem) = e.ty else {
             unreachable!("the checker types an array literal as an array")
         };
         let mut scalars = Vec::new();
         for it in items {
             let t = self.expr(it)?;
-            let constant = match t.kind {
+            let constant = match *self.graph.kind(t) {
                 TermKind::Leaf(id) => match self.leaves.get(id) {
                     Leaf::Const(Value::Scalar(s)) => Some(s.clone()),
                     _ => None,
@@ -403,7 +380,7 @@ impl Lowerer<'_> {
             scalars.push(s);
         }
         let arr = array_of(elem, &scalars);
-        Ok(self.leaf(Leaf::Const(Value::Array(arr)), e.ty, e.span))
+        Ok(self.leaf(Leaf::Const(Value::Array(arr)), e.ty))
     }
 
     /// Runs `f` with `params` bound to `args`, then restores the previous bindings. The
@@ -411,7 +388,7 @@ impl Lowerer<'_> {
     fn with_bindings<T>(
         &mut self,
         params: &[VarId],
-        args: Vec<Term>,
+        args: Vec<TermId>,
         f: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let saved: Vec<_> = params
@@ -424,7 +401,7 @@ impl Lowerer<'_> {
         r
     }
 
-    fn restore(&mut self, saved: Vec<(VarId, Option<Term>)>) {
+    fn restore(&mut self, saved: Vec<(VarId, Option<TermId>)>) {
         for (v, old) in saved.into_iter().rev() {
             match old {
                 Some(t) => self.env.insert(v, t),
@@ -439,11 +416,11 @@ impl Lowerer<'_> {
         &mut self,
         kind: Higher,
         lam: &TLambda,
-        xs: Vec<Term>,
+        xs: Vec<TermId>,
         span: Span,
-    ) -> Result<Term, Error> {
+    ) -> Result<TermId, Error> {
         let params = higher::params(self, kind, xs.clone(), span)?;
-        self.lifted.push(params[0].clone());
+        self.lifted.push(params[0]);
         let body = self.with_bindings(&lam.params, params.clone(), |lw| lw.expr(&lam.body));
         self.lifted.pop();
         higher::result(self, kind, &xs, &params, body?, span)
@@ -451,17 +428,17 @@ impl Lowerer<'_> {
 }
 
 impl Build for Lowerer<'_> {
-    type V = Term;
+    type V = TermId;
 
-    fn ty(v: &Term) -> ValueType {
-        v.ty
+    fn ty(&self, v: &TermId) -> ValueType {
+        self.graph.ty(*v)
     }
 
-    fn apply(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
+    fn apply(&mut self, op: Op, args: Vec<TermId>, span: Span) -> Result<TermId, Error> {
         self.op(op, args, span)
     }
 
-    fn apply_exact(&self, op: Op, args: Vec<Term>, span: Span) -> Result<Term, Error> {
+    fn apply_exact(&mut self, op: Op, args: Vec<TermId>, span: Span) -> Result<TermId, Error> {
         self.op_exact(op, args, span)
     }
 }
