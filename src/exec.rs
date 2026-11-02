@@ -19,8 +19,8 @@ mod tests;
 
 /// The tile row count of `Tiling::default()`.
 // 1024 rows is 22% slower than untiled, and 4096 rows is up to 6% slower on the scalar and AVX2
-// variants.
-// The time does not improve measurably beyond 16384 rows, which keeps one `i64` tile at 128 KiB. See `docs/measurements/2026-11-02-tiled-regions.md`.
+// variants. The time does not improve measurably beyond 16384 rows, which keeps one `i64` tile
+// at 128 KiB. See `docs/measurements/2026-11-02-tiled-regions.md`.
 pub const DEFAULT_TILE_ROWS: usize = 16384;
 
 /// How the executor runs regions, the subtrees of a plan made of at least two elementwise
@@ -400,6 +400,10 @@ impl Machine<'_> {
             return fail(inputs);
         };
         let (root, inner) = region.kernels.split_last().expect("a region has kernels");
+        let observing = self.observing();
+        // A whole call times the allocation of its output, so the region's allocations are
+        // charged to the root below, from this point to the end of the output's construction.
+        let alloc_start = observing.then(Instant::now);
         // One tile buffer per inner kernel, allocated once per run and overwritten by each
         // tile. A tile never holds more than `t` rows, or `n` when that is fewer.
         let Ok(mut bufs) = inner
@@ -409,7 +413,6 @@ impl Machine<'_> {
         else {
             return fail(inputs);
         };
-        let observing = self.observing();
         let mut times = if observing {
             vec![Duration::ZERO; region.kernels.len()]
         } else {
@@ -451,6 +454,14 @@ impl Machine<'_> {
                 }
             }
         });
+        // What the region took beyond its tile calls is the allocation of the tile buffers and
+        // of the output, and it goes to the root, whose whole call would have allocated.
+        if let Some(start) = alloc_start {
+            let tiles: Duration = times.iter().sum();
+            if let Some(last) = times.last_mut() {
+                *last += start.elapsed().saturating_sub(tiles);
+            }
+        }
         match built {
             Ok(value) => Ok(TiledRun {
                 inputs,
