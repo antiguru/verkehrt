@@ -9,6 +9,7 @@ use crate::ops::{Op, ReduceOp};
 use crate::value::{ScalarType, ValueType};
 
 use super::sexpr::{self, Sexp};
+use super::{SumRewrite, SumRule};
 
 /// Prefix of every kernel constructor, so kernel names never collide with egglog keywords.
 pub const KERNEL_PREFIX: &str = "K_";
@@ -98,7 +99,7 @@ pub fn prelude(reg: &Registry, fusion: bool) -> Result<String, String> {
 /// `length(x)` cast to `t`. Every operation of a right-hand side is a scalar kernel of
 /// type `t`. Empty for a float type, for a sum whose result is not of type `t`, and for a
 /// type that lacks one of the kernels. `x` is never a conditional, because the right-hand
-/// side evaluates `x` twice.
+/// side evaluates `x` twice. Each rewrite carries the name of `sum_rule_name`.
 fn sum_rules(reg: &Registry, t: ScalarType) -> String {
     // Integer arithmetic wraps, so it is a ring modulo 2^w, in which these identities hold
     // bit for bit. Float arithmetic does not associate.
@@ -156,15 +157,54 @@ fn sum_rules(reg: &Registry, t: ScalarType) -> String {
     // `x` and `k` in the order of its left-hand side, so the plan evaluates them in that
     // order unless commutativity swaps them.
     let when = format!(":when (({PLAIN} ?x))");
-    [
-        format!("(rewrite ({sum} ({add} ?x ({BCAST} ?k))) ({add_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
-        format!("(rewrite ({sum} ({sub} ?x ({BCAST} ?k))) ({sub_s} ({sum} ?x) ({mul_s} {count} ?k)) {when})"),
-        format!("(rewrite ({sum} ({sub} ({BCAST} ?k) ?x)) ({sub_s} ({mul_s} ?k {count}) ({sum} ?x)) {when})"),
-        format!("(rewrite ({sum} ({mul} ?x ({BCAST} ?k))) ({mul_s} ({sum} ?x) ?k) {when})"),
-    ]
-    .iter()
-    .map(|r| format!("{r}\n"))
-    .collect()
+    SumRule::ALL
+        .into_iter()
+        .map(|rule| {
+            let (lhs, rhs) = match rule {
+                SumRule::Add => (
+                    format!("({sum} ({add} ?x ({BCAST} ?k)))"),
+                    format!("({add_s} ({sum} ?x) ({mul_s} {count} ?k))"),
+                ),
+                SumRule::Sub => (
+                    format!("({sum} ({sub} ?x ({BCAST} ?k)))"),
+                    format!("({sub_s} ({sum} ?x) ({mul_s} {count} ?k))"),
+                ),
+                SumRule::SubFrom => (
+                    format!("({sum} ({sub} ({BCAST} ?k) ?x))"),
+                    format!("({sub_s} ({mul_s} ?k {count}) ({sum} ?x))"),
+                ),
+                SumRule::Mul => (
+                    format!("({sum} ({mul} ?x ({BCAST} ?k)))"),
+                    format!("({mul_s} ({sum} ?x) ?k)"),
+                ),
+            };
+            let name = sum_rule_name(SumRewrite { ty: t, rule });
+            format!("(rewrite {lhs} {rhs} {when} :name \"{name}\")\n")
+        })
+        .collect()
+}
+
+/// The egglog rule name of `rw`, which no other rule of the prelude has.
+fn sum_rule_name(rw: SumRewrite) -> String {
+    let rule = match rw.rule {
+        SumRule::Add => "add",
+        SumRule::Sub => "sub",
+        SumRule::SubFrom => "sub_from",
+        SumRule::Mul => "mul",
+    };
+    format!("sum_rewrite_{rule}_{}", rw.ty.name())
+}
+
+/// The integer sum rewrite whose egglog rule is named `name`, if any.
+pub fn sum_rewrite_named(name: &str) -> Option<SumRewrite> {
+    ScalarType::ARRAY_TYPES
+        .into_iter()
+        .flat_map(|ty| {
+            SumRule::ALL
+                .into_iter()
+                .map(move |rule| SumRewrite { ty, rule })
+        })
+        .find(|rw| sum_rule_name(*rw) == name)
 }
 
 /// The rewrite from a fused kernel's pattern to the kernel, or `None` for a single-op kernel.
@@ -265,24 +305,34 @@ fn emit_node(
 }
 
 /// Runs `prelude` and the statement `commands`, saturates for `iterations`, and returns the
-/// cheapest term extracted for `root` as text.
+/// cheapest term extracted for `root` as text, with the names of the rules that matched at
+/// least once.
 pub fn extract(
     prelude: &str,
     commands: &str,
     root: &str,
     iterations: usize,
-) -> Result<String, String> {
+) -> Result<(String, Vec<String>), String> {
     let program = format!("{prelude}{commands}(run {iterations})\n(extract {root})\n");
     let mut eg = ::egglog::EGraph::default();
     let outputs = eg
         .parse_and_run_program(None, &program)
         .map_err(|e| format!("egglog: {e}"))?;
-    outputs
+    let term = outputs
         .iter()
         .rev()
         .find_map(|o| match o {
             ::egglog::CommandOutput::ExtractBest(dag, _, t) => Some(dag.to_string(*t)),
             _ => None,
         })
-        .ok_or_else(|| "egglog produced no extraction".to_string())
+        .ok_or_else(|| "egglog produced no extraction".to_string())?;
+    // egglog applies every match it finds, so a rule with a match has fired.
+    let matched = eg
+        .get_overall_run_report()
+        .num_matches_per_rule
+        .iter()
+        .filter(|(_, n)| **n > 0)
+        .map(|(name, _)| name.to_string())
+        .collect();
+    Ok((term, matched))
 }

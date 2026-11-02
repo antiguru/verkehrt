@@ -1,6 +1,7 @@
 //! The library API: an interpreter with persistent bindings, and compile-once programs for
 //! embedding in a host.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 
 use crate::check::{Globals, TStmt, VarId, check};
@@ -8,7 +9,7 @@ use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
 use crate::lower::{LStmt, Mode, lower};
-use crate::plan::{Planner, render};
+use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
 
@@ -56,6 +57,8 @@ struct Compiled {
     inputs: Vec<InputDecl>,
     /// One `plan <line>: <render>` text per statement, empty unless `show_plan` is set.
     plan_lines: Vec<String>,
+    /// Per statement, the integer sum rewrites that matched while planning it.
+    sum_rewrites: Vec<BTreeSet<SumRewrite>>,
 }
 
 /// A program compiled once and executed many times. It holds no interpreter state.
@@ -196,21 +199,24 @@ impl Interpreter {
         let lowered = lower(&typed, globals, &self.reg, mode)?;
         let mut nodes = Vec::new();
         let mut plan_lines = Vec::new();
+        let mut sum_rewrites = Vec::new();
         for stmt in &lowered.stmts {
             let (LStmt::Bind { term, .. } | LStmt::Print { term, .. } | LStmt::Show { term, .. }) =
                 stmt;
             let span = stmt.span();
-            let node = self.planner.plan(&self.reg, term)?;
+            let (node, fired) = self.planner.plan_with_sum_rewrites(&self.reg, term)?;
             if self.opts.show_plan {
                 let text = render(&self.reg, &node, &lowered.leaves, globals);
                 plan_lines.push(format!("plan {}: {text}", span.line));
             }
             nodes.push(node);
+            sum_rewrites.push(fired);
         }
         Ok(Compiled {
             plan: Plan { lowered, nodes },
             inputs,
             plan_lines,
+            sum_rewrites,
         })
     }
 
@@ -239,14 +245,26 @@ impl Interpreter {
     /// Like `prepare`, and with `show_plan` writes the plan lines to `diag`. The plan is
     /// written here and never by `Prepared::execute`.
     pub fn prepare_to(&self, src: &str, diag: &mut dyn Write) -> Result<Prepared, Error> {
+        self.prepare_with_sum_rewrites(src, diag).map(|(p, _)| p)
+    }
+
+    /// Like `prepare_to`, and also returns per planned statement, in source order, the
+    /// integer sum rewrites that matched while planning it, see
+    /// `Planner::plan_with_sum_rewrites`. This is a test hook.
+    pub fn prepare_with_sum_rewrites(
+        &self,
+        src: &str,
+        diag: &mut dyn Write,
+    ) -> Result<(Prepared, Vec<BTreeSet<SumRewrite>>), Error> {
         let c = self.compile(&mut Globals::new(), src, Mode::Run)?;
         for line in &c.plan_lines {
             writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
         }
-        Ok(Prepared {
+        let prepared = Prepared {
             plan: c.plan,
             inputs: c.inputs,
-        })
+        };
+        Ok((prepared, c.sum_rewrites))
     }
 }
 

@@ -62,7 +62,7 @@ struct Stats {
     outcomes: BTreeMap<String, usize>,
     fusion_changed_plan: usize,
     /// Per integer sum rewrite, the statements in which it fired.
-    rewrites_fired: BTreeMap<rewrites::Rewrite, usize>,
+    rewrites_fired: BTreeMap<verkehrt::plan::SumRewrite, usize>,
     source_bytes: usize,
     slowest: (Duration, String),
 }
@@ -276,7 +276,9 @@ fn generated_programs() {
         "fusion changed no plan in {} programs",
         stats.cases
     );
-    // Oracle 2 checks an integer sum rewrite only in a plan where it fired.
+    // Oracle 2 checks an integer sum rewrite only in a plan that uses it, which needs the
+    // rewrite to have fired. The planner reports the rewrites that ran, so a disabled
+    // rewrite fails here even when another rewrite leaves its right-hand side in a plan.
     let unfired: Vec<String> = engine
         .rewrites()
         .iter()
