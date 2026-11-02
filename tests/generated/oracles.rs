@@ -551,7 +551,7 @@ fn plans_may_report_different_failing_lets() {
     let engine = Engine::new();
     engine.check(&case).expect("the oracles agree");
     let line = |interp: &Interpreter| {
-        let (prepared, _) = prepare(interp, &case).expect("compiles");
+        let (prepared, _, _) = prepare(interp, &case).expect("compiles");
         let outcome = run(interp, &prepared, &case);
         let failure = outcome.result.expect_err("the program fails");
         assert_eq!(Category::of(&failure.message), Category::GatherIndex);
@@ -581,7 +581,7 @@ fn plans_may_report_different_categories() {
     let engine = Engine::new();
     engine.check(&case).expect("the oracles agree");
     let failure = |interp: &Interpreter| {
-        let (prepared, _) = prepare(interp, &case).expect("compiles");
+        let (prepared, _, _) = prepare(interp, &case).expect("compiles");
         let outcome = run(interp, &prepared, &case);
         let failure = outcome.result.expect_err("the program fails");
         (failure.span.map(|s| s.line), Category::of(&failure.message))
