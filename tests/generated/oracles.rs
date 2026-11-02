@@ -4,14 +4,16 @@
 //! * Oracle 1, cross-variant: every variant gives the scalar outcome of the same plan. The
 //!   variants share the plan, so the outcomes must agree exactly, including the error message
 //!   and its location.
-//! * Oracle 2, fused against unfused: the unfused plan gives the fused plan's output, exports,
-//!   and error. An error must have the same kind, come from the same statement (each statement
-//!   sits on its own line, so the line of its span), and fall in the same category, see
+//! * Oracle 2, fused against unfused: the unfused plan gives the fused plan's output and
+//!   exports, and fails at the same output with the same error kind and category, see
 //!   `Category`. The message text is not compared, because a fused kernel words a length
-//!   mismatch its own way. Requiring the same category is stricter than the base spec, which
-//!   leaves open which of several errors in a statement surfaces. It assumes that fusion keeps
-//!   the order in which a kernel's children are evaluated, which #30 must revisit when fused
-//!   kernels reorder their operands.
+//!   mismatch its own way. The line is not compared, because a statement can read several
+//!   bindings that hold errors from different statements, and fusion and the comparison flip
+//!   change which operand a kernel evaluates first. Oracle 3 checks the line and category of
+//!   both plans' errors against the reference evaluator. Requiring the same category is
+//!   stricter than the base spec, which leaves open which of several errors surfaces. The
+//!   same operand order makes two failing bindings of different categories surface
+//!   differently, which this oracle would reject. The generator has not produced that shape.
 //! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
 //!   evaluator of `eval` computes from the typed program. On success the output and the
 //!   exports must be equal. Whether an error occurs and which output raises it are fixed, so
@@ -19,8 +21,9 @@
 //!   in its failing output. Its line must be on the chain of an error of that category, a
 //!   statement from the output to the failing expression, because an error reports the line
 //!   of the statement that lowering computed it in, see `eval`. Which of several errors
-//!   within that output surfaces may differ, and output printed before an error may be
-//!   incomplete, so the pipeline's output must only be a prefix of the evaluator's.
+//!   within that output surfaces may differ. The prints before the failing output appear in
+//!   full, so the printed output must equal the evaluator's. Oracle 3 applies to the scalar
+//!   outcomes of both plans.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -122,13 +125,11 @@ impl Category {
 #[derive(Debug, PartialEq, Eq)]
 struct FusionError {
     kind: ErrorKind,
-    line: Option<u32>,
     category: Category,
 }
 
 impl Outcome {
-    /// The parts that oracle 2 compares: output, exports, and the error's kind, statement,
-    /// and category.
+    /// The parts that oracle 2 compares: output, exports, and the error's kind and category.
     fn fusion_view(&self) -> (&str, Result<&[Export], FusionError>) {
         (
             &self.printed,
@@ -137,7 +138,6 @@ impl Outcome {
                 .map(Vec::as_slice)
                 .map_err(|f| FusionError {
                     kind: f.kind,
-                    line: f.span.map(|s| s.line),
                     category: Category::of(&f.message),
                 }),
         )
@@ -315,13 +315,15 @@ impl Engine {
             )
         };
         let r = eval::evaluate(&self.reg, &case.source, &case.inputs).map_err(unsupported)?;
-        if !agrees(&r, f) {
-            return Err(format!(
-                "oracle 3: the reference evaluator differs from the pipeline\n{}\n\
-                 fused plan:\n{fused_plan}pipeline: {f}\nreference: {}",
-                describe(case),
-                show_reference(&r),
-            ));
+        for (o, label, plan) in [(f, "fused", &fused_plan), (u, "unfused", &unfused_plan)] {
+            if !agrees(&r, o) {
+                return Err(format!(
+                    "oracle 3: the reference evaluator differs from the {label} plan\n{}\n\
+                     {label} plan:\n{plan}pipeline: {o}\nreference: {}",
+                    describe(case),
+                    show_reference(&r),
+                ));
+            }
         }
         let mut failing_unread = false;
         for name in &case.failing_unread {
@@ -354,7 +356,6 @@ fn agrees(r: &Reference, o: &Outcome) -> bool {
             let want: Vec<Export> = exports.iter().map(|(n, v)| export(n, v)).collect();
             r.printed == o.printed && want == *got
         }
-        // Every printed line ends with a newline, so a prefix of the text is one of lines.
         (Err(failed), Err(f)) => {
             let category = Category::of(&f.message);
             f.kind == ErrorKind::Runtime
@@ -364,7 +365,7 @@ fn agrees(r: &Reference, o: &Outcome) -> bool {
                         .iter()
                         .any(|e| e.category == category && e.lines.contains(&s.line))
                 })
-                && r.printed.starts_with(&o.printed)
+                && r.printed == o.printed
         }
         _ => false,
     }
@@ -543,6 +544,36 @@ fn oracle_3_accepts_lines_on_the_chain() {
     assert!(!agrees(&r, &at(1, "reduce_min of an empty array")));
     assert!(!agrees(&r, &at(3, "reduce_min of an empty array")));
     assert!(!agrees(&r, &at(2, "length mismatch: 1 vs 2")));
+}
+
+/// Two failing lets read by one print. The fused plan `count_gt_f64 x c` evaluates `x` first
+/// and reports line 2, the unfused plan `count (lt_f64 c x)` evaluates `c` first and reports
+/// line 1. Both lines are on the reference's chains, so the oracles accept both plans.
+#[test]
+fn plans_may_report_different_failing_lets() {
+    let case = Case {
+        source: "let c = reduce(gather([1.0, 2.0], fill(2, 9)), max);\n\
+                 let x = gather([1.0, 2.0], fill(2, 5));\n\
+                 print(count(c < x));\n\
+                 print(c);\n\
+                 print(x);\n"
+            .to_string(),
+        inputs: Vec::new(),
+        repro: String::new(),
+        features: Default::default(),
+        failing_unread: Vec::new(),
+    };
+    let engine = Engine::new();
+    engine.check(&case).expect("the oracles agree");
+    let line = |interp: &Interpreter| {
+        let (prepared, _) = prepare(interp, &case).expect("compiles");
+        let outcome = run(interp, &prepared, &case);
+        let failure = outcome.result.expect_err("the program fails");
+        assert_eq!(Category::of(&failure.message), Category::GatherIndex);
+        failure.span.map(|s| s.line)
+    };
+    assert_eq!(line(&engine.fused), Some(2));
+    assert_eq!(line(&engine.unfused), Some(1));
 }
 
 /// A failing binding that nothing reads fails when forced alone, also as a block let, while

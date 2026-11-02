@@ -47,8 +47,8 @@
 //! statement from the demanding output to the failing expression: the output itself and each
 //! top-level let or export whose thunk was forced on the way. Block lets and arguments add no
 //! line, because they belong to their statement. The pipeline agrees when it fails at a line
-//! on the chain of a collected error of its category, and its output is a prefix of the
-//! evaluator's, because output printed before an error may be incomplete.
+//! on the chain of a collected error of its category, and its printed output equals the
+//! evaluator's, because the prints before the failing output appear in full.
 //!
 //! # Unsupported
 //!

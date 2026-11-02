@@ -8,6 +8,7 @@ use crate::check::VarId;
 use crate::error::{Error, ErrorKind, Span};
 use crate::kernels::{Dispatch, KernelId, Registry, Variant};
 use crate::lower::{LStmt, Leaf, Lowered};
+use crate::ops::Op;
 use crate::plan::PlanNode;
 use crate::value::{Scalar, Value};
 
@@ -68,7 +69,7 @@ pub struct Sinks<'a> {
 }
 
 /// Runs every statement of `plan` in order. A kernel failure becomes a runtime error with
-/// the span of its statement. A `Bind` that is not an output and fails with a runtime error
+/// the span of its statement, except a failed `load_*`, which is an I/O error. A `Bind` that is not an output and fails with a runtime error
 /// stores the error in its variable, and the error is raised by the first output that reads
 /// the variable, directly or through other bindings. Outputs are `Print`, `Show` when
 /// `sinks.show` is set, and a `Bind` marked as an output, and the first one whose value is an
@@ -153,10 +154,9 @@ impl Machine<'_> {
             PlanNode::Bcast(inner) => self.eval(inner),
             PlanNode::Cond(c, t, e) => match self.eval(c)? {
                 Value::Scalar(Scalar::Bool(b)) => self.eval(if b { t } else { e }),
-                other => Err(Error::runtime(
-                    format!("if condition is {}, not bool", other.ty()),
-                    Some(self.span),
-                )),
+                // The checker types every condition as bool, so another value is a typing or
+                // lowering bug, never a value of the program.
+                other => panic!("if condition is {}, not bool", other.ty()),
             },
             PlanNode::Kernel(id, args) => {
                 let args = args
@@ -165,10 +165,18 @@ impl Machine<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let observing = self.trace.is_some() || self.stats.is_some();
                 let start = observing.then(Instant::now);
-                let result = self
-                    .dispatch
-                    .call(self.reg, *id, &args)
-                    .map_err(|m| Error::runtime(m, Some(self.span)))?;
+                let result = self.dispatch.call(self.reg, *id, &args).map_err(|m| {
+                    // A file that cannot be loaded is an I/O failure, not a runtime value.
+                    let kind = match self.reg.get(*id).op {
+                        Some(Op::Load(_)) => ErrorKind::Io,
+                        _ => ErrorKind::Runtime,
+                    };
+                    Error {
+                        kind,
+                        message: m,
+                        span: Some(self.span),
+                    }
+                })?;
                 if let Some(start) = start {
                     self.observe(
                         *id,

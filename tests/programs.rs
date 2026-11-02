@@ -552,6 +552,21 @@ fn failing_export_stops_run_at_its_statement() {
     assert_eq!(out, "1.0\n");
 }
 
+/// A file that cannot be loaded is an I/O error, never a value, so even an unread binding
+/// fails the program at its statement before anything is printed.
+#[test]
+fn failed_load_is_an_io_error_at_once() {
+    let (r, out, _) = run_with(
+        Options::default(),
+        "let _x = load_f64(\"/nonexistent/verkehrt-missing.bin\");\nprint(1);\n",
+    );
+    let e = r.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Io, "{e}");
+    assert_eq!(e.span.map(|s| s.line), Some(1), "{e}");
+    assert!(e.message.contains("verkehrt-missing.bin"), "{e}");
+    assert_eq!(out, "");
+}
+
 /// A top-level let stays bound in the REPL, so it is an output and fails at its statement,
 /// and the failed input binds nothing.
 #[test]
