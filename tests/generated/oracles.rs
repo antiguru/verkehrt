@@ -28,6 +28,15 @@
 //!   on purpose, because a tiled run falls back to whole evaluation on any error and so must
 //!   raise the whole evaluation's error. Oracle 1 runs every variant with the same three-row
 //!   tiles, so the tiled kernels of every ISA are compared too.
+//! * Oracle 5, shared against unshared: on the scalar interpreter with three-row tiles, each
+//!   plan run with shared evaluation gives the output and exports of the run with
+//!   `Options::no_sharing`, and fails with the same error, compared by kind, message, and
+//!   span. Reusing a value changes only kernel calls, and a failed evaluation is never
+//!   reused, so the error is that of the unshared run. Oracles 1 to 4 run with sharing on.
+//!
+//! Whether fusion changed a plan compares the plans by `Prepared::same_plans`, in time linear
+//! in the plan graphs, and the plan text, exponential in the nesting of shared nodes, is
+//! rendered only for a failure message.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -202,8 +211,11 @@ pub struct Engine {
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
     /// The scalar interpreters of oracle 4, with tiles of three rows and without tiling.
+    /// `tiled` is the shared run of oracle 5 too.
     tiled: Interpreter,
     untiled: Interpreter,
+    /// The scalar interpreter of oracle 5, with tiles of three rows and without sharing.
+    unshared: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
@@ -229,6 +241,9 @@ pub struct Verdict {
     pub failing_unread: bool,
     /// The region runs of the fused plan that completed tiled in oracle 4.
     pub tiled_regions: u64,
+    /// The evaluations of shared nodes that reused a value in the shared runs of both plans
+    /// in oracle 5.
+    pub shared_hits: u64,
 }
 
 impl Engine {
@@ -236,7 +251,6 @@ impl Engine {
         let planner = |no_fusion| {
             Interpreter::new(Options {
                 isa: Some(Isa::Scalar),
-                show_plan: true,
                 no_fusion,
                 ..Options::default()
             })
@@ -256,18 +270,20 @@ impl Engine {
                 (v, interp)
             })
             .collect();
-        let scalar = |tiling| {
+        let scalar = |tiling, no_sharing| {
             Interpreter::new(Options {
                 isa: Some(Isa::Scalar),
                 tiling,
+                no_sharing,
                 ..Options::default()
             })
             .expect("scalar is always available")
         };
         let reg = Registry::new();
         Engine {
-            tiled: scalar(Tiling::Rows(tile_rows())),
-            untiled: scalar(Tiling::Off),
+            tiled: scalar(Tiling::Rows(tile_rows()), false),
+            untiled: scalar(Tiling::Off, false),
+            unshared: scalar(Tiling::Rows(tile_rows()), true),
             fused: planner(false),
             unfused: planner(true),
             runners,
@@ -286,11 +302,15 @@ impl Engine {
     }
 
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
-    /// with the reference evaluator, and applies the three oracles. A program that does not
+    /// with the reference evaluator, and applies the five oracles. A program that does not
     /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
-        let (fused, fused_plan, fused_rewrites) = prepare(&self.fused, case)?;
-        let (unfused, unfused_plan, _) = prepare(&self.unfused, case)?;
+        let (fused, fused_rewrites) = prepare(&self.fused, case)?;
+        let (unfused, _) = prepare(&self.unfused, case)?;
+        // The plan lines, rendered only for a failure message because rendering expands
+        // shared nodes.
+        let fused_plan = || plan_text(false, case);
+        let unfused_plan = || plan_text(true, case);
         // A plan holds kernel ids of the registry, which every interpreter builds alike, so a
         // plan from the scalar planner runs on each variant's interpreter. Every variant of a
         // program shares one plan in normal use too.
@@ -317,17 +337,17 @@ impl Engine {
         let (f, u) = (&reference[0], &reference[1]);
         if f.fusion_view() != u.fusion_view() {
             return Err(format!(
-                "oracle 2: the unfused plan differs from the fused plan\n{}\nfused plan:\n{fused_plan}\
-                 unfused plan:\n{unfused_plan}fused: {f}\nunfused: {u}",
+                "oracle 2: the unfused plan differs from the fused plan\n{}\nfused plan:\n{}\
+                 unfused plan:\n{}fused: {f}\nunfused: {u}",
                 describe(case),
+                fused_plan(),
+                unfused_plan(),
             ));
         }
         let before = self.tiled.tiled_regions();
+        let hits_before = self.tiled.shared_hits();
         let mut tiled_regions = 0;
-        for (plan, text, label) in [
-            (&fused, &fused_plan, "fused"),
-            (&unfused, &unfused_plan, "unfused"),
-        ] {
+        for (plan, label, no_fusion) in [(&fused, "fused", false), (&unfused, "unfused", true)] {
             let tiled = run(&self.tiled, plan, case);
             if label == "fused" {
                 tiled_regions = self.tiled.tiled_regions() - before;
@@ -336,12 +356,23 @@ impl Engine {
             if tiled != untiled {
                 return Err(format!(
                     "oracle 4: the run with {TILE_ROWS}-row tiles differs from the untiled run \
-                     of the {label} plan\n{}\n{label} plan:\n{text}tiled: {tiled}\n\
+                     of the {label} plan\n{}\n{label} plan:\n{}tiled: {tiled}\n\
                      untiled: {untiled}",
                     describe(case),
+                    plan_text(no_fusion, case),
+                ));
+            }
+            let unshared = run(&self.unshared, plan, case);
+            if tiled != unshared {
+                return Err(format!(
+                    "oracle 5: the shared run differs from the unshared run of the {label} \
+                     plan\n{}\n{label} plan:\n{}shared: {tiled}\nunshared: {unshared}",
+                    describe(case),
+                    plan_text(no_fusion, case),
                 ));
             }
         }
+        let shared_hits = self.tiled.shared_hits() - hits_before;
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.
         let unsupported = |reason: String| {
@@ -351,12 +382,13 @@ impl Engine {
             )
         };
         let r = eval::evaluate(&self.reg, &case.source, &case.inputs).map_err(unsupported)?;
-        for (o, label, plan) in [(f, "fused", &fused_plan), (u, "unfused", &unfused_plan)] {
+        for (o, label, no_fusion) in [(f, "fused", false), (u, "unfused", true)] {
             if !agrees(&r, o) {
                 return Err(format!(
                     "oracle 3: the reference evaluator differs from the {label} plan\n{}\n\
-                     {label} plan:\n{plan}pipeline: {o}\nreference: {}",
+                     {label} plan:\n{}pipeline: {o}\nreference: {}",
                     describe(case),
+                    plan_text(no_fusion, case),
                     show_reference(&r),
                 ));
             }
@@ -369,10 +401,11 @@ impl Engine {
         }
         Ok(Verdict {
             error: f.result.as_ref().err().map(|e| (e.kind, e.message.clone())),
-            fusion_changed_plan: fused_plan != unfused_plan,
+            fusion_changed_plan: !fused.same_plans(&unfused),
             rewrites_fired: rewrites::fired(&fused_rewrites),
             failing_unread,
             tiled_regions,
+            shared_hits,
         })
     }
 }
@@ -443,26 +476,37 @@ pub fn describe(case: &Case) -> String {
     )
 }
 
-/// The prepared program, its plan lines, and per statement the integer sum rewrites that
-/// fired.
+/// The prepared program and per statement the integer sum rewrites that fired.
 fn prepare(
     interp: &Interpreter,
     case: &Case,
-) -> Result<(Prepared, String, Vec<BTreeSet<SumRewrite>>), String> {
-    let mut plan = Vec::new();
-    let (prepared, fired) = interp
-        .prepare_with_sum_rewrites(&case.source, &mut plan)
+) -> Result<(Prepared, Vec<BTreeSet<SumRewrite>>), String> {
+    interp
+        .prepare_with_sum_rewrites(&case.source, &mut std::io::sink())
         .map_err(|e| {
             format!(
                 "generator bug, the program does not compile: {e}\n{}",
                 describe(case)
             )
-        })?;
-    Ok((
-        prepared,
-        String::from_utf8(plan).expect("plans are text"),
-        fired,
-    ))
+        })
+}
+
+/// The plan lines of `case` on the scalar planner, with fused patterns unless `no_fusion`.
+/// Rendering expands shared nodes, so it is exponential in their nesting, and only failure
+/// messages call it.
+fn plan_text(no_fusion: bool, case: &Case) -> String {
+    let interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        show_plan: true,
+        no_fusion,
+        ..Options::default()
+    })
+    .expect("scalar is always available");
+    let mut plan = Vec::new();
+    match interp.prepare_to(&case.source, &mut plan) {
+        Ok(_) => String::from_utf8(plan).expect("plans are text"),
+        Err(e) => format!("does not compile: {e}\n"),
+    }
 }
 
 fn run(interp: &Interpreter, plan: &Prepared, case: &Case) -> Outcome {
@@ -603,7 +647,7 @@ fn plans_may_report_different_failing_lets() {
     let engine = Engine::new();
     engine.check(&case).expect("the oracles agree");
     let line = |interp: &Interpreter| {
-        let (prepared, _, _) = prepare(interp, &case).expect("compiles");
+        let (prepared, _) = prepare(interp, &case).expect("compiles");
         let outcome = run(interp, &prepared, &case);
         let failure = outcome.result.expect_err("the program fails");
         assert_eq!(Category::of(&failure.message), Category::GatherIndex);
@@ -633,7 +677,7 @@ fn plans_may_report_different_categories() {
     let engine = Engine::new();
     engine.check(&case).expect("the oracles agree");
     let failure = |interp: &Interpreter| {
-        let (prepared, _, _) = prepare(interp, &case).expect("compiles");
+        let (prepared, _) = prepare(interp, &case).expect("compiles");
         let outcome = run(interp, &prepared, &case);
         let failure = outcome.result.expect_err("the program fails");
         (failure.span.map(|s| s.line), Category::of(&failure.message))

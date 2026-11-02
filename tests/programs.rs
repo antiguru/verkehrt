@@ -185,10 +185,11 @@ fn trace_reports_isa_and_bytes() {
     assert!(line.contains("gbps="), "{line}");
 }
 
-#[test]
-fn stats_total_per_kernel() {
+/// The statistics of running two `print(sum(x))` statements, with or without sharing.
+fn two_sums_stats(no_sharing: bool) -> String {
     let mut interp = Interpreter::new(Options {
         stats: true,
+        no_sharing,
         ..scalar_opts()
     })
     .unwrap();
@@ -202,8 +203,21 @@ fn stats_total_per_kernel() {
         .unwrap();
     let mut stats = Vec::new();
     interp.write_stats(&mut stats);
-    let stats = String::from_utf8(stats).unwrap();
+    String::from_utf8(stats).unwrap()
+}
+
+#[test]
+fn stats_total_per_kernel() {
+    // Without sharing each statement calls the reduction.
+    let stats = two_sums_stats(true);
     assert!(stats.contains("calls=2"), "{stats}");
+}
+
+#[test]
+fn stats_count_a_shared_kernel_once() {
+    let stats = two_sums_stats(false);
+    assert!(stats.contains("calls=1"), "{stats}");
+    assert!(!stats.contains("calls=2"), "{stats}");
 }
 
 // An ISA of another architecture is never available on the host.

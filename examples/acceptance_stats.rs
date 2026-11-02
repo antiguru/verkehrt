@@ -4,7 +4,8 @@
 //! where `QUERY` is a program name such as `q40` and `ISA` is an instruction set name as
 //! `verkehrt run --isa` takes it. `QUERY` names a ClickBench program, or a TPC-H program as
 //! `tpch/q06`, which reads `VERKEHRT_TPCH` instead. `VERKEHRT_TILE_ROWS` is `off` or a tile row
-//! count and replaces the default tiling. The columns load as the acceptance bench loads them
+//! count and replaces the default tiling, and `VERKEHRT_SHARING=off` turns shared evaluation
+//! off. The columns load as the acceptance bench loads them
 //! and are bound as interpreter globals, so `Interpreter::run` collects the statistics that
 //! `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
 //! with the least total kernel time prints. The times still differ from the criterion
@@ -13,7 +14,7 @@
 use std::io::sink;
 use std::path::Path;
 
-use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, tiling_from_env};
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, sharing_from_env, tiling_from_env};
 use verkehrt::kernels::Isa;
 use verkehrt::{Interpreter, Options};
 
@@ -43,6 +44,7 @@ fn main() {
         isa,
         stats: true,
         tiling: tiling_from_env(),
+        no_sharing: !sharing_from_env(),
         ..Options::default()
     };
     let prepared = Interpreter::new(options()).unwrap().prepare(&src).unwrap();

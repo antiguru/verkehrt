@@ -120,3 +120,80 @@ fn identical_statements_share_one_plan_root() {
     assert_eq!(roots.len(), 2);
     assert_eq!(roots[0], roots[1]);
 }
+
+/// The ids of the plan nodes of `p` that call the kernel `name`.
+fn kernel_nodes(interp: &Interpreter, p: &Prepared, name: &str) -> Vec<PlanId> {
+    let graph = &p.plan.graph;
+    (0..graph.len())
+        .map(|i| PlanId(u32::try_from(i).unwrap()))
+        .filter(|&id| {
+            matches!(graph.node(id), PlanNode::Kernel(k, _) if interp.reg.get(*k).name == name)
+        })
+        .collect()
+}
+
+#[test]
+fn shared_flags_count_uses_along_paths() {
+    let interp = Interpreter::new(Options::default()).unwrap();
+    let flag = |src: &str, name: &str| {
+        let p = interp.prepare(src).unwrap();
+        let ids = kernel_nodes(&interp, &p, name);
+        assert_eq!(ids.len(), 1, "{name} in\n{src}");
+        p.plan.shared[ids[0].index()]
+    };
+    // Two statements with one root: the reduction has two uses, and the selection below it
+    // has one, because the shared reduction runs once.
+    let twice = "input a: i64[];\n\
+                 print(sum(compress(a, a > 1)));\nprint(sum(compress(a, a > 1)));\n";
+    assert!(flag(twice, "reduce_add_i64"));
+    assert!(!flag(twice, "filter_gt_i64"));
+    // A conditional is never shared, so the reduction in its branch has two uses through
+    // the conditional's one edge.
+    let cond = "input a: i64[];\ninput s: i64;\n\
+                print(if s > 0 { sum(compress(a, a > 1)) } else { 0 });\n\
+                print(if s > 0 { sum(compress(a, a > 1)) } else { 0 });\n";
+    assert!(flag(cond, "reduce_add_i64"));
+    // A subgraph with a load is never shared.
+    let load = "print(sum(load_i64(\"x.bin\")));\nprint(sum(load_i64(\"x.bin\")));\n";
+    assert!(!flag(load, "reduce_add_i64"));
+    assert!(!flag(load, "load_i64"));
+    // One use is not shared.
+    let once = "input a: i64[];\nprint(sum(compress(a, a > 1)));\n";
+    assert!(!flag(once, "reduce_add_i64"));
+}
+
+#[test]
+fn same_plans_agrees_with_the_plan_lines() {
+    let planner = |no_fusion| {
+        Interpreter::new(Options {
+            show_plan: true,
+            no_fusion,
+            ..Options::default()
+        })
+        .unwrap()
+    };
+    let (fused, unfused) = (planner(false), planner(true));
+    let prepared = |interp: &Interpreter, src: &str| {
+        let mut text = Vec::new();
+        let p = interp.prepare_to(src, &mut text).unwrap();
+        (p, String::from_utf8(text).unwrap())
+    };
+    for src in [
+        // Fusion changes the plan.
+        "input a: f64[];\ninput b: f64[];\nprint(sum(a * b));\n",
+        "input a: i64[];\nprint(sum(a + 3));\n",
+        // Fusion changes nothing: broadcasts, constants, and conditionals.
+        "input a: i64[];\nprint(a + 1);\nprint([1, 2] * 2);\n",
+        "input a: f64[];\ninput s: i64;\nprint(if s > 0 { a + 1.5 } else { a });\n",
+        "input a: i64[];\nprint(length(a));\n",
+    ] {
+        let (pf, tf) = prepared(&fused, src);
+        let (pu, tu) = prepared(&unfused, src);
+        assert_eq!(pf.same_plans(&pu), tf == tu, "{src}\n{tf}\n{tu}");
+        assert!(pf.same_plans(&prepared(&fused, src).0), "{src}");
+    }
+    // Programs whose statements sit at other lines differ.
+    let (one, _) = prepared(&fused, "input a: i64[];\nprint(a + 1);\n");
+    let (other, _) = prepared(&fused, "input a: i64[];\n\nprint(a + 1);\n");
+    assert!(!one.same_plans(&other));
+}

@@ -41,6 +41,34 @@ fn no_tiling_traces_the_same_kernels() {
 }
 
 #[test]
+fn no_sharing_traces_each_use() {
+    let dir = std::env::temp_dir().join(format!("verkehrt-cli-sharing-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("sums.vk");
+    std::fs::write(
+        &file,
+        "let x = [1.0, 2.0];\nprint(sum(x));\nprint(sum(x));\n",
+    )
+    .unwrap();
+    let reductions = |flags: &[&str]| {
+        let a = verkehrt()
+            .args(["run", "--trace"])
+            .args(flags)
+            .arg(&file)
+            .assert()
+            .success()
+            .stdout("3.0\n3.0\n");
+        stderr_of(&a)
+            .lines()
+            .filter(|l| l.starts_with("trace reduce_add_f64 "))
+            .count()
+    };
+    assert_eq!(reductions(&[]), 1);
+    assert_eq!(reductions(&["--no-sharing"]), 2);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn plan_goes_to_stderr() {
     let a = verkehrt()
         .args(["run", "--plan", "tests/cli/dot.vk"])

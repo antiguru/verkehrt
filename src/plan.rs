@@ -12,6 +12,7 @@ use crate::check::Globals;
 use crate::error::{Error, Span};
 use crate::kernels::{KernelId, Registry};
 use crate::lower::{Leaf, LeafId, TermGraph, TermId, TermKind, step};
+use crate::ops::Op;
 use crate::value::{ScalarType, Value};
 
 #[cfg(test)]
@@ -89,6 +90,49 @@ impl PlanGraph {
         self.index.insert(node, id);
         id
     }
+}
+
+/// Per node of `graph`, whether the executor evaluates it at most once per run and reuses its
+/// value: a `Kernel` node with no `load_*` kernel in its subgraph that has at least two uses.
+/// A use is an edge from a parent, or a statement root, and `roots` holds one root per
+/// statement, so a root of two statements has two uses. A parent passes on as many uses per
+/// edge as it has itself, except that a shared parent runs once and passes on one.
+pub fn shared_flags(reg: &Registry, graph: &PlanGraph, roots: &[PlanId]) -> Vec<bool> {
+    let n = graph.len();
+    let children = |node: &PlanNode| -> Vec<PlanId> {
+        match node {
+            PlanNode::Kernel(_, args) => args.clone(),
+            PlanNode::Leaf(_) => Vec::new(),
+            PlanNode::Bcast(c) => vec![*c],
+            PlanNode::Cond(c, t, e) => vec![*c, *t, *e],
+        }
+    };
+    // Children have smaller ids than their parents, so one ascending pass sees every child
+    // before its parents.
+    let mut loads = vec![false; n];
+    for i in 0..n {
+        let node = &graph.nodes[i];
+        let own =
+            matches!(node, PlanNode::Kernel(k, _) if matches!(reg.get(*k).op, Some(Op::Load(_))));
+        loads[i] = own || children(node).iter().any(|c| loads[c.index()]);
+    }
+    // Uses saturate at 2, which is all the flag needs. One descending pass sees every
+    // parent's final count before its children. A branch of a conditional counts like any
+    // child: the memo fills only when a branch is taken, so counting it forces nothing.
+    let mut uses = vec![0u8; n];
+    for r in roots {
+        uses[r.index()] = uses[r.index()].saturating_add(1).min(2);
+    }
+    let mut shared = vec![false; n];
+    for i in (0..n).rev() {
+        let node = &graph.nodes[i];
+        shared[i] = matches!(node, PlanNode::Kernel(..)) && !loads[i] && uses[i] >= 2;
+        let pass = if shared[i] { 1 } else { uses[i] };
+        for c in children(node) {
+            uses[c.index()] = uses[c.index()].saturating_add(pass).min(2);
+        }
+    }
+    shared
 }
 
 /// The arithmetic that an integer sum rewrite moves out of a sum, see `SumRewrite`.
@@ -358,12 +402,10 @@ pub fn render(
             out.push(')');
             out
         }
-        PlanNode::Leaf(id) => match &leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
-            Leaf::Var(v) => globals.name(*v).to_string(),
-            Leaf::Const(Value::Scalar(s)) => s.to_string(),
-            Leaf::Const(Value::Array(a)) => format!("<{}[{}]>", a.elem().name(), a.len()),
-            Leaf::Const(Value::Str(s)) => format!("{s:?}"),
-        },
+        PlanNode::Leaf(id) => render_leaf(
+            &leaves[usize::try_from(id.0).expect("u32 fits in usize")],
+            globals,
+        ),
         PlanNode::Bcast(inner) => render(reg, graph, *inner, leaves, globals),
         PlanNode::Cond(c, t, e) => format!(
             "(if {} then {} else {})",
@@ -371,5 +413,62 @@ pub fn render(
             render(reg, graph, *t, leaves, globals),
             render(reg, graph, *e, leaves, globals),
         ),
+    }
+}
+
+/// The text of a leaf in `render`.
+pub fn render_leaf(leaf: &Leaf, globals: &Globals) -> String {
+    match leaf {
+        Leaf::Var(v) => globals.name(*v).to_string(),
+        Leaf::Const(Value::Scalar(s)) => s.to_string(),
+        Leaf::Const(Value::Array(a)) => format!("<{}[{}]>", a.elem().name(), a.len()),
+        Leaf::Const(Value::Str(s)) => format!("{s:?}"),
+    }
+}
+
+/// Numbers the nodes of plan graphs by the tree that `render` prints for them, in time linear
+/// in the number of nodes. Two nodes numbered by one `PlanShapes`, of one graph or of two,
+/// get the same number exactly when their kernels, leaf texts, and conditionals form the
+/// same tree with broadcasts left out, which is when `render` prints the same text for them.
+#[derive(Debug, Default)]
+pub struct PlanShapes {
+    index: HashMap<Shape, u32>,
+}
+
+/// A node of `PlanShapes`, with children as shape numbers.
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Shape {
+    Kernel(KernelId, Vec<u32>),
+    Leaf(String),
+    Cond(u32, u32, u32),
+}
+
+impl PlanShapes {
+    /// The shape number of every node of `graph`, by `PlanId`. `leaf_texts` holds the
+    /// `render_leaf` text of every leaf that `graph` refers to, by `LeafId`.
+    pub fn number(&mut self, graph: &PlanGraph, leaf_texts: &[String]) -> Vec<u32> {
+        let mut numbers: Vec<u32> = Vec::with_capacity(graph.len());
+        // Children have smaller ids, so they are numbered before their parents.
+        for node in &graph.nodes {
+            let shape = match node {
+                PlanNode::Kernel(k, args) => {
+                    Shape::Kernel(*k, args.iter().map(|a| numbers[a.index()]).collect())
+                }
+                PlanNode::Leaf(id) => Shape::Leaf(
+                    leaf_texts[usize::try_from(id.0).expect("u32 fits in usize")].clone(),
+                ),
+                // `render` prints a broadcast as the scalar inside it.
+                PlanNode::Bcast(inner) => {
+                    numbers.push(numbers[inner.index()]);
+                    continue;
+                }
+                PlanNode::Cond(c, t, e) => {
+                    Shape::Cond(numbers[c.index()], numbers[t.index()], numbers[e.index()])
+                }
+            };
+            let next = u32::try_from(self.index.len()).expect("shape count fits in u32");
+            numbers.push(*self.index.entry(shape).or_insert(next));
+        }
+        numbers
     }
 }

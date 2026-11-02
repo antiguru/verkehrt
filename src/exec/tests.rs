@@ -441,7 +441,8 @@ impl Builder {
 }
 
 /// Evaluates `node` over `leaves` with `tiling` on the instruction set and backend of
-/// `variant`, and returns the result and the tiled region count.
+/// `variant`, with its shared nodes evaluated once, and returns the result and the tiled
+/// region count.
 fn eval_node(
     reg: &Registry,
     node: &Built,
@@ -451,7 +452,10 @@ fn eval_node(
 ) -> (Slot, u64) {
     let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
     let tiled = AtomicU64::new(0);
+    let hits = AtomicU64::new(0);
     let env = Env::new();
+    let shared = shared_flags(reg, &node.graph, &[node.root]);
+    let mut memo = vec![None; node.graph.len()];
     let result = Machine {
         reg,
         dispatch: &dispatch,
@@ -463,6 +467,9 @@ fn eval_node(
         stats: None,
         tiling,
         tiled_regions: &tiled,
+        shared: &shared,
+        memo: &mut memo,
+        shared_hits: &hits,
     }
     .eval(node.root);
     (result, tiled.load(Ordering::Relaxed))
@@ -648,7 +655,7 @@ fn an_input_before_the_first_region_kernel_tiles() {
 }
 
 #[test]
-fn a_kernel_reached_twice_in_a_region_runs_per_path() {
+fn a_kernel_reached_twice_runs_once_outside_any_region() {
     let (reg, _, probe, add) = probe_registry();
     let mul = reg.by_name("mul_i64").unwrap();
     // (y + 1) * (y + 1) with the sum one node, where `y` is `x` or `probe(x)`.
@@ -661,14 +668,305 @@ fn a_kernel_reached_twice_in_a_region_runs_per_path() {
         b.finish(root)
     };
     let want = text((1..81).map(|v: i64| v * v));
-    // The region walks both paths, so it holds the sum twice, and it tiles because its
-    // inputs are leaves.
-    let tiled = compare_probed(&reg, &square(false), 80, 1, 0).unwrap();
-    assert_eq!(rows(&tiled), want);
-    // The second path's `probe` is an input after the first path's sum, so the region runs
-    // whole and evaluates `probe` once per path.
-    let whole = compare_probed(&reg, &square(true), 80, 0, 2).unwrap();
-    assert_eq!(rows(&whole), want);
+    // The sum has two uses, so it is shared and never a region kernel. The product is then
+    // the only elementwise kernel above it, which is no region, and the sum runs once.
+    let leaves = compare_probed(&reg, &square(false), 80, 0, 0).unwrap();
+    assert_eq!(rows(&leaves), want);
+    // Below the shared sum, `probe` runs once too.
+    let probed = compare_probed(&reg, &square(true), 80, 0, 1).unwrap();
+    assert_eq!(rows(&probed), want);
+}
+
+#[test]
+fn a_shared_input_reached_again_in_its_region_tiles() {
+    let (reg, _, probe, add) = probe_registry();
+    let (mul, sub) = (
+        reg.by_name("mul_i64").unwrap(),
+        reg.by_name("sub_i64").unwrap(),
+    );
+    let mut b = Builder::default();
+    // (s + x) * (s - x) with s = probe(x) + 1 shared. The region's first input is s, before
+    // any region kernel, and its second s is an earlier input reached again, which whole
+    // evaluation finds in the memo, so the region tiles and `probe` runs once.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let probed = b.kernel(probe, vec![x]);
+    let s = b.kernel(add, vec![probed, one]);
+    let left = b.kernel(add, vec![s, x]);
+    let right = b.kernel(sub, vec![s, x]);
+    let root = b.kernel(mul, vec![left, right]);
+    let got = compare_probed(&reg, &b.finish(root), 80, 1, 1).unwrap();
+    assert_eq!(rows(&got), text((0..80).map(|v: i64| 2 * v + 1)));
+}
+
+#[test]
+fn a_shared_input_after_a_region_kernel_runs_whole() {
+    let (reg, _, probe, add) = probe_registry();
+    let mul = reg.by_name("mul_i64").unwrap();
+    let mut b = Builder::default();
+    // ((x * 3) + s) * s with s = probe(x) + 1 shared. Whole evaluation calls `x * 3` before
+    // it first reaches s, which has not run, so the region runs whole. The second s is a
+    // memo hit, and `probe` runs once.
+    let (x, one, three) = (b.leaf(0), b.bcast(1), b.bcast(2));
+    let probed = b.kernel(probe, vec![x]);
+    let s = b.kernel(add, vec![probed, one]);
+    let tripled = b.kernel(mul, vec![x, three]);
+    let inner = b.kernel(add, vec![tripled, s]);
+    let root = b.kernel(mul, vec![inner, s]);
+    let node = b.finish(root);
+    let leaves = vec![
+        Leaf::Const(Value::Array(Array::from_vec((0..80i64).collect()))),
+        Leaf::Const(Value::Scalar(Scalar::I64(1))),
+        Leaf::Const(Value::Scalar(Scalar::I64(3))),
+    ];
+    let want = text((0..80).map(|v: i64| (4 * v + 1) * (v + 1)));
+    for variant in variants() {
+        for tiling in tilings() {
+            PROBE_CALLS.with(|c| c.set(0));
+            let (got, regions) = eval_node(&reg, &node, &leaves, variant, tiling);
+            assert_eq!(rows(&got.unwrap()), want, "{variant:?} {tiling:?}");
+            assert_eq!(regions, 0, "{variant:?} {tiling:?}");
+            assert_eq!(PROBE_CALLS.with(Cell::get), 1, "{variant:?} {tiling:?}");
+        }
+    }
+}
+
+/// What a run with statistics gave: the outcome with the rows of the names asked for, the
+/// calls per kernel, the shared hit count, and the tiled region count.
+struct Counted {
+    outcome: Outcome,
+    calls: BTreeMap<String, u64>,
+    hits: u64,
+    regions: u64,
+}
+
+/// Runs the REPL inputs `srcs` in order on one scalar interpreter with statistics, with or
+/// without sharing, and counts what they did. The outcome is that of the first failing
+/// input, or of the last.
+fn counted(srcs: &[&str], names: &[&str], no_sharing: bool, tiling: Tiling) -> Counted {
+    let mut interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        stats: true,
+        tiling,
+        no_sharing,
+        ..Options::default()
+    })
+    .unwrap();
+    let mut out = Vec::new();
+    let mut result = Ok(());
+    for src in srcs {
+        result = interp.eval_repl(src, &mut out, &mut std::io::sink());
+        if result.is_err() {
+            break;
+        }
+    }
+    let outcome = result.map(|()| {
+        let bound = names
+            .iter()
+            .map(|n| rows(&interp.get(n).unwrap_or_else(|| panic!("{n} is not bound"))))
+            .collect();
+        (String::from_utf8(out).unwrap(), bound)
+    });
+    let mut stats = Vec::new();
+    interp.write_stats(&mut stats);
+    let calls = String::from_utf8(stats)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let mut words = l.split(' ').skip(1);
+            let name = words.next().unwrap().to_string();
+            let calls = words.next().unwrap().strip_prefix("calls=").unwrap();
+            (name, calls.parse().unwrap())
+        })
+        .collect();
+    Counted {
+        outcome,
+        calls,
+        hits: interp.shared_hits(),
+        regions: interp.tiled_regions(),
+    }
+}
+
+/// The calls of kernel `name` in `c`, 0 when it never ran.
+fn calls(c: &Counted, name: &str) -> u64 {
+    c.calls.get(name).copied().unwrap_or(0)
+}
+
+#[test]
+fn sums_over_one_column_run_one_reduction() {
+    // q29's shape: after the integer sum rewrite every plan holds `reduce_add_i64 x` and
+    // `length_i64 x`, one shared node each across the five statements.
+    let src = "let x = iota(1000);
+print(sum(x + 1));
+print(sum(x + 2));
+print(sum(x + 3));
+print(sum(x + 4));
+print(sum(x + 5));";
+    let shared = counted(&[src], &[], false, Tiling::default());
+    let unshared = counted(&[src], &[], true, Tiling::default());
+    assert_eq!(shared.outcome, unshared.outcome);
+    let (printed, _) = shared.outcome.as_ref().unwrap();
+    assert_eq!(printed, "500500\n501500\n502500\n503500\n504500\n");
+    assert_eq!(calls(&shared, "reduce_add_i64"), 1);
+    assert_eq!(calls(&unshared, "reduce_add_i64"), 5);
+    assert_eq!(calls(&shared, "length_i64"), 1);
+    assert_eq!(calls(&unshared, "length_i64"), 5);
+    // Four reused reductions and four reused lengths.
+    assert_eq!(shared.hits, 8);
+    assert_eq!(unshared.hits, 0);
+}
+
+#[test]
+fn statements_sharing_a_failing_subtree_report_their_own_spans() {
+    // The expression statement fails and its error is dropped. The failure is not kept, so
+    // the print evaluates the shared gather again and reports its own line.
+    let src = |index: &str| {
+        format!(
+            "let x = iota(40);
+sum(gather(x, {index}));
+print(sum(gather(x, {index})) + 1);"
+        )
+    };
+    let failing = src("x - 1");
+    let run = |no_sharing| {
+        let mut interp = Interpreter::new(Options {
+            isa: Some(Isa::Scalar),
+            stats: true,
+            no_sharing,
+            ..Options::default()
+        })
+        .unwrap();
+        let e = interp
+            .run(&failing, &mut std::io::sink(), &mut std::io::sink())
+            .unwrap_err();
+        (e, interp.shared_hits())
+    };
+    let (shared, hits) = run(false);
+    let (unshared, _) = run(true);
+    assert_eq!(shared.kind, ErrorKind::Runtime);
+    assert_eq!(shared.span.map(|s| s.line), Some(3));
+    assert_eq!(
+        (&shared.kind, &shared.message, shared.span),
+        (&unshared.kind, &unshared.message, unshared.span)
+    );
+    assert_eq!(hits, 0);
+    // The same statements over an index that succeeds share the gather.
+    let passing = counted(&[&src("x")], &[], false, Tiling::default());
+    assert_eq!(calls(&passing, "gather_i64"), 1);
+    assert_eq!(passing.hits, 1);
+}
+
+#[test]
+fn a_shared_node_only_in_untaken_branches_never_runs() {
+    let src = |n: i64| {
+        format!(
+            "let x = iota(10);
+print(if length(x) > {n} {{ sum(x * x) }} else {{ 0 }});
+print(if length(x) > {} {{ sum(x * x) }} else {{ 1 }});",
+            n + 1
+        )
+    };
+    let untaken = counted(&[&src(100)], &[], false, Tiling::default());
+    assert_eq!(untaken.outcome.as_ref().unwrap().0, "0\n1\n");
+    // The sum plans to `sumsq_i64 x`. The length in both conditions runs once.
+    assert_eq!(calls(&untaken, "sumsq_i64"), 0);
+    assert_eq!(calls(&untaken, "length_i64"), 1);
+    assert_eq!(untaken.hits, 1);
+    // Taken, the sum runs in the first statement and is reused in the second.
+    let taken = counted(&[&src(0)], &[], false, Tiling::default());
+    assert_eq!(taken.outcome.as_ref().unwrap().0, "285\n285\n");
+    assert_eq!(calls(&taken, "sumsq_i64"), 1);
+    assert_eq!(taken.hits, 2);
+}
+
+#[test]
+fn a_shared_elementwise_kernel_feeding_two_regions_runs_once() {
+    // `(x * 3) + 1` is one node read by two statements. It runs once, whole, and each
+    // statement's region above it tiles with it as an input.
+    let src = "let x = iota(100);
+let r = (((x * 3) + 1) - x) * 2;
+let q = (((x * 3) + 1) + x) * 5;";
+    let r = text((0..100).map(|x| (2 * x + 1) * 2));
+    let q = text((0..100).map(|x| (4 * x + 1) * 5));
+    let (outcome, counts) = compare(src, &["r", "q"]);
+    assert_eq!(outcome.unwrap().1, [r, q]);
+    assert!(counts.iter().all(|&c| c == 2), "{counts:?}");
+    let shared = counted(&[src], &["r", "q"], false, Tiling::default());
+    let unshared = counted(&[src], &["r", "q"], true, Tiling::default());
+    assert_eq!(shared.outcome, unshared.outcome);
+    assert_eq!(shared.regions, 2);
+    assert_eq!(shared.hits, 1);
+    // The shared sum and its product once, and each region's product.
+    assert_eq!(calls(&shared, "mul_i64"), 3);
+    assert_eq!(calls(&shared, "add_i64"), 2);
+    assert_eq!(calls(&unshared, "mul_i64"), 4);
+    assert_eq!(calls(&unshared, "add_i64"), 3);
+}
+
+#[test]
+fn a_shared_input_computed_by_an_earlier_statement_is_trivial() {
+    // `(x * 7) + 2` runs in the first statement. In the second, whole evaluation calls
+    // `x * 3` before it reaches the sum, which is in the memo by then, so the region tiles.
+    let src = "let x = iota(100);
+let a = (((x * 7) + 2) - x) * 2;
+let b = ((x * 3) + ((x * 7) + 2)) * 5;";
+    let a = text((0..100).map(|x| (6 * x + 2) * 2));
+    let b = text((0..100).map(|x| (10 * x + 2) * 5));
+    let (outcome, counts) = compare(src, &["a", "b"]);
+    assert_eq!(outcome.unwrap().1, [a, b]);
+    assert!(counts.iter().all(|&c| c == 2), "{counts:?}");
+}
+
+#[test]
+fn repl_inputs_never_share() {
+    let inputs = [
+        "let x = iota(10);",
+        "print(sum(x * x));",
+        "print(sum(x * x));",
+    ];
+    let c = counted(&inputs, &[], false, Tiling::default());
+    assert_eq!(c.outcome.as_ref().unwrap().0, "285\n285\n");
+    // The sum plans to `sumsq_i64 x`.
+    assert_eq!(calls(&c, "sumsq_i64"), 2);
+    assert_eq!(c.hits, 0);
+}
+
+#[test]
+fn a_shared_subgraph_with_a_load_runs_at_each_use() {
+    let path = std::env::temp_dir().join(format!("verkehrt-{}-shared.i64", std::process::id()));
+    let bytes: Vec<u8> = (1..=4i64).flat_map(i64::to_le_bytes).collect();
+    std::fs::write(&path, bytes).unwrap();
+    let src = format!(
+        "print(sum(load_i64({p:?}) * 2));\nprint(sum(load_i64({p:?}) * 2));",
+        p = path.to_str().unwrap()
+    );
+    let c = counted(&[&src], &[], false, Tiling::default());
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(c.outcome.as_ref().unwrap().0, "20\n20\n");
+    assert_eq!(calls(&c, "load_i64"), 2);
+    assert_eq!(calls(&c, "reduce_add_i64"), 2);
+    assert_eq!(c.hits, 0);
+}
+
+#[test]
+fn prepared_execute_counts_shared_hits() {
+    let interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        ..Options::default()
+    })
+    .unwrap();
+    let prepared = interp
+        .prepare("input x: i64[]; export a = sum(x + 1); export b = sum(x + 2);")
+        .unwrap();
+    let x = Value::Array(Array::from_vec((0..10i64).collect()));
+    for run in 1..=2 {
+        let out = prepared
+            .execute(&interp, &[("x", x.clone())], &mut std::io::sink())
+            .unwrap();
+        assert_eq!(out[0].1.to_string(), "55");
+        assert_eq!(out[1].1.to_string(), "65");
+        // Each run starts with an empty memo and reuses the reduction and the length once.
+        assert_eq!(interp.shared_hits(), 2 * run);
+    }
 }
 
 #[test]
