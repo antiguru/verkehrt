@@ -259,7 +259,7 @@ fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
         reg: &reg,
         leaves: Leaves(Vec::new()),
         env: HashMap::new(),
-        lambda_depth: 0,
+        lifted: Vec::new(),
     };
     let span = Span { line: 1, col: 1 };
     let xs = lw.leaf(Leaf::Var(VarId(0)), ValueType::Array(ScalarType::I64), span);

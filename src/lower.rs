@@ -84,6 +84,15 @@ pub enum LStmt {
     Show { term: Term, span: Span },
 }
 
+impl LStmt {
+    /// The span of the source statement, which runtime errors of the statement carry.
+    pub fn span(&self) -> Span {
+        let (LStmt::Bind { span, .. } | LStmt::Print { span, .. } | LStmt::Show { span, .. }) =
+            self;
+        *span
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Lowered {
     pub leaves: Vec<Leaf>,
@@ -186,7 +195,7 @@ pub fn lower(
         reg,
         leaves: Leaves(Vec::new()),
         env: HashMap::new(),
-        lambda_depth: 0,
+        lifted: Vec::new(),
     };
     let mut stmts = Vec::new();
     let mut exports = Vec::new();
@@ -249,8 +258,9 @@ struct Lowerer<'a> {
     /// Terms substituted for parameters and block locals. Other variables are top-level
     /// bindings and stay leaves.
     env: HashMap<VarId, Term>,
-    /// Number of lambda bodies being lifted around the current expression.
-    lambda_depth: usize,
+    /// The first parameter array of each lambda body being lifted around the current
+    /// expression, innermost last.
+    lifted: Vec<Term>,
 }
 
 impl Lowerer<'_> {
@@ -352,14 +362,26 @@ impl Lowerer<'_> {
                 self.lift(Higher::Filter, lam, vec![x], span)
             }
             TExprKind::If(c, t, f) => {
-                let (c, t, f) = (self.expr(c)?, self.expr(t)?, self.expr(f)?);
-                // In a lifted lambda the condition is per element even when it does not
-                // depend on a parameter, and both branches are cheap elementwise terms, so
-                // computing both and selecting is correct there.
-                if self.lambda_depth == 0
-                    && c.ty == ValueType::Scalar(ScalarType::Bool)
-                    && t.ty == f.ty
+                let (c, mut t, mut f) = (self.expr(c)?, self.expr(t)?, self.expr(f)?);
+                // A scalar condition is lazy, also in a lifted lambda, where a condition that
+                // depends on a parameter is an array and stays a `select`. A uniform condition
+                // there may pick a uniform scalar branch next to an array branch, so the scalar
+                // one is filled to the lambda's length, which comes from its first parameter
+                // and not from the other branch, so the branch not taken never runs.
+                if c.ty == ValueType::Scalar(ScalarType::Bool)
+                    && let Some(param) = self.lifted.last().cloned()
                 {
+                    let fill = |lw: &Self, branch: Term| -> Result<Term, Error> {
+                        let len = lw.op(Op::Length, vec![param.clone()], span)?;
+                        lw.op(Op::Fill, vec![len, branch], span)
+                    };
+                    match (is_array(t.ty), is_array(f.ty)) {
+                        (true, false) => f = fill(self, f)?,
+                        (false, true) => t = fill(self, t)?,
+                        _ => {}
+                    }
+                }
+                if c.ty == ValueType::Scalar(ScalarType::Bool) && t.ty == f.ty {
                     let ty = t.ty;
                     return Ok(Term {
                         kind: TermKind::Cond(Box::new(c), Box::new(t), Box::new(f)),
@@ -452,9 +474,9 @@ impl Lowerer<'_> {
         span: Span,
     ) -> Result<Term, Error> {
         let params = higher::params(self, kind, xs.clone(), span)?;
-        self.lambda_depth += 1;
+        self.lifted.push(params[0].clone());
         let body = self.with_bindings(&lam.params, params.clone(), |lw| lw.expr(&lam.body));
-        self.lambda_depth -= 1;
+        self.lifted.pop();
         higher::result(self, kind, &xs, &params, body?, span)
     }
 }
@@ -605,6 +627,9 @@ fn count_ops(t: &Term, counts: &mut HashMap<Term, usize>) {
 }
 
 struct Hoister<'a> {
+    /// The span of the statement, which every hoisted bind takes, so that a runtime error in
+    /// one carries the line of the statement it serves.
+    span: Span,
     counts: HashMap<Term, usize>,
     done: HashMap<Term, Term>,
     binds: Vec<LStmt>,
@@ -648,7 +673,7 @@ impl Hoister<'_> {
                 self.binds.push(LStmt::Bind {
                     var,
                     term: rebuilt,
-                    span: t.span,
+                    span: self.span,
                 });
                 let id = self.leaves.var(var);
                 let leaf = Term {
@@ -670,6 +695,7 @@ fn hoist_repeated(mut s: LStmt, leaves: &mut Leaves, g: &mut Globals) -> Vec<LSt
     let mut counts = HashMap::new();
     count_ops(stmt_term_mut(&mut s), &mut counts);
     let mut h = Hoister {
+        span: s.span(),
         counts,
         done: HashMap::new(),
         binds: Vec::new(),

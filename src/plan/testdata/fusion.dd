@@ -1,0 +1,62 @@
+# Each program planned with fusion on and off. With fusion off every kernel is a single-op
+# kernel, and the exact rewrites (commutativity, comparison flips) still apply.
+
+plan fusion=on
+print(sum(x * y));
+----
+dot_f64: (dot_f64 x y)
+
+plan fusion=off
+print(sum(x * y));
+----
+reduce_add_f64: (reduce_add_f64 (mul_f64 x y))
+
+plan fusion=on
+print(sum(x * x));
+----
+sumsq_f64: (sumsq_f64 x)
+
+plan fusion=off
+print(sum(x * x));
+----
+reduce_add_f64: (reduce_add_f64 (mul_f64 x x))
+
+plan fusion=on
+print(count(x > 0.5));
+----
+count_gt_f64: (count_gt_f64 x 0.5)
+
+plan fusion=off
+print(count(x > 0.5));
+----
+count: (count (lt_f64 0.5 x))
+
+plan fusion=on
+print(filter(x, |v| v > 0.5));
+----
+filter_gt_f64: (filter_gt_f64 x 0.5)
+
+plan fusion=off
+print(filter(x, |v| v > 0.5));
+----
+compress_f64: (compress_f64 x (lt_f64 0.5 x))
+
+plan fusion=on
+print(sum(map(x, |v| if v > 0.5 { v } else { 0.0 })));
+----
+condsum_gt_f64: (condsum_gt_f64 x 0.5 0.0)
+
+plan fusion=off
+print(sum(map(x, |v| if v > 0.5 { v } else { 0.0 })));
+----
+reduce_add_f64: (reduce_add_f64 (select_f64 (lt_f64 0.5 x) x 0.0))
+
+plan fusion=on
+print(count(0.5 < x));
+----
+count_gt_f64: (count_gt_f64 x 0.5)
+
+plan fusion=off
+print(count(0.5 < x));
+----
+count: (count (lt_f64 0.5 x))

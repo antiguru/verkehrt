@@ -39,9 +39,12 @@ pub struct Planner {
 }
 
 impl Planner {
-    /// Builds the prelude. Panics on a malformed fused pattern, a bug in the kernel tables.
-    pub fn new(reg: &Registry) -> Planner {
-        let prelude = egglog::prelude(reg).unwrap_or_else(|e| panic!("kernel patterns: {e}"));
+    /// Builds the prelude. With `fusion` off no fused pattern is rewritten, so every plan
+    /// uses single-op kernels only. Panics on a malformed fused pattern, a bug in the kernel
+    /// tables.
+    pub fn new(reg: &Registry, fusion: bool) -> Planner {
+        let prelude =
+            egglog::prelude(reg, fusion).unwrap_or_else(|e| panic!("kernel patterns: {e}"));
         Planner { prelude }
     }
 
