@@ -29,13 +29,17 @@ Differences within about 10% count as noise.
 
 All files are in `2026-11-02-tiled-regions/`. Loads are the 1-minute average at the start and the end, and the bench itself adds about 1 to the end value.
 
-* `stats.txt`: per-kernel totals of q40, q41, q42 and TPC-H q06 untiled and with 16384-row tiles. Load 2.49 to 2.38.
-* `stats-other.txt`: the same for q03, q30, q31 and TPC-H q01. Load 2.95 to 2.68.
+* `stats.txt`: per-kernel totals of q40, q41, q42 and TPC-H q06 untiled and with 16384-row tiles. Load 2.32 to 2.32.
+* `stats-other.txt`: the same for q03, q30, q31 and TPC-H q01. Load 2.21 to 2.37.
 * `bench-tile-off.txt`, `bench-tile-1024.txt`, `bench-tile-4096.txt`, `bench-tile-8192.txt`, `bench-tile-16384.txt`, `bench-tile-32768.txt`, `bench-tile-65536.txt`: the tile size sweep over q40, q41, q42 and TPC-H q06, five variants each. Loads at the start and end: off 2.08 to 3.58, 1024 3.60 to 3.48, 4096 2.04 to 4.07, 8192 2.56 to 3.96, 16384 3.48 to 2.48, 32768 3.96 to 2.38, 65536 3.51 to 3.18.
 * `bench-full-off.txt` and `bench-full-default.txt`: every acceptance query, five variants, untiled and with the default tile. Load 2.54 to 2.78 and 2.49 to 4.30.
 * `bench-repeat-off.txt` and `bench-repeat-default.txt`: a second pair for q03, q30, q31 and TPC-H q01. Load 2.58 to 3.12 and 2.15 to 2.58.
 * `bench-q27-off.txt` and `bench-q27-default.txt`: a second pair for ClickBench q27. Load 2.65 to 2.59 and 2.59 to 2.94.
 * `correctness.txt`: `cargo test --release --test acceptance` with both data directories set, which passes (17 passed, 0 failed, 1 ignored) on the default tile. No load was recorded for this run.
+
+The two stats files were re-run after the executor began to charge a region's output and tile buffer allocation to its root kernel, with `VERKEHRT_TILE_ROWS=off` and `=16384` and `cargo run --release --example acceptance_stats -- QUERY` as in the setup.
+The 1-minute load was 2.32 before the first run and 2.37 after the last, so no run waited for the load to fall.
+The criterion files predate that change, and it does not touch them because the benches do not collect statistics.
 
 The first untiled sweep, two 65536 sweeps, and the first q27 pair were repeated because the load rose above 6 during them, and their logs are not kept.
 
@@ -44,18 +48,25 @@ The first untiled sweep, two 65536 sweeps, and the first q27 pair were repeated 
 A comparison reads an `i64` column at 8 bytes per row and writes a `bool` mask at 1 byte per row, so a chain of comparisons and `and_bool` kernels writes and rereads one mask per step when it runs on whole arrays.
 Tiling keeps those masks in 16384-row buffers, and the stats show where that pays.
 The totals are in us, the first number untiled and the second tiled.
+A whole call's time includes the allocation and zeroing of its output, and a tiled region charges the allocation of its output and tile buffers to its last kernel, so tiled and untiled times compare like with like.
 
 | Query | `eq_i64` | `le_i64` or `lt_i64` | `and_bool` | those three, share of total | total kernel time |
 |---|---|---|---|---|---|
-| q40 | 1282.1 to 1196.0 | 451.2 to 343.0 | 261.1 to 126.6 | 49.2% to 44.5% | 4054.5 to 3744.1 |
-| q41 | 1154.1 to 1035.2 | 445.0 to 316.5 | 271.9 to 123.6 | 54.6% to 49.5% | 3424.4 to 2981.8 |
-| q42 | 861.9 to 768.3 | 476.6 to 315.8 | 228.4 to 90.8 | 57.4% to 49.8% | 2729.1 to 2359.2 |
-| TPC-H q06 | none | 890.8 to 639.8 (`le`), 586.7 to 378.8 (`lt`) | 306.1 to 112.1 | 70.5% to 60.7% | 2530.1 to 1863.3 |
+| q40 | 1306.9 to 1166.4 | 451.0 to 333.1 | 246.9 to 264.3 | 50.3% to 45.8% | 3982.1 to 3849.7 |
+| q41 | 1149.5 to 1047.9 | 444.2 to 336.9 | 296.3 to 253.1 | 54.5% to 51.0% | 3468.6 to 3214.1 |
+| q42 | 861.8 to 791.6 | 445.3 to 319.8 | 196.4 to 231.1 | 57.1% to 52.9% | 2635.4 to 2542.7 |
+| TPC-H q06 | none | 928.7 to 643.0 (`le`), 573.4 to 382.8 (`lt`) | 338.3 to 222.2 | 70.9% to 62.9% | 2595.0 to 1984.9 |
 
-The `and_bool` kernels get 2.1 to 2.7 times faster in q40, q41, q42 and q06, and `le_i64` and `lt_i64` drop by 24% to 35%, which fits the masks staying in cache but was not tested.
-`eq_i64` drops by only 7% to 11%. The spec predicted that tiling would remove about half of the chain's bytes moved, and the kernel totals fall by 8% to 14% on the ClickBench queries against a chain share of 49% to 57%, so the prediction did not hold. A comparison reads 8 bytes per row and writes 1 byte per row, so the mask traffic that tiling removes is a small part of the bytes of the chain, and the column reads dominate. This document did not measure bytes moved or cache misses, so it does not establish why `eq_i64` gains least, and whether the repeated reads of `EventDate` and `TraficSourceID` are served from cache inside a tile is unknown.
-q40 and q41 keep their sort (`argsort_i64` is 1010 us of q40 and does not change) and their `compress_i64` calls, which are not part of any region.
-The kernel total falls by 8%, 13%, 14% and 26%, and the criterion means of the best variant fall by less, 4%, 6%, 7% and 16%, which fits that the stats timer and criterion do not measure the same span.
+`le_i64` and `lt_i64` drop by 24% to 31%, and `and_bool` is 1.5 times faster in q06 and 1.17 times in q41 but 7% and 18% slower in q40 and q42.
+An `and_bool` that is the root of its region carries the region's output allocation, which is why its time does not fall with the others, and a whole call carries the same allocation.
+The drops of the inner kernels include the output allocation that tiling removes for them, because an inner kernel writes into a reused tile buffer, and the stats do not separate that from cache effects, so how much of the drop comes from the masks staying in cache is not known.
+`eq_i64` drops by only 8% to 11%.
+The spec's evidence estimated that the chain moves about twice the bytes of reading each column once, but that estimate counts the second reads of `EventDate` and `TraficSourceID` in q40, which tiling does not remove (issue #39).
+The kernel totals fall by 3% to 7% on the ClickBench queries against an untiled chain share of 50% to 57%.
+A comparison reads 8 bytes per row and writes 1 byte per row, so the mask traffic that tiling removes is a small part of the bytes of the chain, and the column reads dominate.
+This document did not measure bytes moved or cache misses, so it does not establish why `eq_i64` gains least, and whether the repeated reads of `EventDate` and `TraficSourceID` are served from cache inside a tile is unknown.
+q40 and q41 keep their sort (`argsort_i64` is 950.6 us of q40 untiled and 959.2 us tiled) and their `compress_i64` calls, which are not part of any region.
+The kernel total falls by 3%, 7%, 4% and 24%, and the criterion means of the best variant fall by 4%, 6%, 7% and 16%, which agree within 4 points on the ClickBench queries and differ by 8 points on TPC-H q06, and fits that the stats timer and criterion do not measure the same span.
 
 ## Tile size
 
@@ -145,12 +156,16 @@ The faster queries reproduce in the second pair: q03 0.82 to 0.89, q30 0.76 to 0
 TPC-H q01 on `scalar` (0.87 then 0.97) and `x86-64-v3-auto` (1.01 then 0.85) disagree between pairs, so only its other three variants count as faster.
 
 `stats-other.txt` shows the kernels behind the larger gains, though not why they are faster.
-In q30 `sub_i64` falls from 1062.5 to 351.0 us with the same three calls, and in q03 `sub_i64` falls from 884.5 to 322.6 us and `mul_i64` from 788.9 to 205.5 us, while `div_const_i64` rises from 800.7 to 1351.8 us.
-The stats timer includes each kernel's output allocation, so a region's full-size output allocation lands on its last kernel, which fits the rise of `div_const_i64`, but this document did not measure allocation separately.
-Total kernel time falls from 2686.8 to 2067.6 us in q03, 5899.0 to 4682.6 us in q30, 6620.3 to 5380.5 us in q31, and 17667.7 to 13990.5 us in TPC-H q01.
+In q30 `sub_i64` falls from 983.2 to 348.4 us with the same three calls.
+In q03 the region is a `sub_i64` over a `mul_i64`: the root `sub_i64` stays level (871.0 to 913.0 us, with the region's output allocation counted there) and the inner `mul_i64` falls from 728.3 to 202.3 us, which fits that the inner kernel no longer allocates a full-size output, but this document did not measure allocation separately.
+`div_const_i64` in q03 runs whole in its own statement outside any region and rises from 826.9 to 1208.6 us, and this document does not explain the rise.
+In TPC-H q01 `sub_i64` falls from 559.3 to 290.9 us while `mul_i64` rises from 1701.0 to 2189.7 us over the same four calls, which this document does not explain either.
+Total kernel time falls from 2632.5 to 2512.7 us in q03, 5710.3 to 4586.3 us in q30, 5957.5 to 5111.7 us in q31, and 17482.9 to 16060.0 us in TPC-H q01.
 
 ## What remains
 
-On the mask-chain queries the chain is no longer the largest cost, but it is still 44% to 61% of kernel time because `eq_i64`, `le_i64` and `lt_i64` read their columns from memory once per use.
+On the mask-chain queries the chain is no longer the largest cost, but it is still 46% to 63% of kernel time, and `eq_i64`, `le_i64` and `lt_i64` still read their columns once per use.
 In q40 `EventDate` and `TraficSourceID` are each read twice, and a shared read (issue #39) or a fused predicate over the tile (issue #30) would remove that traffic, but neither was measured here.
-The sort and the `compress_i64` calls of q40 and q41 stay outside any region and dominate what is left, 1010 us of `argsort_i64` and 581 us of `compress_i64` in q40.
+The sort and the `compress_i64` calls of q40 and q41 stay outside any region and dominate what is left, 950.6 us of `argsort_i64` and 591.9 us of `compress_i64` in q40 untiled.
+When a region fails, the executor discards the tiled attempt and evaluates the region whole, so `--trace` and `--stats` can show lines of region inputs that the whole evaluation does not reach.
+None of the measured queries fails, so no number here includes that path.

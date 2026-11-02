@@ -28,7 +28,8 @@ Oracle 4 runs each plan on the scalar interpreter with `Tiling::Rows(3)` and wit
 It requires equal printed text and export bits, and equal errors including the kind, message, and span, which is stricter than oracle 2 because a tiled run falls back to whole evaluation on any error.
 Oracle 1 runs every variant with the same three-row tiles, so the tiled kernels of every ISA are compared too.
 The CI run gates on region runs that complete tiled: at least 54 must do so, a third of the 163 the fixed CI seed gives.
-The 5000-case release run at seed 2000000 had no oracle failure and 13160 region runs that completed tiled.
+The 5000-case release run at seed 4200000, with oracle 1 tiled and oracle 4 on the unfused plan, had no oracle failure and 13645 region runs that completed tiled.
+Oracle 1 runs every variant with three-row tiles, so a region kernel's vector body does not run on generated values there, and `tests/isa_variants.rs` covers the vector loops of the kernels at lengths up to 300.
 
 ## Runs
 

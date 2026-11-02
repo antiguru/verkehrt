@@ -302,6 +302,8 @@ fn a_left_kernel_error_wins_over_a_right_input_error() {
     // The tiled attempt evaluates that input first and fails there, and its fallback must
     // still raise the `div_const` error. The attempt's extra trace lines of the right input
     // are allowed, so traces are not compared.
+    // A failed binding of the same program raises at its statement, so only an earlier
+    // program's failed global reaches a region as a variable, see the test below.
     for right in [
         "gather(iota(40), iota(40) - 1)",
         "load_i64(\"/nonexistent/x.bin\")",
@@ -316,6 +318,40 @@ print(r);"
         assert_eq!(e.kind, ErrorKind::Runtime, "{src}");
         assert_eq!(e.message, "div_const: division by zero", "{src}");
         assert!(counts.iter().all(|&c| c == 0), "{counts:?} for\n{src}");
+    }
+}
+
+#[test]
+fn a_failed_global_of_an_earlier_program_raises_like_untiled() {
+    // `g` fails in the first program. The second program's region reads it after a left
+    // `div_const` that fails, so the untiled error is the `div_const` one.
+    let outcome = |tiling| {
+        let mut interp = Interpreter::new(Options {
+            isa: Some(Isa::Scalar),
+            tiling,
+            ..Options::default()
+        })
+        .unwrap();
+        let (mut out, mut diag) = (Vec::new(), Vec::new());
+        // The unread binding fails and stays bound as an error.
+        interp
+            .run(
+                "let _g = gather(iota(40), iota(40) - 1);\nprint(1);\n",
+                &mut out,
+                &mut diag,
+            )
+            .unwrap();
+        let src = "let z = length(slice(iota(3), 0, 0));
+let r = div_const(iota(40) * 2, z) + _g;
+print(r);";
+        interp.run(src, &mut out, &mut diag).unwrap_err()
+    };
+    let want = outcome(Tiling::Off);
+    assert_eq!(want.kind, ErrorKind::Runtime);
+    assert_eq!(want.message, "div_const: division by zero");
+    for tiling in tilings().into_iter().skip(1) {
+        let got = outcome(tiling);
+        assert_eq!((got.kind, got.message), (want.kind, want.message.clone()));
     }
 }
 

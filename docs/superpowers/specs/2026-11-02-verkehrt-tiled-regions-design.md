@@ -14,6 +14,8 @@ In q41 the same three take 1083, 451, and 320 us of 3442 us, 54%, and in q42 853
 Each comparison reads a column of 8 bytes per row and writes 1 byte per row, and q40 reads `EventDate` and `TraficSourceID` twice, so the chain moves about twice the bytes of reading each column once.
 The layer's measurement task commits these numbers as evidence together with TPC-H q06, which the stats example cannot load today.
 
+Outcome: the measurement record `docs/measurements/2026-11-02-tiled-regions.md` found 4% to 7% on q40, q41 and q42, inside the noise band, and 16% on the best variant of TPC-H q06. The estimate above counts the second reads of `EventDate` and `TraficSourceID` as chain traffic, but tiling does not remove them, and sharing them is #39. The traffic that tiling removes is the 1-byte masks between kernels, which is small next to the 8-byte column reads. The design below stands, and the record gives the numbers.
+
 ## Why tiling and not a fused predicate kernel
 
 A fused kernel per predicate shape does not scale, because each query combines a different number of comparisons with `and` and `or`, and the planner matches fused kernels as fixed egglog patterns.
@@ -51,7 +53,7 @@ The default tile row count is a constant that the measurement task picks from at
 
 ## Observation
 
-Statistics count a region's kernels as if they had run whole: one call per kernel per region run, the bytes of the whole arguments and result, and the time summed over the tiles.
+Statistics count a region's kernels as if they had run whole: one call per kernel per region run, the bytes of the whole arguments and result, and the time summed over the tiles, with the allocation of the region's output and tile buffers added to the root.
 Trace lines keep their format, one per kernel per region run, with the time summed over the tiles.
 The region's inputs print first, then the region's kernels in post-order, so the order can differ from the whole evaluation, which interleaves them.
 A trace line therefore no longer means one entry call, and the `--trace` help text says so.
