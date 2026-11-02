@@ -31,13 +31,23 @@
 //!
 //! # Errors
 //!
-//! Whether an error occurs is fixed, and so is the statement that raises it: the first
-//! statement whose evaluation fails. Which of several errors within that statement surfaces
-//! may differ between plans. The evaluator therefore evaluates every operand of an operation
-//! even after one fails, runs a lambda body with phantom parameters even when its arrays
-//! failed, and collects the category (see `oracles::Category`) of every error it meets in the
-//! failing statement. It stops after that statement. The pipeline agrees when it fails at the
-//! same line with one of the collected categories, and its output is a prefix of the
+//! Whether an error occurs is fixed, and so is the output that raises it: the first print or
+//! export whose evaluation fails. Which of several errors within that output surfaces may
+//! differ between plans. The evaluator therefore evaluates every operand of an operation even
+//! after one fails, runs a lambda body with phantom parameters even when its arrays failed,
+//! and collects the category (see `oracles::Category`) of every error it meets in the failing
+//! output. It stops after that output.
+//!
+//! The line an error reports is not fixed. The span rule of the errors-as-data spec
+//! (`docs/superpowers/specs/2026-11-02-verkehrt-errors-as-data-design.md`) gives an error the
+//! span of the statement that computed it, and lowering decides which statements compute
+//! separately: a binding read by a later statement reports its own line, and a single-use let
+//! substituted into its reader reports the reader's line. The evaluator stays lazy and does
+//! not mirror lowering. Instead each collected error carries its chain, the line of every
+//! statement from the demanding output to the failing expression: the output itself and each
+//! top-level let or export whose thunk was forced on the way. Block lets and arguments add no
+//! line, because they belong to their statement. The pipeline agrees when it fails at a line
+//! on the chain of a collected error of its category, and its output is a prefix of the
 //! evaluator's, because output printed before an error may be incomplete.
 //!
 //! # Unsupported
@@ -51,7 +61,7 @@ mod prims;
 mod scalar;
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write as _;
 use std::rc::Rc;
 
@@ -74,18 +84,33 @@ enum Val {
     Phantom,
 }
 
+/// An error that may occur, with the lines of the statements it may be reported at.
+#[derive(Clone, Debug)]
+pub struct Possible {
+    pub category: Category,
+    pub message: String,
+    /// The statements on the chain from the demanding output to the failing expression: the
+    /// output and each top-level let or export whose thunk was forced on the way.
+    pub lines: BTreeSet<u32>,
+}
+
 /// Why evaluation stopped.
 #[derive(Clone, Debug)]
 enum Stop {
-    /// Errors that may occur, with their messages, at most one per category.
-    Errors(Vec<(Category, String)>),
+    /// Errors that may occur, at most one per category. Errors of one category met on
+    /// several chains keep the first message and the lines of every chain.
+    Errors(Vec<Possible>),
     /// The case uses something the evaluator does not support.
     Unsupported(String),
 }
 
 impl Stop {
     fn error(message: String) -> Stop {
-        Stop::Errors(vec![(Category::of(&message), message)])
+        Stop::Errors(vec![Possible {
+            category: Category::of(&message),
+            message,
+            lines: BTreeSet::new(),
+        }])
     }
 
     fn merge(self, other: Stop) -> Stop {
@@ -98,13 +123,24 @@ impl Stop {
             (Stop::Unsupported(r), Stop::Unsupported(_)) => Stop::Unsupported(r),
             (Stop::Errors(mut a), Stop::Errors(b)) => {
                 for e in b {
-                    if !a.iter().any(|(c, _)| *c == e.0) {
-                        a.push(e);
+                    match a.iter_mut().find(|x| x.category == e.category) {
+                        Some(x) => x.lines.extend(e.lines),
+                        None => a.push(e),
                     }
                 }
                 Stop::Errors(a)
             }
         }
+    }
+
+    /// Adds the statement on `line` to the chain of every error.
+    fn through(mut self, line: u32) -> Stop {
+        if let Stop::Errors(es) = &mut self {
+            for e in es {
+                e.lines.insert(line);
+            }
+        }
+        self
     }
 }
 
@@ -169,15 +205,22 @@ enum Slot<'p> {
     Done(Result<Val, Stop>),
 }
 
-struct Thunk<'p>(RefCell<Slot<'p>>);
+/// A lazily evaluated binding, and the line of its statement if it is a top-level let or an
+/// export, which forcing it adds to the chain of its errors.
+struct Thunk<'p>(RefCell<Slot<'p>>, Option<u32>);
 
 impl<'p> Thunk<'p> {
     fn done(v: Val) -> Rc<Thunk<'p>> {
-        Rc::new(Thunk(RefCell::new(Slot::Done(Ok(v)))))
+        Rc::new(Thunk(RefCell::new(Slot::Done(Ok(v))), None))
     }
 
     fn pending(e: &'p TExpr, env: Env<'p>, lambda: Lambda) -> Rc<Thunk<'p>> {
-        Rc::new(Thunk(RefCell::new(Slot::Pending(e, env, lambda))))
+        Rc::new(Thunk(RefCell::new(Slot::Pending(e, env, lambda)), None))
+    }
+
+    /// A top-level let or export on `line`.
+    fn statement(e: &'p TExpr, env: Env<'p>, line: u32) -> Rc<Thunk<'p>> {
+        Rc::new(Thunk(RefCell::new(Slot::Pending(e, env, None)), Some(line)))
     }
 }
 
@@ -230,6 +273,10 @@ impl<'p> Evaluator<'p> {
             unreachable!("matched above")
         };
         let r = self.eval(e, &env, &lambda);
+        let r = match t.1 {
+            Some(line) => r.map_err(|s| s.through(line)),
+            None => r,
+        };
         *t.0.borrow_mut() = Slot::Done(r.clone());
         r
     }
@@ -467,8 +514,9 @@ fn to_value(v: &Val) -> Value {
 pub struct Failed {
     /// The line of the statement's span.
     pub line: u32,
-    /// Every error that may surface in the statement, with its message, one per category.
-    pub errors: Vec<(Category, String)>,
+    /// Every error that may surface in the statement, one per category, each with the lines
+    /// of its chain, which include `line`.
+    pub errors: Vec<Possible>,
 }
 
 /// What the evaluator computed for a program.
@@ -479,55 +527,60 @@ pub struct Reference {
     pub result: Result<Vec<(String, Value)>, Failed>,
 }
 
-/// Evaluates `source` on `inputs`. Fails with the reason when the program uses something the
-/// evaluator does not support. `reg` only serves type checking.
-///
-/// With `eager_let`, the top-level let on that line is evaluated at its statement. Until #40
-/// (errors as data), the pipeline computes top-level lets it does not inline, and this mode
-/// only serves to recognize that divergence.
-pub fn evaluate(
-    reg: &Registry,
-    source: &str,
-    inputs: &[(String, Value)],
-    eager_let: Option<u32>,
-) -> Result<Reference, String> {
+/// The typed program of `source`, checked with `reg`.
+fn typed(reg: &Registry, source: &str) -> Result<(check::TProgram, Globals), String> {
     let ast = parse(source).map_err(|e| format!("does not parse: {e}"))?;
     let mut globals = Globals::new();
     let program =
         check::check(&ast, reg, &mut globals).map_err(|e| format!("does not check: {e}"))?;
+    Ok((program, globals))
+}
+
+/// The input `var` from `inputs`.
+fn input<'p>(globals: &Globals, inputs: &[(String, Value)], var: VarId) -> Rc<Thunk<'p>> {
+    let name = globals.name(var);
+    let (_, value) = inputs
+        .iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("input {name} is not supplied"));
+    Thunk::done(from_value(value))
+}
+
+/// Evaluates `source` on `inputs`. Fails with the reason when the program uses something the
+/// evaluator does not support. `reg` only serves type checking.
+pub fn evaluate(
+    reg: &Registry,
+    source: &str,
+    inputs: &[(String, Value)],
+) -> Result<Reference, String> {
+    let (program, globals) = typed(reg, source)?;
     let ev = Evaluator { globals: &globals };
     let mut env = Env::default();
     let mut printed = String::new();
     let mut exports = Vec::new();
     for s in &program.stmts {
+        let line = stmt_line(s);
         let outcome = match s {
             TStmt::Input { var, .. } => {
-                let name = globals.name(*var);
-                let (_, value) = inputs
-                    .iter()
-                    .find(|(n, _)| n == name)
-                    .unwrap_or_else(|| panic!("input {name} is not supplied"));
-                env = env.bind(*var, Thunk::done(from_value(value)));
+                env = env.bind(*var, input(&globals, inputs, *var));
                 Ok(())
             }
             TStmt::Let { var, value, .. } => {
-                let t = Thunk::pending(value, env.clone(), None);
-                env = env.bind(*var, Rc::clone(&t));
-                if eager_let == Some(stmt_line(s)) {
-                    ev.force(&t).map(|_| ())
-                } else {
-                    Ok(())
-                }
+                env = env.bind(*var, Thunk::statement(value, env.clone(), line));
+                Ok(())
             }
             TStmt::Export { var, value, .. } => {
-                let t = Thunk::pending(value, env.clone(), None);
+                let t = Thunk::statement(value, env.clone(), line);
                 env = env.bind(*var, Rc::clone(&t));
                 ev.force(&t)
                     .map(|v| exports.push((globals.name(*var).to_string(), to_value(&v))))
             }
-            TStmt::Print { value, .. } => ev.eval(value, &env, &None).map(|v| {
-                writeln!(printed, "{}", to_value(&v)).expect("writing to a string");
-            }),
+            TStmt::Print { value, .. } => ev
+                .eval(value, &env, &None)
+                .map(|v| {
+                    writeln!(printed, "{}", to_value(&v)).expect("writing to a string");
+                })
+                .map_err(|stop| stop.through(line)),
             // Its value reaches no print or export.
             TStmt::Expr { .. } => Ok(()),
         };
@@ -537,10 +590,7 @@ pub fn evaluate(
             Err(Stop::Errors(errors)) => {
                 return Ok(Reference {
                     printed,
-                    result: Err(Failed {
-                        line: stmt_line(s),
-                        errors,
-                    }),
+                    result: Err(Failed { line, errors }),
                 });
             }
         }
@@ -549,6 +599,77 @@ pub fn evaluate(
         printed,
         result: Ok(exports),
     })
+}
+
+/// Whether forcing the binding named `name` alone fails: its value evaluated in its scope, with
+/// the bindings before it lazy and no output evaluated. `None` when no top-level let and no
+/// block let outside lambdas and function bodies has that name. Fails with the reason when
+/// the binding uses something the evaluator does not support.
+pub fn fails_alone(
+    reg: &Registry,
+    source: &str,
+    inputs: &[(String, Value)],
+    name: &str,
+) -> Result<Option<bool>, String> {
+    let (program, globals) = typed(reg, source)?;
+    let ev = Evaluator { globals: &globals };
+    let mut env = Env::default();
+    for s in &program.stmts {
+        let found = match s {
+            TStmt::Input { var, .. } => {
+                env = env.bind(*var, input(&globals, inputs, *var));
+                None
+            }
+            TStmt::Let { var, value, .. } | TStmt::Export { var, value, .. } => {
+                let found = if globals.name(*var) == name {
+                    Some(ev.eval(value, &env, &None))
+                } else {
+                    ev.find(value, &env, name)
+                };
+                env = env.bind(*var, Thunk::pending(value, env.clone(), None));
+                found
+            }
+            TStmt::Print { value, .. } | TStmt::Expr { value, .. } => ev.find(value, &env, name),
+        };
+        match found {
+            None => {}
+            Some(Ok(_)) => return Ok(Some(false)),
+            Some(Err(Stop::Errors(_))) => return Ok(Some(true)),
+            Some(Err(Stop::Unsupported(reason))) => return Err(reason),
+        }
+    }
+    Ok(None)
+}
+
+impl<'p> Evaluator<'p> {
+    /// The value of the block let named `name` in `e`, evaluated in its scope, or `None` when
+    /// `e` has no such let outside lambdas and function bodies.
+    fn find(&self, e: &'p TExpr, env: &Env<'p>, name: &str) -> Option<Result<Val, Stop>> {
+        let first = |es: &[&'p TExpr]| es.iter().find_map(|x| self.find(x, env, name));
+        match &e.kind {
+            TExprKind::Lit(_) | TExprKind::Str(_) | TExprKind::Var(_) => None,
+            TExprKind::ArrayLit(es) | TExprKind::Prim(_, es) | TExprKind::Call(_, es) => {
+                es.iter().find_map(|x| self.find(x, env, name))
+            }
+            // A lambda body reads its parameters, which a binding alone does not have.
+            TExprKind::Map(x, _) | TExprKind::Filter(x, _) => first(&[x]),
+            TExprKind::ZipMap(x, y, _) => first(&[x, y]),
+            TExprKind::If(c, t, f) => first(&[c, t, f]),
+            TExprKind::Block(lets, result) => {
+                let mut inner = env.clone();
+                for (v, x) in lets {
+                    if self.globals.name(*v) == name {
+                        return Some(self.eval(x, &inner, &None));
+                    }
+                    if let Some(r) = self.find(x, &inner, name) {
+                        return Some(r);
+                    }
+                    inner = inner.bind(*v, Thunk::pending(x, inner.clone(), None));
+                }
+                self.find(result, &inner, name)
+            }
+        }
+    }
 }
 
 fn stmt_line(s: &TStmt) -> u32 {
@@ -573,7 +694,7 @@ mod tests {
         let src = "fn f(q: i64) -> bool { true }\n\
                    let x = [1, 2, 3];\n\
                    print(map(x, |v| if f(v) { v } else { div_const(v, 0) }));\n";
-        let r = evaluate(&Registry::new(), src, &[], None).expect("supported");
+        let r = evaluate(&Registry::new(), src, &[]).expect("supported");
         assert!(r.result.is_ok(), "the program fails");
         assert_eq!(r.printed, "[1, 2, 3]\n");
     }

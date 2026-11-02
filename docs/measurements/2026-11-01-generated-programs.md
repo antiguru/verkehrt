@@ -2,7 +2,7 @@
 
 This document records what the random program generator of `tests/generated` found, and what it cannot tell.
 The generator builds typed programs from the kernel registry and checks each one against three oracles: every ISA variant against scalar, fused against unfused plans, and a reference evaluator written from the specs.
-The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40.
+The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40, which errors as data has since resolved.
 No oracle reported a disagreement between kernels, but that result carries no correctness claim, because the coverage limits below are narrow.
 This is a findings record, not a benchmark, and the timings only size the CI run.
 
@@ -47,18 +47,20 @@ The second table lists the runs that include oracle 3, with the oracle 3 version
 
 * **First:** one error union over the whole program, no line rule, and a stopgap that forced every top-level let.
 * **Line rule:** the failing statement's line and categories, with a stopgap that forced every top-level let.
-* **Current:** the line rule with the current stopgap, which forces only the let on the pipeline's failing line.
+* **Narrow stopgap:** the line rule with a stopgap that forces only the let on the pipeline's failing line.
+* **Strict:** no stopgap, and the chain rule described under the reference evaluator below, after #40 landed. The generator also emits unread bindings that fail.
 
 | Seed | Cases | Oracle 3 | Skipped for #40 | Result |
 |---|---|---|---|---|
 | 900000 | 3000 | first | 6 | no failure |
 | 1000000 | 1000 | line rule, with the lazy lambda `if` in the evaluator but before the lowering fix | not recorded | no failure, did not exercise the lambda `if` bug |
 | 1100000 | 6000 | line rule | 73 | failed 4 workers on the stopgap |
-| 1100000 | 6000 | current | 57 | no failure |
-| 1200000 | 6000 | current | 71 | no failure |
-| 1300000 | 4000 | current, with calls typed by their body | 44 | no failure, latest run |
+| 1100000 | 6000 | narrow stopgap | 57 | no failure |
+| 1200000 | 6000 | narrow stopgap | 71 | no failure |
+| 1300000 | 4000 | narrow stopgap, with calls typed by their body | 44 | no failure |
+| 1400000 | 5000 | strict | none, no skip path remains | no failure, latest run |
 
-Oracle 3 skips cases only for the #40 stopgap. A program the evaluator does not support fails the case, because the generator produces none.
+Oracle 3 skips no case. A program the evaluator does not support fails the case, because the generator produces none.
 
 ### Feature histogram
 
@@ -99,7 +101,7 @@ Each limit below weakens any statement that the runs found nothing.
   * A second `scan_by_add` mutation (`m |= m << 3`) is wrong only when a segment starts on lane 0 of a later 8-row chunk and the next 7 rows do not start. It was not caught in 3,000 cases, and the kernel property tests in `tests/isa_variants.rs` fit data-pattern bugs of this kind better.
 * **Lowering bugs reach only oracle 3.** Swapping the branches of a lambda `if` in lowering passed oracles 1 and 2, because every variant and both fusion settings share the lowering. Only the reference evaluator failed on it, in the 48-case CI run.
 * **The #39 cap replaces statements.** A statement whose shared bindings nest deeper than `MAX_SHARE_DEPTH = 3` becomes a leaf. The cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000, the latest count, after the generator started to call functions more often. The generator under-covers deep sharing until #39 lands.
-* **The #40 stopgap skips cases.** Oracle 3 skips about 1% of cases under the current stopgap (57 of 6000, 71 of 6000, and 44 of 4000), which hides its checks on those programs until #40 lands.
+* **The chain rule accepts several lines.** Oracle 3 accepts an error at any statement on its chain, so it cannot tell whether lowering computed a binding in the right statement, only that the reported line is one the span rule allows.
 * **Shared code.** All three oracles run the same parser and checker, and the evaluator types lambda bodies through the same registry and prints through the same `Value` display. The generator draws its operations from that registry too. Bugs in parsing, checking, or value formatting are invisible to all three oracles.
 * **Untaken lazy branches.** The generator rarely puts a failing value, such as a zero `div_const` divisor, in a lambda branch that is not taken. The 1000-case run of seed 1000000 did not find the lambda `if` bug, and a hand-written probe did.
 * **Value-dependent primitives are mostly built valid.** Most `gather`, `slice`, `histogram`, and `reduce_into` operands are generated in range, and only a small share is arbitrary.
@@ -162,17 +164,31 @@ The two disagree on three shapes, each confirmed with the release CLI, which fai
 * a let read twice, both times in an untaken lazy branch.
 
 The generator hit the second shape at CI worker seed 1592590339.
-The design direction is demand-driven semantics through errors as data plus a checker rule for unread bindings, filed as #40 above this layer.
-Until then, oracle 3 skips a case only when evaluating the pipeline's failing top-level let at its statement reproduces the failure.
-A first, simpler stopgap was too narrow and too wide at once, and a 6000-case run at seed 1100000 failed 4 workers on it, so the stopgap now requires all of:
+The fix is demand-driven semantics through errors as data plus a checker rule for unread bindings, tracked as #40.
+Until it landed, oracle 3 skipped a case when evaluating the pipeline's failing top-level let at its statement reproduced the failure, and a first, simpler stopgap failed 4 workers of a 6000-case run at seed 1100000.
+With errors as data, a failing binding holds its error and only an output that reads it raises, so the stopgap and its skip path are gone.
 
-* the pipeline fails at line L;
-* the lazy evaluation succeeds or fails only after L;
-* evaluating only the top-level let on line L gives an error at L with the pipeline's category and the pipeline's output.
+Errors as data moved the line an error reports, which the strict line comparison then rejected in about 2 of 1000 cases.
+A let with several readers is computed as its own statement, so the pipeline reported the let's line, while the evaluator reported the line of the reading output.
+Both lines are correct under the span rule of the errors-as-data spec, which gives an error the line of the statement that computed it.
+The evaluator therefore records the chain of statements from the demanding output to the failing expression, and oracle 3 accepts any line on it, as described below.
+The regression test `oracle_3_accepts_lines_on_the_chain` in `tests/generated/oracles.rs` pins this shape.
 
 ## Reference evaluator
 
 The evaluator excludes no primitives: every primitive the generator produces is supported, including float reductions in the canonical order of the base spec.
 Strings, `load_*`, and arrays longer than 2^22 rows make a case unsupported, which fails it, because the generator produces none of them.
 Evaluation is demand-driven: lets, block lets, and arguments are memoized thunks, and an expression statement is not evaluated.
-The evaluator collects the error categories of the first failing statement and stops output there, and oracle 3 accepts a runtime error at that line whose category was collected and whose output is a prefix of the evaluator's.
+The evaluator collects the error categories of the first failing output and stops there.
+Each collected error carries its chain: the line of the output and of each top-level let or export whose thunk failed while the output forced it.
+Oracle 3 accepts a runtime error whose category was collected, whose line is on that category's chain, and whose output is a prefix of the evaluator's.
+The evaluator stays lazy and does not mirror which bindings lowering inlines, so the chain covers every statement that lowering may compute the failing binding in.
+
+## Failing unread bindings
+
+The generator emits `_`-prefixed bindings that nothing reads, some of which fail whenever they are computed.
+Before about 12% of top-level statements it adds a failing let, outside lambdas about 12% of blocks get a failing block let, and a quarter of the top-level lets nothing reads keep the `_` prefix instead of being exported.
+A failing binding takes the `min` of an empty slice, gathers an index one past the end, or compares an array with one longer by one element, mostly on an array in scope.
+The CI run gates on these bindings: at least 8 of its 64 programs must contain one that fails when the evaluator forces it alone, and the fixed CI seed gives 23.
+In the 5000-case run at seed 1400000, 1974 programs (39%) had such a binding, 1755 had a failing unread top-level let, and 445 a failing unread block let, while 4492 programs ran to completion.
+

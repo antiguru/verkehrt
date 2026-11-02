@@ -14,10 +14,12 @@
 //!   kernels reorder their operands.
 //! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
 //!   evaluator of `eval` computes from the typed program. On success the output and the
-//!   exports must be equal. Whether an error occurs and which statement raises it are fixed,
-//!   so on failure the error must be a runtime error at the line of the evaluator's failing
-//!   statement, in one of the categories the evaluator met there. Which of several errors
-//!   within that statement surfaces may differ, and output printed before an error may be
+//!   exports must be equal. Whether an error occurs and which output raises it are fixed, so
+//!   on failure the error must be a runtime error in one of the categories the evaluator met
+//!   in its failing output. Its line must be on the chain of an error of that category, a
+//!   statement from the output to the failing expression, because an error reports the line
+//!   of the statement that lowering computed it in, see `eval`. Which of several errors
+//!   within that output surfaces may differ, and output printed before an error may be
 //!   incomplete, so the pipeline's output must only be a prefix of the evaluator's.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
@@ -220,8 +222,9 @@ pub struct Verdict {
     pub fusion_changed_plan: bool,
     /// The integer sum rewrites that fired, with the number of statements in which each did.
     pub rewrites_fired: BTreeMap<SumRewrite, usize>,
-    /// Why oracle 3 skipped the case, which only the #40 stopgap does.
-    pub reference_skipped: Option<String>,
+    /// Whether the case has an unread binding that the generator made to fail and that fails
+    /// when the reference evaluator forces it alone.
+    pub failing_unread: bool,
 }
 
 impl Engine {
@@ -303,69 +306,36 @@ impl Engine {
                 describe(case),
             ));
         }
-        let evaluate = |eager| eval::evaluate(&self.reg, &case.source, &case.inputs, eager);
-        let reference_skipped = match evaluate(None) {
-            // The generator produces nothing unsupported, so a skip here would quietly turn
-            // the oracle off.
-            Err(reason) => {
-                return Err(format!(
-                    "oracle 3: the reference evaluator does not support the program: {reason}\n{}",
-                    describe(case),
-                ));
-            }
-            Ok(r) if agrees(&r, f) => None,
-            // Until #40 (errors as data), the pipeline computes top-level lets it does not
-            // inline. Such a case is skipped only when evaluating the top-level let on the
-            // line of the pipeline's failure at its statement reproduces that failure exactly.
-            Ok(r) if eager_reproduces(&r, f, |line| evaluate(Some(line))) => Some(
-                "until #40, the pipeline computes a top-level let it does not inline".to_string(),
-            ),
-            Ok(r) => {
-                return Err(format!(
-                    "oracle 3: the reference evaluator differs from the pipeline\n{}\n\
-                     fused plan:\n{fused_plan}pipeline: {f}\nreference: {}",
-                    describe(case),
-                    show_reference(&r),
-                ));
-            }
+        // The generator produces nothing unsupported, so a skip here would quietly turn the
+        // oracle off.
+        let unsupported = |reason: String| {
+            format!(
+                "oracle 3: the reference evaluator does not support the program: {reason}\n{}",
+                describe(case),
+            )
         };
+        let r = eval::evaluate(&self.reg, &case.source, &case.inputs).map_err(unsupported)?;
+        if !agrees(&r, f) {
+            return Err(format!(
+                "oracle 3: the reference evaluator differs from the pipeline\n{}\n\
+                 fused plan:\n{fused_plan}pipeline: {f}\nreference: {}",
+                describe(case),
+                show_reference(&r),
+            ));
+        }
+        let mut failing_unread = false;
+        for name in &case.failing_unread {
+            let fails = eval::fails_alone(&self.reg, &case.source, &case.inputs, name)
+                .map_err(unsupported)?;
+            failing_unread |= fails == Some(true);
+        }
         Ok(Verdict {
             error: f.result.as_ref().err().map(|e| (e.kind, e.message.clone())),
             fusion_changed_plan: fused_plan != unfused_plan,
             rewrites_fired: rewrites::fired(&fused_rewrites),
-            reference_skipped,
+            failing_unread,
         })
     }
-}
-
-/// Whether the pipeline's failure `o` is the one that `eager` gives, which evaluates the
-/// top-level let on the failure's line at its statement: at the same line and with the same
-/// output, while the lazy evaluation `lazy` succeeds or fails only at a later statement.
-fn eager_reproduces(
-    lazy: &Reference,
-    o: &Outcome,
-    eager: impl FnOnce(u32) -> Result<Reference, String>,
-) -> bool {
-    let Err(f) = &o.result else {
-        return false;
-    };
-    let Some(line) = f.span.map(|s| s.line) else {
-        return false;
-    };
-    if lazy.result.as_ref().is_err_and(|l| l.line <= line) {
-        return false;
-    }
-    let Ok(eager) = eager(line) else {
-        return false;
-    };
-    let Err(failed) = &eager.result else {
-        return false;
-    };
-    let category = Category::of(&f.message);
-    f.kind == ErrorKind::Runtime
-        && failed.line == line
-        && failed.errors.iter().any(|(c, _)| *c == category)
-        && eager.printed == o.printed
 }
 
 fn export(name: &str, v: &Value) -> Export {
@@ -388,8 +358,12 @@ fn agrees(r: &Reference, o: &Outcome) -> bool {
         (Err(failed), Err(f)) => {
             let category = Category::of(&f.message);
             f.kind == ErrorKind::Runtime
-                && f.span.map(|s| s.line) == Some(failed.line)
-                && failed.errors.iter().any(|(c, _)| *c == category)
+                && f.span.is_some_and(|s| {
+                    failed
+                        .errors
+                        .iter()
+                        .any(|e| e.category == category && e.lines.contains(&s.line))
+                })
                 && r.printed.starts_with(&o.printed)
         }
         _ => false,
@@ -405,10 +379,10 @@ fn show_reference(r: &Reference) -> String {
             }
         }
         Err(failed) => {
-            for (_, message) in &failed.errors {
+            for e in &failed.errors {
                 s.push_str(&format!(
-                    "\n  possible error at line {}: {message}",
-                    failed.line
+                    "\n  possible error at line {}, chain {:?}: {}",
+                    failed.line, e.lines, e.message
                 ));
             }
         }
@@ -527,4 +501,63 @@ fn error_categories_ignore_wording_only() {
         c("reduce_min of an empty array")
     );
     assert_eq!(c("planner: x"), Category::Other("planner: x".into()));
+}
+
+/// A let read twice is computed at its own statement, so the pipeline reports the let's line,
+/// which is on the chain from the reading print, and oracle 3 accepts it. A line off the
+/// chain or another category is rejected.
+#[test]
+fn oracle_3_accepts_lines_on_the_chain() {
+    let case = Case {
+        source: "let e = fill(0, 1.0);\n\
+                 let v = reduce(e, min);\n\
+                 print(1);\n\
+                 print(v + v);\n"
+            .to_string(),
+        inputs: Vec::new(),
+        repro: String::new(),
+        features: Default::default(),
+        failing_unread: Vec::new(),
+    };
+    let engine = Engine::new();
+    engine.check(&case).expect("the oracles agree");
+    let r = eval::evaluate(&engine.reg, &case.source, &[]).expect("supported");
+    let failed = r.result.as_ref().expect_err("the program fails");
+    assert_eq!(failed.line, 4);
+    let lines: Vec<u32> = failed.errors[0].lines.iter().copied().collect();
+    assert_eq!(
+        lines,
+        [2, 4],
+        "the failing let and the print, not the let it reads"
+    );
+    let at = |line, message: &str| Outcome {
+        printed: "1\n".to_string(),
+        result: Err(Failure {
+            kind: ErrorKind::Runtime,
+            message: message.to_string(),
+            span: Some(Span { line, col: 1 }),
+        }),
+    };
+    assert!(agrees(&r, &at(2, "reduce_min of an empty array")));
+    assert!(agrees(&r, &at(4, "reduce_min of an empty array")));
+    assert!(!agrees(&r, &at(1, "reduce_min of an empty array")));
+    assert!(!agrees(&r, &at(3, "reduce_min of an empty array")));
+    assert!(!agrees(&r, &at(2, "length mismatch: 1 vs 2")));
+}
+
+/// A failing binding that nothing reads fails when forced alone, also as a block let, while
+/// the program succeeds.
+#[test]
+fn unread_failing_bindings_fail_alone() {
+    let reg = Registry::new();
+    let src = "let x = [1, 2];\n\
+               let _v = gather(x, fill(1, length(x)));\n\
+               print({ let _b = x == fill(length(x) + 1, 0); x });\n";
+    let r = eval::evaluate(&reg, src, &[]).expect("supported");
+    assert!(r.result.is_ok(), "nothing demands the failing bindings");
+    let fails = |name| eval::fails_alone(&reg, src, &[], name).expect("supported");
+    assert_eq!(fails("_v"), Some(true));
+    assert_eq!(fails("_b"), Some(true));
+    assert_eq!(fails("x"), Some(false));
+    assert_eq!(fails("_c"), None);
 }
