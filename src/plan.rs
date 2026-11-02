@@ -94,19 +94,11 @@ impl PlanGraph {
 
 /// Per node of `graph`, whether the executor evaluates it at most once per run and reuses its
 /// value: a `Kernel` node with no `load_*` kernel in its subgraph that has at least two uses.
-/// A use is an edge from a parent, or a statement root, and `roots` holds one root per
-/// statement, so a root of two statements has two uses. A parent passes on as many uses per
-/// edge as it has itself, except that a shared parent runs once and passes on one.
+/// Uses count paths. `roots` holds one root per statement, and each adds one use to its root,
+/// so a root of two statements has two uses. A node passes its own uses to each child along
+/// every edge, except that a shared node runs once and passes on one.
 pub fn shared_flags(reg: &Registry, graph: &PlanGraph, roots: &[PlanId]) -> Vec<bool> {
     let n = graph.len();
-    let children = |node: &PlanNode| -> Vec<PlanId> {
-        match node {
-            PlanNode::Kernel(_, args) => args.clone(),
-            PlanNode::Leaf(_) => Vec::new(),
-            PlanNode::Bcast(c) => vec![*c],
-            PlanNode::Cond(c, t, e) => vec![*c, *t, *e],
-        }
-    };
     // Children have smaller ids than their parents, so one ascending pass sees every child
     // before its parents.
     let mut loads = vec![false; n];
@@ -114,7 +106,9 @@ pub fn shared_flags(reg: &Registry, graph: &PlanGraph, roots: &[PlanId]) -> Vec<
         let node = &graph.nodes[i];
         let own =
             matches!(node, PlanNode::Kernel(k, _) if matches!(reg.get(*k).op, Some(Op::Load(_))));
-        loads[i] = own || children(node).iter().any(|c| loads[c.index()]);
+        let mut below = false;
+        for_each_child(node, |c| below |= loads[c.index()]);
+        loads[i] = own || below;
     }
     // Uses saturate at 2, which is all the flag needs. One descending pass sees every
     // parent's final count before its children. A branch of a conditional counts like any
@@ -128,11 +122,25 @@ pub fn shared_flags(reg: &Registry, graph: &PlanGraph, roots: &[PlanId]) -> Vec<
         let node = &graph.nodes[i];
         shared[i] = matches!(node, PlanNode::Kernel(..)) && !loads[i] && uses[i] >= 2;
         let pass = if shared[i] { 1 } else { uses[i] };
-        for c in children(node) {
+        for_each_child(node, |c| {
             uses[c.index()] = uses[c.index()].saturating_add(pass).min(2);
-        }
+        });
     }
     shared
+}
+
+/// Calls `f` on every child of `node`, once per edge, in order.
+fn for_each_child(node: &PlanNode, mut f: impl FnMut(PlanId)) {
+    match node {
+        PlanNode::Kernel(_, args) => args.iter().copied().for_each(f),
+        PlanNode::Leaf(_) => {}
+        PlanNode::Bcast(c) => f(*c),
+        PlanNode::Cond(c, t, e) => {
+            f(*c);
+            f(*t);
+            f(*e);
+        }
+    }
 }
 
 /// The arithmetic that an integer sum rewrite moves out of a sum, see `SumRewrite`.
@@ -429,7 +437,10 @@ pub fn render_leaf(leaf: &Leaf, globals: &Globals) -> String {
 /// Numbers the nodes of plan graphs by the tree that `render` prints for them, in time linear
 /// in the number of nodes. Two nodes numbered by one `PlanShapes`, of one graph or of two,
 /// get the same number exactly when their kernels, leaf texts, and conditionals form the
-/// same tree with broadcasts left out, which is when `render` prints the same text for them.
+/// same tree with broadcasts left out. That is when `render` prints the same text for them,
+/// provided that kernel names are unique, which `Registry::add` asserts, and that every leaf
+/// text is one self-delimiting token without spaces or parentheses outside a quoted string,
+/// which `render_leaf` gives today.
 #[derive(Debug, Default)]
 pub struct PlanShapes {
     index: HashMap<Shape, u32>,

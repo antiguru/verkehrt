@@ -1,6 +1,6 @@
 //! The executor. It evaluates planned statements through the kernel table.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -248,6 +248,8 @@ struct Region {
     /// Whether every input that is not trivial comes before the first kernel in post-order,
     /// so that the whole evaluation reaches all of them before it calls any region kernel.
     ordered: bool,
+    /// The shared nodes among `inputs`.
+    shared_inputs: HashSet<PlanId>,
 }
 
 /// A region run that completed tiled.
@@ -390,10 +392,13 @@ impl<'a> Machine<'a> {
             // region too: whole evaluation reaches the earlier one first, and either stops at
             // its failure or finds the value in the memo here. Any other shared input is not
             // trivial.
-            let reused =
-                self.memoized(node) || (self.shared(node) && region.inputs.contains(&node));
+            let shared = self.shared(node);
+            let reused = self.memoized(node) || (shared && region.shared_inputs.contains(&node));
             if !trivial(self.graph, node) && !reused && !region.kernels.is_empty() {
                 region.ordered = false;
+            }
+            if shared {
+                region.shared_inputs.insert(node);
             }
             region.inputs.push(node);
             return Src::Input(region.inputs.len() - 1);
@@ -414,6 +419,7 @@ impl<'a> Machine<'a> {
             inputs: Vec::new(),
             kernels: Vec::new(),
             ordered: true,
+            shared_inputs: HashSet::new(),
         };
         self.collect(node, &mut region);
         // A tiled run evaluates every input before any kernel. Such an input after a kernel

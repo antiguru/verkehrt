@@ -127,7 +127,10 @@ The executor and the tiled regions therefore read `PlanId`s, which is a mechanic
 
 ## Shared evaluation
 
-A plan node is shared when it is a `Kernel` node, its subgraph contains no `load_*` kernel, and it has at least two uses, where a use is an edge from a parent in the plan graph or a statement root.
+A plan node is shared when it is a `Kernel` node, its subgraph contains no `load_*` kernel, and it has at least two uses.
+Uses count paths: each statement root adds one use, and every node passes its own use count to each of its children along every edge, except that a shared node passes one, because it runs once.
+A kernel below a conditional that two statements reach is therefore shared, although it has a single parent edge, because a conditional is never shared and passes its two uses on.
+Counting parent edges alone would miss that kernel and run it once per statement.
 The executor keeps a memo of shared node values for one `run_plan` call.
 Evaluating a shared node returns the memoized value if there is one, and otherwise evaluates the node and stores the value when the evaluation succeeds.
 A failed evaluation is never stored.
