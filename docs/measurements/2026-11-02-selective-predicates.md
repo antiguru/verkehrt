@@ -3,8 +3,8 @@
 This document measures range narrowing in tiled regions (issue #49) on the mask-chain queries ClickBench q40, q41 and q42 and TPC-H q06.
 Narrowing lowers the best variant of q40, q41 and q42 by 17%, 20% and 20% (criterion means, 0.83, 0.80 and 0.80 times), and all 15 variant pairs of the three queries run more than 10% faster in each of three pairs of runs.
 The comparisons evaluate 0.497, 0.512 and 0.531 of the whole-array rows on those three and 0.998 on TPC-H q06, which matches the spec's simulation, and TPC-H q06 does not change beyond the noise band (1.00 to 1.05 times).
-On q06 the narrowing finds almost nothing to skip and still scans the left operands, a small cost this record did not attribute: `and_bool` rises from 252 to 330 us in the stats and the criterion means rise by up to 5%.
-Comparison time fell with the rows evaluated on the three ClickBench queries (0.52 to 0.60 of untiled-whole time for 0.50 to 0.53 of the rows), which is the premise the spec sets for selection vectors.
+On q06 the narrowing finds almost nothing to skip and still scans the left operands, a small cost: `and_bool` rises from 252 to 330 us in the stats and the criterion means rise by up to 5%. Part of the stats rise is timing itself, since with statistics on a guard times its scan, its right operand and its fill separately in every tile.
+Comparison time fell with the rows evaluated on the three ClickBench queries (0.52 to 0.60 of selective-off time for 0.50 to 0.53 of the rows), which is the premise the spec sets for selection vectors.
 Across both suites, 15 of 110 query and variant pairs run more than 10% faster and 2 run more than 10% slower in the first pair, and neither slower pair is a result of narrowing on this evidence: `q03` on `x86-64-v4-intrinsics` is unresolved because its repeat disagrees, and TPC-H q01 on `x86-64-v3-auto` reproduces at 1.11 and 1.12 on a query where no tile narrowed.
 The before numbers come from the same build with `VERKEHRT_SELECTIVE=off`, and the DuckDB and corgi figures are reused from earlier records and were not re-run.
 
@@ -62,7 +62,7 @@ The plans printed here are from reduced forms, so the operand order of the full 
 ## Rows evaluated against the simulation
 
 The rows the mask comparisons ran over follow from the `read` bytes of `eq_i64`, `le_i64` and `lt_i64` in `stats-off.txt` and `stats-on.txt`, at 8 bytes per row.
-The untiled-whole count is the number of comparisons times the table rows times 8 (56,000,000 bytes for q40's seven comparisons).
+The selective-off count is the number of comparisons times the table rows times 8 (56,000,000 bytes for q40's seven comparisons).
 Two calls do not belong to the mask and are removed: the `iota(n) == 0` of q40's grouping code (one `eq_i64` call, 400,896 bytes, whole in both runs), and q42's one `lt_i64` of 11,520 bytes after the mask.
 
 | Query | comparison `read` bytes, selective off | selective on | fraction | simulation (range narrowing, 16384 rows) |
@@ -74,7 +74,7 @@ Two calls do not belong to the mask and are removed: the `iota(n) == 0` of q40's
 
 The fractions agree with the simulation to the third decimal, so there is no difference to explain.
 The `narrowed_tiles` counts are 110 (q40), 78 (q41), 73 (q42) and 235 (TPC-H q06), so q06's tiles narrow often, by a few rows each time.
-The `and_bool` and `or_bool` kernels read fewer bytes too: `and_bool` reads 4,138,102 bytes in q40 against 10,000,000 untiled-whole, because a guard runs only over its range.
+The `and_bool` and `or_bool` kernels read fewer bytes too: `and_bool` reads 4,138,102 bytes in q40 against 10,000,000 selective-off, because a guard runs only over its range.
 `eq_i64` reads 21,628,496 bytes in q40 against 40,400,896, and the stats record the calls as 6 in both runs, so call counts are unchanged.
 
 ## Comparison time against rows evaluated
@@ -91,13 +91,13 @@ The table gives, from the same two stats files, the time in us of the mask compa
 The comparison time fell in proportion to the rows evaluated on q40 and q41 (0.52 for 0.50 and 0.51 of the rows) and by somewhat less on q42 (0.60 for 0.53), so the premise of the spec holds on the three ClickBench queries.
 The `le_i64` calls fall as the rows do in q40 (330.2 to 138.4 us for 0.414 of the bytes), q41 (318.1 to 129.5) and q42 (309.8 to 136.9), and `eq_i64` falls by less than its bytes: q42's 763.9 to 503.4 us is 0.66 of the time for 0.61 of the bytes.
 This record did not measure why q42's `eq_i64` falls by less, and the evidence does not separate a per-call cost of the shorter calls from the whole-length first comparison.
-The spec estimated that narrowing saves about a fifth of the kernel time of q40, q41 and q42, and the comparisons, `and_bool` and `or_bool` together fall by 19.8%, 20.1% and 17.3% of the untiled-whole total kernel time.
+The spec estimated that narrowing saves about a fifth of the kernel time of q40, q41 and q42, and the comparisons, `and_bool` and `or_bool` together fall by 19.8%, 20.1% and 17.3% of the selective-off total kernel time.
 The total kernel time falls to 0.79, 0.80 and 0.83 of the off run, and the criterion means of the best variant fall to 0.83, 0.80 and 0.80, which agree within 4 points.
 
 TPC-H q06 is the control for the per-tile cost, because narrowing skips 0.17% of its comparison rows but still scans the left operand of its guards in 235 narrowed guard evaluations.
 Its guard time rises from 251.9 to 330.2 us (`and_bool`) and its comparison time by 6% (970.3 to 1023.8 us), which is inside the 10% band, and its criterion means rise by 1% to 5% in each of three pairs (below).
 `and_bool` takes 269.9 us on against 308.9 us off in q40 and is level in q41 (291.2 against 285.2) and q42 (223.2 against 218.0), so on the ClickBench queries the guards are not slower beyond the band.
-The `and_bool` rise on q06 is 78 us in one stats run, and the criterion rise of 3% to 5% on the best variant is inside the band, so q06 pays a small cost, which this record did not attribute, for finding almost nothing to skip.
+The `and_bool` rise on q06 is 78 us in one stats run, and the criterion rise of 3% to 5% on the best variant is inside the band, so q06 pays a small cost, part of which in the stats is the extra timing of each guard's scan and fill, for finding almost nothing to skip.
 
 ## Results
 

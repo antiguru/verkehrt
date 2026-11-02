@@ -34,8 +34,8 @@ The TPC-H lineitem rows that pass `l_shipdate >= 8766` are spread across the til
 If comparison time scales with the rows evaluated, narrowing saves about half the comparison time of q40, q41 and q42, roughly a fifth of their kernel time, which is an estimate the measurement must confirm.
 
 **Outcome.** The measurement (`docs/measurements/2026-11-02-selective-predicates.md`) confirms the simulation: the mask comparisons read 0.4973, 0.5115, 0.5311 and 0.9983 of the whole-array bytes on q40, q41, q42 and TPC-H q06, against the predicted 0.497, 0.512, 0.531 and 0.998.
-Comparison time fell to 0.52, 0.52 and 0.60 of the untiled-whole time on the three ClickBench queries for 0.50 to 0.53 of the rows, so it fell roughly in proportion to the rows evaluated (q42 by somewhat less, 0.60 for 0.53), and the comparisons with `and_bool` and `or_bool` saved 19.8%, 20.1% and 17.3% of kernel time against the estimated fifth.
-The criterion means of the best variant fell to 0.83, 0.80 and 0.80 times, every one of the 15 variants of the three queries left the 10% band in three pairs of runs, and TPC-H q06 stayed inside it (1.00 to 1.05 times), at a small unattributed cost: its guards scan left operands and find almost nothing to skip, and `and_bool` rose from 252 to 330 us.
+Comparison time fell to 0.52, 0.52 and 0.60 of the selective-off time on the three ClickBench queries for 0.50 to 0.53 of the rows, so it fell roughly in proportion to the rows evaluated (q42 by somewhat less, 0.60 for 0.53), and the comparisons with `and_bool` and `or_bool` saved 19.8%, 20.1% and 17.3% of kernel time against the estimated fifth.
+The criterion means of the best variant fell to 0.83, 0.80 and 0.80 times, every one of the 15 variants of the three queries left the 10% band in three pairs of runs, and TPC-H q06 stayed inside it (1.00 to 1.05 times), at a small cost: its guards scan left operands and find almost nothing to skip, and `and_bool` rose from 252 to 330 us.
 By the rule above the premise holds, so selection vectors for TPC-H q06 are the next step, with the cost of a gathered comparison on scattered rows still unmeasured.
 
 ## Mechanism: range narrowing in tiles
@@ -73,7 +73,7 @@ The default tile row count stays 16384, since the simulation shows the ClickBenc
 Errors must stay those of whole evaluation, kind, message and span, so skipping rows must never hide an error that whole evaluation raises.
 Designer's call: only kernels that cannot fail are skipped, and `KernelDef` gains a field `total` that states that a kernel's entries never fail on arguments the kernel accepts whose arrays have equal lengths.
 A guard narrows only when every region kernel in its right operand's subtree is total, and otherwise it runs that subtree over its whole range.
-Every registration site sets the field explicitly, so a new kernel cannot become total by default.
+Every `KernelDef` literal sets the field, and the elementwise helper `add_entry` passes true for the kernels it registers, so only `div_const` registers through a path that sets it false. The totality test below guards against a failing kernel registered as total.
 The paragraphs below say which kernels are total today and why the rule keeps errors.
 
 Among elementwise kernels only `div_const` and its scalar twin `div_const_*_s` can fail on accepted arguments, when the scalar divisor is zero (`DivConstBody::run` in `src/kernels/scalar/elementwise.rs`), and every other elementwise body checks only arity and argument kinds.
