@@ -8,9 +8,12 @@
 //! `VERKEHRT_PROGRAMS=DIR` reads the programs of each suite from `DIR/SUITE` instead of
 //! `tests/acceptance/SUITE`. `VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` replace the
 //! sample size (10) and the measurement time in seconds (3) for longer runs.
+//! `VERKEHRT_TILE_ROWS` is `off` or a tile row count and replaces the default tiling of every
+//! variant.
 
 use std::fs;
 use std::io::sink;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -18,7 +21,19 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs};
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
-use verkehrt::{Interpreter, Options};
+use verkehrt::{Interpreter, Options, Tiling};
+
+/// The tiling `VERKEHRT_TILE_ROWS` names, or the default when it is unset.
+fn tiling() -> Tiling {
+    match std::env::var("VERKEHRT_TILE_ROWS") {
+        Err(_) => Tiling::default(),
+        Ok(v) if v == "off" => Tiling::Off,
+        Ok(v) => Tiling::Rows(
+            v.parse::<NonZeroUsize>()
+                .expect("VERKEHRT_TILE_ROWS: off or a positive number"),
+        ),
+    }
+}
 
 /// The scalar variant, and the auto and intrinsics variants of each x86-64 ISA this CPU has.
 /// On aarch64 the NEON intrinsics variant follows the scalar one.
@@ -27,6 +42,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
         Interpreter::new(Options {
             isa: Some(isa),
             backend,
+            tiling: tiling(),
             ..Options::default()
         })
         .unwrap()
