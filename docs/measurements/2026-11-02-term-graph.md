@@ -1,8 +1,8 @@
 # Term graph and shared evaluation: measurements
 
 This document measures the term graph in lowering, the plan graph in planning, and shared evaluation in the executor (issue #39).
-ClickBench q29 drops from 8.13 ms to 0.123 ms in its best variant, about 66 times faster (run b), because the ninety identical `reduce_add_i64` passes become one.
-No other acceptance query changes plan, kernel calls, or tiled regions, and the 20 other ClickBench and TPC-H queries stay inside the 10% noise band in the repeated runs, except q03, whose own run-to-run spread is larger than the band (see "The full suites").
+ClickBench q29 drops from 8.13 ms to 0.123 ms in its best variant, about 66 times faster (both times from run b, the lower of the two runs without sharing, and 71 times from run a in the q29 table), because the ninety identical `reduce_add_i64` passes become one.
+No other acceptance query changes plan, kernel calls, or tiled regions, and the 20 other ClickBench and TPC-H queries stay inside the 10% noise band in the repeated runs, except q03, which is unresolved (see "The full suites").
 The function form of the generated-program case, which took 4.84 s and 1.8 GB at depth 7, takes 0.58 to 0.60 s and 24 MB, and grows linearly with depth.
 The before numbers come from the same build with shared evaluation off (`VERKEHRT_SHARING=off`), and the DuckDB and corgi figures are reused from an earlier record and were not re-run.
 
@@ -27,7 +27,7 @@ The stats example also prints `tiled_regions`, the number of region runs that co
 
 ### Evidence files
 
-All files are in `2026-11-02-term-graph/`. Loads are the 1-minute average at the start and the end, and a bench adds about 1 to the end value.
+All files are in `2026-11-02-term-graph/`. Loads are the 1-minute average at the start and the end, and a bench can add to the end value, though not always (q29 runs ended lower than they started).
 
 * `plans-before.txt` and `plans-after.txt`: the `acceptance_plans` output of all 22 programs before the change and on the final tree. They differ only in the harness's `finished in` timing line (11.25 s and 12.02 s). No load was recorded.
 * `bench-q29-off-a.txt`, `bench-q29-off-b.txt`, `bench-q29-on-a.txt`, `bench-q29-on-b.txt`: q29, five variants, two runs each, in the order off a, on a, off b, on b. Loads: off a 2.95 to 2.78, on a 2.78 to 2.70, off b 2.70 to 3.81, on b 3.81 to 2.88.
@@ -39,7 +39,7 @@ All files are in `2026-11-02-term-graph/`. Loads are the 1-minute average at the
 * `compile-time.txt`: the function form of the generated-program case at depths 2 to 7, three runs each, with and without `--no-sharing`. Load 2.31 to 2.24.
 
 The first full run without sharing ended at a load of 20.08, and in it at least one variant of 13 queries other than q29 ran more than 10% slower than in the sharing run, so it was discarded and repeated. Its log is kept as `bench-full-off-discarded.txt` and is not used in any table.
-The first `bench-q03-on.txt` ended at a load of 24.32, which was a burst from outside this run, and it is kept and discussed below.
+The first `bench-q03-on.txt` ended at a load of 24.32, which no evidence file explains, and it is kept and discussed below. `bench-full-on.txt` ended at 4.99, above the cap of 4 that applies before a run, and started right after the discarded run with a 5-minute load of 15.25.
 
 ## Plans are unchanged
 
@@ -68,7 +68,7 @@ Criterion means in ms before (sharing off) and in us after (sharing on), from th
 | x86-64-v4-auto | 8.93 | 8.13 | 124.5 | 124.0 | 72 |
 | x86-64-v4-intrinsics | 8.83 | 8.13 | 123.5 | 123.2 | 71 |
 
-The two runs without sharing differ by up to 8% on the vector variants (8.94 against 8.23 ms), inside the noise band, and the two runs with sharing differ by at most 2%.
+The two runs without sharing differ by up to 10% on the vector variants (8.93 against 8.13 ms on `x86-64-v4-auto`, 9.9%), at the edge of the noise band, and the two runs with sharing differ by at most 2%.
 The best variant is `x86-64-v3-intrinsics` at 8.79 ms in run a and `x86-64-v4-intrinsics` at 8.13 ms in run b without sharing, and `x86-64-v3-auto` at 123.3 us and `x86-64-v4-intrinsics` at 123.2 us in the two runs with sharing.
 The ratios below use run a, 8.79 ms and 123.3 us, and are ratios of Verkehrt over the reference, so values below 1.0 mean Verkehrt is faster.
 
@@ -98,9 +98,9 @@ Both runs report no tiled region, so tiling plays no part.
 
 Without sharing the 90 reductions take 89.7 us each on average (8075.9 / 90), and the criterion mean agrees (8.13 to 8.94 ms over 90 passes).
 With sharing the single call takes 224.1 us in `stats-q29-on.txt` and 228.9 us in `stats-all-sharing-on.txt`, 2.5 times the unshared average, and the stats total of 241.0 us is about twice the criterion mean of 123 to 125 us for the whole run.
-The criterion mean bounds the single reduction at about 100 us, because it includes the 89 scalar kernels (about 16 us in the stats) on top of it.
+The criterion mean of 123.3 us bounds the single reduction at about 107 us, because it includes the 89 scalar kernels (about 16 us in the stats) on top of it.
 The stats example times a fresh interpreter, and criterion reruns the same prepared program, so a cold first pass over the 8 MB column in the stats run would fit both figures.
-Cold cache is a hypothesis here, because the five fresh stats runs share one process, each reads the same column, and the best of five is still 224 us. The unshared run's first call is also in its 90-call average, so this document did not separate cold from warm and does not say why the stats timer reads the shared call 2.5 times higher than criterion implies.
+Cold cache is only a hypothesis, because the five fresh stats runs share one process, each reads the same column, and the best of five is still 224 us. The unshared run's first call is also in its 90-call average, so cold and warm are not separated, and why the stats timer reads the shared call 2.5 times higher than criterion implies is an open question.
 The headline speedup uses criterion, where the shared and unshared runs are comparable.
 
 ## The full suites
@@ -136,8 +136,8 @@ The two right columns are the largest and smallest on / off ratio over the five 
 Two queries have variants beyond the 10% band in this run, q29 and q03.
 q29 is the intended change, and all five variants are faster by 67 to 76 times.
 q03 has five variants outside the band, four of them slower with sharing (1.18, 1.29, 1.18, 1.24) and one faster (0.68), and no other query has any.
-q03's plan has no repeated node and its kernel calls are identical in both modes (`stats-all-sharing-*.txt`), so a repeat decides whether this is an effect.
-Three further runs of q03 show that it is not one:
+q03's plan has no repeated node and its kernel calls are identical in both modes (`stats-all-sharing-*.txt`), so the work is the same in both modes, and repeats were needed to see whether the time differs.
+Two further pairs of q03 follow, and the result stays unresolved:
 
 | Run | scalar | v3-auto | v3-intrinsics | v4-auto | v4-intrinsics | on / off per variant |
 |---|---|---|---|---|---|---|
@@ -149,10 +149,10 @@ Three further runs of q03 show that it is not one:
 | pair 2, on | 3.341 | 2.578 | 2.590 | 2.540 | 2.523 | 0.99, 1.00, 1.00, 1.00, 0.99 |
 
 The same code without sharing runs between 1.40 and 2.54 ms on `x86-64-v4-auto` across the three runs, and with sharing between 1.46 and 3.24 ms on `x86-64-v4-intrinsics`, so q03's run-to-run spread is larger than the band in both modes.
-The second pair, which ran with a load of 2.6 to 3.7 and no burst, shows no difference (0.99 to 1.00).
-The first pair's sharing run ended at a load of 24.32, so it is not trusted.
+Sharing was slower in two of the three pairs (1.18 to 1.29 and 1.55 to 2.30) and level in one (0.99 to 1.00).
+Pair 2 is the one pair with level times, and its 1-minute loads were 3.68 to 2.64 (off) and 2.64 to 2.59 (on), against 2.48 to 2.67 and 2.67 to 24.32 in pair 1. The 24.32 at the end of pair 1's sharing run is unexplained, so that pair is not trusted.
 The kernel totals of q03 are level (2671.0 us off and 2588.0 us on in `stats-all-sharing-*.txt`).
-This document does not know why q03 runs 1.4 to 3.4 ms for the same code, and it does not attribute the swings to sharing, because the run with the quietest conditions shows none.
+The cause of q03's 1.4 to 3.4 ms spread for the same code is unknown, and the evidence neither shows that sharing slows q03 nor rules it out. The identical plan and kernel calls are the argument that sharing does not change q03's work, and a decisive answer needs more interleaved pairs, which were not run.
 
 All other 20 queries stay within 10% in all five variants, with per-variant ratios from 0.90 (q01) to 1.07 (q32).
 The spec's guard on programs without sharing, that the planning memo and the shared-node bookkeeping cost nothing outside the noise band, holds on the acceptance suites.
@@ -160,7 +160,7 @@ The spec's guard on programs without sharing, that the planning memo and the sha
 ## Tiled regions
 
 A shared node is a region boundary, and a shared input that sits to the right of a region kernel disables tiling in the statement that first computes it.
-The reviewer of the executor change expected no acceptance query to lose a tiled region, because only q29 repeats nodes.
+Only q29 repeats nodes, so no other acceptance query should lose a tiled region.
 `stats-all-sharing-off.txt` and `stats-all-sharing-on.txt` give `tiled_regions` per query, and the counts are identical in both modes for all 22 queries.
 
 | Queries | tiled regions off and on |
@@ -174,10 +174,10 @@ The reviewer of the executor change expected no acceptance query to lose a tiled
 Kernel call counts are also identical in both modes for every query except q29, whose `reduce_add_i64` drops from 90 calls to 1 and `length_i64` from 89 to 1.
 No acceptance query loses a tiled region with sharing.
 
-The generated-program CI seed (`tests/generated`, seed `0x5eed0001`, 64 cases) shows the effect.
-Region runs that completed tiled fell from 402 to 129 with shared evaluation, which `2026-11-01-generated-programs.md` records as the only change between the two counts.
-The generator emits deep chains of lets that read the previous one several times, so a region below a shared node runs once instead of once per use, and a shared node is a region input and never a region kernel, so it shortens or removes the regions around it.
-The counts are totals over repeated work, so a fall in them measures less repeated tiled work and not slower queries.
+The generated-program CI seed (`tests/generated`, seed `0x5eed0001`, 64 cases) shows the mechanism.
+The figures 402 and 129 are reused from `2026-11-01-generated-programs.md` and were not re-measured here: region runs that completed tiled fell from 402 to 129 with shared evaluation, which that record gives as the only change between the two counts.
+The mechanism is that a shared node is a region boundary, so a shared input right of a region kernel disables tiling in the statement that first computes it, and the generator's deep chains of lets that read the previous one several times hit this often.
+The acceptance table above is the evidence that no measured query loses tiling, and this document did not check whether the fall for generated programs also reflects less repeated work.
 
 ## Compile time
 
@@ -194,12 +194,12 @@ The first column is the figure `2026-11-01-generated-programs.md` records before
 | 7 | 4.84 s | 1.8 GB | 0.59 s | 24 MB |
 
 Time grows by about 0.08 s per level and memory stays at 24 MB, where it grew by a factor of 7 to 8 per level at depths 6 and 7 before.
-Runs with `--no-sharing` take the same time and memory (0.59 s at depth 7), because lowering and planning build the graphs in both modes.
-The before figures come from an earlier run whose exact wrapper around the call is not recorded, so the differences of 0.01 to 0.02 s at depths 2 to 4 are not a result, and the differences at depths 5 to 7 are.
+Runs with `--no-sharing` take about the same time (0.59 s at depth 7, 0.43 against 0.45 s at depth 5) and the same memory, because lowering and planning build the graphs in both modes.
+The before figures come from an earlier run whose exact wrapper around the call is not recorded, so the differences of 0.01 to 0.03 s at depths 2 to 4 are not a result, and the differences at depths 5 to 7 are.
 
 ## What remains
 
 q29 is no longer dominated by repeated passes, and its remaining 93% in `reduce_add_i64` is one pass over the 8 MB column.
-The single call reads 2.5 times slower in the stats than the unshared per-call average, and this document did not find out why.
+The single call reads 2.5 times slower in the stats than the unshared per-call average, and the cause is an open question.
 Extraction still charges a shared node once per use (issue #24), and fusing maps into reductions is issue #30.
 The shared executor keeps every memoized value until the end of a run, and no acceptance query measures the memory cost of that.
