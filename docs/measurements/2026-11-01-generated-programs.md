@@ -1,7 +1,7 @@
 # Generated programs: Findings
 
 This document records what the random program generator of `tests/generated` found, and what it cannot tell.
-The generator builds typed programs from the kernel registry and checks each one against five oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, tiled against untiled runs, and shared against unshared runs.
+The generator builds typed programs from the kernel registry and checks each one against six oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, tiled against untiled runs, shared against unshared runs, and selective against non-selective runs.
 The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40, which errors as data has since resolved.
 No oracle reported a disagreement between kernels, but that result carries no correctness claim, because the coverage limits below are narrow.
 This is a findings record, not a benchmark, and the timings only size the CI run.
@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 16.3 to 16.4 s in debug with shared evaluation and oracle 5, 16.1 to 16.4 s with the generated deep-sharing chains before them, and 15.2 to 15.6 s before the sharing cap was removed, measured on the 32-core host |
+| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 16.1 to 16.5 s in debug with selective evaluation, oracle 6, and the mask chains, 16.3 to 16.4 s with shared evaluation and oracle 5, 16.1 to 16.4 s with the generated deep-sharing chains before them, and 15.2 to 15.6 s before the sharing cap was removed, measured on the 32-core host |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -34,6 +34,11 @@ Oracle 5 runs each plan on the scalar interpreter with three-row tiles, with sha
 It requires equal printed text and export bits, and equal errors including the kind, message, and span, because reusing a value changes only kernel calls and a failed evaluation is never reused.
 Oracles 1 to 4 run with shared evaluation on.
 The CI run gates on evaluations of shared nodes that reuse a value in oracle 5: at least 111 must do so, a third of the 334 the fixed CI seed gives. The 3000-case release run at seed 5300000 had no oracle failure, with 14092 evaluations that reused a value and 5344 region runs that completed tiled.
+Oracle 6 runs each plan on the scalar interpreter with three-row tiles, with selective evaluation and with `Options::no_selective`.
+It requires equal printed text and export bits, and equal errors including the kind, message, and span, because narrowing skips only kernels that cannot fail and a failing tile falls back to whole evaluation.
+Oracles 1 to 5 run with selective evaluation on.
+The CI run gates on tiles in which a guard narrowed its right operand in oracle 6: at least 32 must do so, a third of the 96 the fixed CI seed gives. Without the generated mask chains the seed gave none. The count varies by seed, with 90 to 1428 over 34 other seeds of 64 cases, so a fresh seed falling under the gate is unlikely. The 5000-case release run at seed 6100000 had no oracle failure, with 42343 narrowed tiles and 9247 region runs that completed tiled.
+With three-row tiles the 64-byte block scan of a guard is never reached, and the unit tests in `src/exec/region/tests.rs` cover it.
 Oracle 5 is weak on failures: a run that kept failed evaluations, and so reported an earlier statement's span, passed 1000 cases at seed 5400000, because generated programs rarely share a failing subtree between a statement whose error is dropped and a later output. The unit test `statements_sharing_a_failing_subtree_report_their_own_spans` in `src/exec/tests.rs` catches that change.
 Whether fusion changed a plan is decided by `Prepared::same_plans`, which numbers the plan graphs by the tree that the plan text prints, in linear time. Rendering the plan text expands shared nodes, so the oracles render it only for failure messages. On 664 programs, the CI seed and 600 cases at seed 5400000, `same_plans` agreed with comparing the rendered text in every case.
 
@@ -116,6 +121,7 @@ Each limit below weakens any statement that the runs found nothing.
   * A second `scan_by_add` mutation (`m |= m << 3`) is wrong only when a segment starts on lane 0 of a later 8-row chunk and the next 7 rows do not start. It was not caught in 3,000 cases, and the kernel property tests in `tests/isa_variants.rs` fit data-pattern bugs of this kind better.
 * **Lowering bugs reach only oracle 3.** Swapping the branches of a lambda `if` in lowering passed oracles 1 and 2, because every variant and both fusion settings share the lowering. Only the reference evaluator failed on it, in the 48-case CI run.
 * **Deep sharing is rare.** Until lowering and planning shared repeated terms (#39), a statement whose shared bindings nested deeper than 3 became a leaf. That cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000. The cap is gone, and the histogram counts such programs as "sharing depth over 3". Random expressions reach that depth in about 2% of programs (70 of 3000 at seed 5100000), so 6% of statements get a block of 5 or 6 chained lets, each reading the previous one twice through a binary op or three times through a lazy conditional. With it, 571 of 3000 programs at seed 5200000 (19%) have the feature. The fixed CI seed gives 19 of 64, and the CI run requires at least 6, a third of that.
+* **Guards over two array comparisons are rare.** Random expressions seldom put `and` or `or` over two comparisons of arrays with a computed scalar in a region that runs tiled, because a scalar computed after the first kernel keeps the region from tiling. So 6% of statements become a chain of `and` and `or`, partly nested, over comparisons of arrays of one length with variables and literals, the first against a literal near an end of the type's range. The chain is demanded as the mask, as `compress` by it, or as the sum of its rows. The histogram counts it as "selective mask chain", 916 of 5000 programs at seed 6100000.
 * **The chain rule accepts several lines.** Oracle 3 accepts an error at any statement on its chain, so it cannot tell whether lowering computed a binding in the right statement, only that the reported line is one the span rule allows.
 * **Shared code.** All three oracles run the same parser and checker, and the evaluator types lambda bodies through the same registry and prints through the same `Value` display. The generator draws its operations from that registry too. Bugs in parsing, checking, or value formatting are invisible to all three oracles.
 * **Untaken lazy branches.** The generator rarely puts a failing value, such as a zero `div_const` divisor, in a lambda branch that is not taken. The 1000-case run of seed 1000000 did not find the lambda `if` bug, and a hand-written probe did.
