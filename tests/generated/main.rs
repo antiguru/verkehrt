@@ -41,7 +41,7 @@ const MIN_FAILING_UNREAD: usize = 8;
 const MIN_TILED_REGIONS: u64 = 54;
 /// The fewest programs of a run of `CI_CASES` or more that must have a statement with
 /// sharing depth over 3, a third of what `CI_SEED` gives.
-const MIN_DEEP_SHARE: usize = 1;
+const MIN_DEEP_SHARE: usize = 6;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -305,8 +305,8 @@ fn generated_programs() {
         stats.tiled_regions,
         stats.cases
     );
-    // Without deeply shared bindings the term and plan graphs share nothing a tree would
-    // repeat, so the run must contain programs that the generator once capped.
+    // The run must contain programs whose shared bindings nest deeper than 3, so the graphs
+    // see repeats that a tree would expand exponentially.
     let deep_share = stats.features.get(DEEP_SHARE_FEATURE).copied().unwrap_or(0);
     assert!(
         u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES

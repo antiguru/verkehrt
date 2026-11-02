@@ -648,6 +648,30 @@ fn an_input_before_the_first_region_kernel_tiles() {
 }
 
 #[test]
+fn a_kernel_reached_twice_in_a_region_runs_per_path() {
+    let (reg, _, probe, add) = probe_registry();
+    let mul = reg.by_name("mul_i64").unwrap();
+    // (y + 1) * (y + 1) with the sum one node, where `y` is `x` or `probe(x)`.
+    let square = |probed: bool| {
+        let mut b = Builder::default();
+        let (x, one) = (b.leaf(0), b.bcast(1));
+        let y = if probed { b.kernel(probe, vec![x]) } else { x };
+        let inc = b.kernel(add, vec![y, one]);
+        let root = b.kernel(mul, vec![inc, inc]);
+        b.finish(root)
+    };
+    let want = text((1..81).map(|v: i64| v * v));
+    // The region walks both paths, so it holds the sum twice, and it tiles because its
+    // inputs are leaves.
+    let tiled = compare_probed(&reg, &square(false), 80, 1, 0).unwrap();
+    assert_eq!(rows(&tiled), want);
+    // The second path's `probe` is an input after the first path's sum, so the region runs
+    // whole and evaluates `probe` once per path.
+    let whole = compare_probed(&reg, &square(true), 80, 0, 2).unwrap();
+    assert_eq!(rows(&whole), want);
+}
+
+#[test]
 fn a_mask_chain_over_leaves_tiles() {
     // and(x >= 10, x < 90) as in q40: every input is a leaf or a broadcast leaf.
     let reg = Registry::new();

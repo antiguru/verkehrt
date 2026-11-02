@@ -13,9 +13,9 @@ fn prepared_within(src: &str, limit: usize) -> (Prepared, usize) {
 
 #[test]
 fn nested_calls_prepare_to_a_linear_plan_graph() {
-    // The parameter is read four times, so the plan as a tree has 4^32 copies of the
-    // innermost argument.
-    let depth = 32;
+    // The parameter is read four times, so the plan as a tree has 4^16 copies of the
+    // innermost argument, far beyond the step budget.
+    let depth = 16;
     let mut src = String::from(
         "fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }\n\
          input a: i64[];\nprint(sum(",
@@ -91,6 +91,25 @@ fn a_subplan_that_only_planning_repeats_is_one_node() {
         .count();
     assert_eq!(sums, 1);
     assert_ne!(p.plan.roots[0], p.plan.roots[1]);
+}
+
+#[test]
+fn a_memoized_plan_reports_its_sum_rewrites() {
+    // The second statement of each pair hits the planning memo, for its root in the first
+    // pair and for the conditional in the second.
+    let src = "input a: i64[];\ninput s: i64;\n\
+               print(sum(a + 3));\nprint(sum(a + 3));\n\
+               print(1 + (if s > 0 { sum(a + 3) } else { 0 }));\n\
+               print(2 + (if s > 0 { sum(a + 3) } else { 0 }));\n";
+    let interp = Interpreter::new(Options::default()).unwrap();
+    let (_, fired) = interp
+        .prepare_with_sum_rewrites(src, &mut std::io::sink())
+        .unwrap();
+    let want = BTreeSet::from([SumRewrite {
+        ty: crate::value::ScalarType::I64,
+        rule: crate::plan::SumRule::Add,
+    }]);
+    assert_eq!(fired, vec![want; 4]);
 }
 
 #[test]
