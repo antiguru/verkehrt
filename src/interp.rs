@@ -8,7 +8,7 @@ use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
-use crate::lower::{LStmt, Leaf, Mode, lower};
+use crate::lower::{LStmt, Mode, lower};
 use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
@@ -154,19 +154,6 @@ impl Interpreter {
             }
             aliases.push((decl.var, Ok(v.clone())));
         }
-        // A binding of an earlier program that holds an error is not handed on as data, so
-        // a read of it fails here like an input of it, before anything runs.
-        for leaf in &c.plan.lowered.leaves {
-            if let Leaf::Var(var) = leaf
-                && let Some(Err(e)) = self.env.get(var)
-            {
-                return Err(Error::usage(format!(
-                    "'{}' is bound to a value that failed: {}",
-                    before.name(*var),
-                    e.message
-                )));
-            }
-        }
         // Plan lines go out before anything is committed, so a failing sink changes nothing.
         for line in &c.plan_lines {
             writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
@@ -175,6 +162,21 @@ impl Interpreter {
         let var_count = before.var_count();
         self.globals = globals;
         self.env.extend(aliases);
+        // A binding of an earlier program that holds an error is not handed on as data. Its
+        // slot holds a usage error while this program runs, so a statement that reads it
+        // fails like an input of it, and a read in an untaken branch does not. Every error
+        // in the environment comes from an earlier program because this one has not run.
+        let mut failed = Vec::new();
+        for (var, slot) in self.env.iter_mut() {
+            if let Err(e) = slot {
+                let usage = Error::usage(format!(
+                    "'{}' is bound to a value that failed: {}",
+                    before.name(*var),
+                    e.message
+                ));
+                failed.push((*var, std::mem::replace(e, usage)));
+            }
+        }
         let mut sinks = Sinks {
             out,
             diag,
@@ -193,6 +195,10 @@ impl Interpreter {
             obs,
             &mut sinks,
         );
+        // The original runtime errors go back, whether or not the run succeeded.
+        for (var, e) in failed {
+            self.env.insert(var, Err(e));
+        }
         if result.is_err() {
             // A failed input exposes no new names and keeps old bindings. Variables created
             // by it are dropped from the environment because their ids will be reused.

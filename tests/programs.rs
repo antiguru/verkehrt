@@ -606,6 +606,54 @@ fn interp_with_failed_binding() -> Interpreter {
     interp
 }
 
+/// A read of a failed binding in an untaken branch does not fail, one in a taken branch does.
+#[test]
+fn read_of_failed_binding_in_untaken_branch_is_fine() {
+    let mut interp = interp_with_failed_binding();
+    let mut out = Vec::new();
+    interp
+        .run(
+            "print(if false { _v } else { 0.0 });\n",
+            &mut out,
+            &mut Vec::new(),
+        )
+        .unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "0.0\n");
+    let e = interp
+        .run(
+            "print(if true { _v } else { 0.0 });\n",
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(
+        e.message,
+        "'_v' is bound to a value that failed: reduce_min of an empty array"
+    );
+}
+
+/// The stored error survives a program that read the failed binding.
+#[test]
+fn failed_binding_keeps_its_error_after_a_read() {
+    let mut interp = interp_with_failed_binding();
+    interp
+        .run("print(_v);\n", &mut Vec::new(), &mut Vec::new())
+        .unwrap_err();
+    let e = interp
+        .run(
+            "input _v: f64;\nprint(_v);\n",
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(
+        e.message,
+        "input '_v' is bound to a value that failed: reduce_min of an empty array"
+    );
+}
+
 /// A failed binding of a successful run holds its error, which `get` does not return.
 #[test]
 fn get_of_failed_binding_is_none() {
@@ -636,7 +684,7 @@ fn input_of_failed_binding_is_a_usage_error() {
 }
 
 /// A later program that reads a binding holding an error, in a run or in the REPL, fails
-/// before anything runs, like an `input` of it.
+/// when the reading statement runs, like an `input` of it. Earlier prints still appear.
 #[test]
 fn read_of_failed_binding_is_a_usage_error() {
     let mut interp = interp_with_failed_binding();
@@ -646,7 +694,8 @@ fn read_of_failed_binding_is_a_usage_error() {
         .run("print(2);\nprint(_v);\n", &mut out, &mut Vec::new())
         .unwrap_err();
     assert_eq!((e.kind, e.message.as_str()), (ErrorKind::Usage, want));
-    assert!(out.is_empty());
+    assert_eq!(String::from_utf8(out.clone()).unwrap(), "2\n");
+    out.clear();
     let repl_err = interp
         .eval_repl("_v;", &mut out, &mut Vec::new())
         .unwrap_err();
