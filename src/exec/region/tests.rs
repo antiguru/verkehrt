@@ -843,3 +843,31 @@ fn a_kernel_failing_after_narrowed_tiles_raises_the_untiled_error() {
         }
     }
 }
+
+#[test]
+fn the_open_span_scan_matches_a_row_by_row_scan() {
+    // Runs of open rows at offsets around the 64-row blocks the scan skips at once.
+    let naive = |rows: &[u8], open: bool| {
+        let is_open = |b: &u8| (*b != 0) == open;
+        let first = rows.iter().position(is_open)?;
+        Some((first, rows.iter().rposition(is_open).unwrap() + 1))
+    };
+    for n in [0, 1, 63, 64, 65, 127, 128, 129, 200, 300] {
+        let mut patterns: Vec<Vec<u8>> = vec![vec![0; n], vec![1; n]];
+        for a in (0..n).step_by(7) {
+            for b in (a..=n).step_by(11) {
+                patterns.push((0..n).map(|i| u8::from((a..b).contains(&i))).collect());
+                patterns.push((0..n).map(|i| u8::from(i == a || i + 1 == b)).collect());
+            }
+        }
+        for rows in patterns {
+            for open in [true, false] {
+                assert_eq!(
+                    super::open_span(&rows, open),
+                    naive(&rows, open),
+                    "{open} in {rows:?}"
+                );
+            }
+        }
+    }
+}

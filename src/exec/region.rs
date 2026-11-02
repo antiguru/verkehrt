@@ -329,6 +329,9 @@ impl<'a> Machine<'a> {
     }
 }
 
+/// The rows of a block that the scan for a guard's open rows skips at once.
+const SCAN_BLOCK: usize = 64;
+
 /// The state of a tiled region run while it runs the region's kernels over one tile.
 struct Tiles<'r> {
     reg: &'r Registry,
@@ -432,13 +435,8 @@ impl Tiles<'_> {
         let Arg::Rows(rows) = self.rows_of(left, lo, hi) else {
             unreachable!("a guard's left operand is an array");
         };
-        let bytes = rows.as_bool_bytes();
-        let is_open = |b: &u8| (*b != 0) == open;
-        match bytes.iter().position(is_open) {
-            Some(first) => {
-                let last = bytes.iter().rposition(is_open).expect("a row is open");
-                (lo + first, lo + last + 1)
-            }
+        match open_span(rows.as_bool_bytes(), open) {
+            Some((first, end)) => (lo + first, lo + end),
             None => (lo, lo),
         }
     }
@@ -449,6 +447,44 @@ impl Tiles<'_> {
             self.times[j] += begin.elapsed();
         }
     }
+}
+
+/// The positions of the first row of `rows` that is `open` and one past the last, or `None`
+/// when no row is. A row is true when its byte is not 0.
+fn open_span(rows: &[u8], open: bool) -> Option<(usize, usize)> {
+    // Whole blocks without an open row are skipped with a fold over the block, which
+    // compiles to vector instructions, and the rest is scanned row by row.
+    let closed = |block: &&[u8; SCAN_BLOCK]| {
+        if open {
+            block.iter().fold(0, |acc, &b| acc | b) == 0
+        } else {
+            block.iter().fold(u8::MAX, |acc, &b| acc.min(b)) != 0
+        }
+    };
+    let is_open = |b: &u8| (*b != 0) == open;
+    let head = SCAN_BLOCK
+        * rows
+            .as_chunks::<SCAN_BLOCK>()
+            .0
+            .iter()
+            .take_while(closed)
+            .count();
+    let first = head + rows[head..].iter().position(is_open)?;
+    // The block holding the first open row is not closed, so the skipped tail ends after it.
+    let tail = SCAN_BLOCK
+        * rows[first..]
+            .as_rchunks::<SCAN_BLOCK>()
+            .1
+            .iter()
+            .rev()
+            .take_while(closed)
+            .count();
+    let last = first
+        + rows[first..rows.len() - tail]
+            .iter()
+            .rposition(is_open)
+            .expect("the first open row is open");
+    Some((first, last + 1))
 }
 
 /// The bytes of the rows `lo..hi` of the tile that starts at row `start`, in the tile buffer
