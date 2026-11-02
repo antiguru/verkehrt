@@ -150,18 +150,23 @@ impl<'a> Lifting<'a> {
 impl Build for Lifting<'_> {
     type V = ValueType;
 
-    fn ty(v: &ValueType) -> ValueType {
+    fn ty(&self, v: &ValueType) -> ValueType {
         *v
     }
 
-    fn apply(&self, op: Op, args: Vec<ValueType>, span: Span) -> Result<ValueType, Error> {
+    fn apply(&mut self, op: Op, args: Vec<ValueType>, span: Span) -> Result<ValueType, Error> {
         match self.reg.lookup_lifted(op, &args) {
             Ok(l) => Ok(self.reg.get(l.kernel).output),
             Err(shown) => Err(no_kernel(op, &shown, span)),
         }
     }
 
-    fn apply_exact(&self, op: Op, args: Vec<ValueType>, span: Span) -> Result<ValueType, Error> {
+    fn apply_exact(
+        &mut self,
+        op: Op,
+        args: Vec<ValueType>,
+        span: Span,
+    ) -> Result<ValueType, Error> {
         match self.reg.lookup(op, &args) {
             Some(id) => Ok(self.reg.get(id).output),
             None => Err(no_kernel(op, &args, span)),

@@ -48,11 +48,14 @@ struct Flags {
     /// Run chains of elementwise kernels over whole arrays instead of in tiles of rows
     #[arg(long)]
     no_tiling: bool,
+    /// Compute a value that the program needs several times once per use instead of once
+    #[arg(long)]
+    no_sharing: bool,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
     /// Print one line per kernel over its whole arguments to stderr, which may have run as
-    /// several tile calls
+    /// several tile calls. A value computed once and read again prints one line
     #[arg(long)]
     trace: bool,
     /// Print per-kernel totals to stderr when done
@@ -75,6 +78,7 @@ impl Flags {
             } else {
                 Tiling::default()
             },
+            no_sharing: self.no_sharing,
         }
     }
 

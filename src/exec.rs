@@ -1,6 +1,6 @@
 //! The executor. It evaluates planned statements through the kernel table.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind, Span};
 use crate::kernels::{Dispatch, KernelClass, KernelId, Registry, Variant};
 use crate::lower::{LStmt, Leaf, Lowered};
 use crate::ops::Op;
-use crate::plan::PlanNode;
+use crate::plan::{PlanGraph, PlanId, PlanNode, shared_flags};
 use crate::value::{Arg, Array, Scalar, ScalarType, TileBuf, Value, ValueType};
 
 #[cfg(test)]
@@ -46,10 +46,37 @@ pub type Slot = Result<Value, Error>;
 /// The variable environment. A read of a variable that holds an error raises that error.
 pub type Env = HashMap<VarId, Slot>;
 
-/// A lowered program with one plan per statement, parallel to `lowered.stmts`.
+/// A lowered program with its plan graph, one plan root per statement, parallel to
+/// `lowered.stmts`, and the shared flag of every plan node.
 pub struct Plan {
     pub lowered: Lowered,
-    pub nodes: Vec<PlanNode>,
+    pub graph: PlanGraph,
+    pub roots: Vec<PlanId>,
+    /// Per `PlanId`, whether a run evaluates the node at most once and reuses its value, see
+    /// `shared_flags`.
+    pub shared: Vec<bool>,
+}
+
+impl Plan {
+    /// The plan of `lowered` with the shared flags of `graph` and `roots`.
+    pub fn new(reg: &Registry, lowered: Lowered, graph: PlanGraph, roots: Vec<PlanId>) -> Plan {
+        let shared = shared_flags(reg, &graph, &roots);
+        Plan {
+            lowered,
+            graph,
+            roots,
+            shared,
+        }
+    }
+}
+
+/// How the executor runs a plan. Neither setting changes a value or an error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Strategy {
+    pub tiling: Tiling,
+    /// Whether a shared plan node, see `Plan::shared`, is evaluated once per run and its
+    /// value reused. When off, every path to it evaluates it.
+    pub sharing: bool,
 }
 
 /// Totals of one kernel over a run.
@@ -84,6 +111,8 @@ pub struct Observe<'a> {
     pub stats: Option<&'a mut Stats>,
     /// Incremented once per region run that completed tiled, not through the whole fallback.
     pub tiled_regions: &'a AtomicU64,
+    /// Incremented once per evaluation of a shared node that reused its value.
+    pub shared_hits: &'a AtomicU64,
 }
 
 /// Where statement output goes.
@@ -102,31 +131,46 @@ pub struct Sinks<'a> {
 /// stores the error in its variable, and the error is raised by the first output that reads
 /// the variable, directly or through other bindings. Outputs are `Print`, `Show` when
 /// `sinks.show` is set, and a `Bind` marked as an output, and the first one whose value is an
-/// error fails the run. Errors of other kinds fail the run at once. `tiling` decides how
-/// regions run and changes no value and no error.
+/// error fails the run. Errors of other kinds fail the run at once. `how` decides how regions
+/// run and whether shared nodes are evaluated once, and changes no value and no error. With
+/// sharing, a shared node's value is kept from its first successful evaluation to the end of
+/// the run. A failed evaluation is not kept, so every statement that needs the node
+/// evaluates it again.
 pub fn run_plan(
     reg: &Registry,
     dispatch: &Dispatch,
     plan: &Plan,
     env: &mut Env,
-    tiling: Tiling,
+    how: Strategy,
     mut obs: Observe<'_>,
     sinks: &mut Sinks<'_>,
 ) -> Result<(), Error> {
-    for (stmt, node) in plan.lowered.stmts.iter().zip(&plan.nodes) {
+    // Without a shared node the memo stays empty and is never read.
+    let sharing = how.sharing && plan.shared.contains(&true);
+    let shared: &[bool] = if sharing { &plan.shared } else { &[] };
+    let mut memo: Vec<Option<Value>> = if sharing {
+        vec![None; plan.graph.len()]
+    } else {
+        Vec::new()
+    };
+    for (stmt, &root) in plan.lowered.stmts.iter().zip(&plan.roots) {
         let span = stmt.span();
         let result = Machine {
             reg,
             dispatch,
+            graph: &plan.graph,
             leaves: &plan.lowered.leaves,
             env,
             span,
             trace: obs.trace.then_some(&mut *sinks.diag),
             stats: obs.stats.as_deref_mut(),
-            tiling,
+            tiling: how.tiling,
             tiled_regions: obs.tiled_regions,
+            shared,
+            memo: &mut memo,
+            shared_hits: obs.shared_hits,
         }
-        .eval(node);
+        .eval(root);
         match stmt {
             LStmt::Bind { var, output, .. } => {
                 let slot = match result {
@@ -162,6 +206,7 @@ pub fn run_plan(
 struct Machine<'a> {
     reg: &'a Registry,
     dispatch: &'a Dispatch,
+    graph: &'a PlanGraph,
     leaves: &'a [Leaf],
     env: &'a Env,
     span: Span,
@@ -169,6 +214,12 @@ struct Machine<'a> {
     stats: Option<&'a mut Stats>,
     tiling: Tiling,
     tiled_regions: &'a AtomicU64,
+    /// Per `PlanId`, whether the node is shared. Empty when nothing is shared.
+    shared: &'a [bool],
+    /// Per `PlanId`, the value of a shared node after its first successful evaluation in this
+    /// run. Empty when nothing is shared.
+    memo: &'a mut [Option<Value>],
+    shared_hits: &'a AtomicU64,
 }
 
 /// Where a region kernel takes an argument from.
@@ -191,12 +242,14 @@ struct RegionKernel {
 /// A region of a plan: its inputs in the order the whole evaluation reaches them, and its
 /// kernels in post-order, so that every kernel comes after the kernels it reads and the root
 /// comes last.
-struct Region<'p> {
-    inputs: Vec<&'p PlanNode>,
+struct Region {
+    inputs: Vec<PlanId>,
     kernels: Vec<RegionKernel>,
     /// Whether every input that is not trivial comes before the first kernel in post-order,
     /// so that the whole evaluation reaches all of them before it calls any region kernel.
     ordered: bool,
+    /// The shared nodes among `inputs`.
+    shared_inputs: HashSet<PlanId>,
 }
 
 /// A region run that completed tiled.
@@ -211,13 +264,23 @@ struct TiledRun {
     value: Value,
 }
 
-impl Machine<'_> {
+impl<'a> Machine<'a> {
     fn observing(&self) -> bool {
         self.trace.is_some() || self.stats.is_some()
     }
 
-    fn eval(&mut self, node: &PlanNode) -> Result<Value, Error> {
-        match node {
+    fn shared(&self, node: PlanId) -> bool {
+        self.shared.get(node.index()).copied().unwrap_or(false)
+    }
+
+    /// Whether `node` is shared and its value is in the memo.
+    fn memoized(&self, node: PlanId) -> bool {
+        self.memo.get(node.index()).is_some_and(Option::is_some)
+    }
+
+    fn eval(&mut self, node: PlanId) -> Result<Value, Error> {
+        let graph = self.graph;
+        match graph.node(node) {
             PlanNode::Leaf(id) => {
                 match &self.leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
                     Leaf::Const(v) => Ok(v.clone()),
@@ -230,29 +293,49 @@ impl Machine<'_> {
                 }
             }
             // Single-op array kernels take a scalar operand directly and repeat it themselves.
-            PlanNode::Bcast(inner) => self.eval(inner),
-            PlanNode::Cond(c, t, e) => match self.eval(c)? {
-                Value::Scalar(Scalar::Bool(b)) => self.eval(if b { t } else { e }),
+            PlanNode::Bcast(inner) => self.eval(*inner),
+            PlanNode::Cond(c, t, e) => match self.eval(*c)? {
+                Value::Scalar(Scalar::Bool(b)) => self.eval(if b { *t } else { *e }),
                 // The checker types every condition as bool, so another value is a typing or
                 // lowering bug, never a value of the program.
                 other => panic!("if condition is {}, not bool", other.ty()),
             },
             PlanNode::Kernel(id, args) => {
-                // A region root is a region kernel with a region kernel argument. Evaluation
-                // reaches a region's root before its other kernels, so the region is maximal.
-                if let Tiling::Rows(t) = self.tiling
-                    && self.region_kernel(node).is_some()
-                    && args.iter().any(|a| self.region_kernel(a).is_some())
-                {
-                    return self.eval_region(node, t.get());
+                if !self.shared(node) {
+                    return self.eval_kernel(node, *id, args);
                 }
-                let args = args
-                    .iter()
-                    .map(|a| self.eval(a))
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.call_whole(*id, &args)
+                // A hit calls no kernel, so it writes no trace line and adds no statistics.
+                if let Some(v) = &self.memo[node.index()] {
+                    self.shared_hits.fetch_add(1, Ordering::Relaxed);
+                    return Ok(v.clone());
+                }
+                // A failure is not kept, so the next statement that needs the node raises it
+                // again with its own span.
+                let result = self.eval_kernel(node, *id, args);
+                if let Ok(v) = &result {
+                    self.memo[node.index()] = Some(v.clone());
+                }
+                result
             }
         }
+    }
+
+    /// Evaluates the kernel node `node`, a call of kernel `id` on `args`, as a region root
+    /// or with one whole call.
+    fn eval_kernel(&mut self, node: PlanId, id: KernelId, args: &[PlanId]) -> Result<Value, Error> {
+        // A region root is a region kernel with a region kernel argument. Evaluation
+        // reaches a region's root before its other kernels, so the region is maximal.
+        if let Tiling::Rows(t) = self.tiling
+            && self.region_kernel(node).is_some()
+            && args.iter().any(|a| self.region_kernel(*a).is_some())
+        {
+            return self.eval_region(node, t.get());
+        }
+        let args = args
+            .iter()
+            .map(|a| self.eval(*a))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.call_whole(id, &args)
     }
 
     /// Calls kernel `id` once over whole arguments and observes the call.
@@ -283,9 +366,14 @@ impl Machine<'_> {
     }
 
     /// The kernel and arguments of `node` when it is a region kernel: a kernel of class
-    /// `Elementwise` with an array output.
-    fn region_kernel<'p>(&self, node: &'p PlanNode) -> Option<(KernelId, &'p [PlanNode])> {
-        let PlanNode::Kernel(id, args) = node else {
+    /// `Elementwise` with an array output that is not shared.
+    fn region_kernel(&self, node: PlanId) -> Option<(KernelId, &'a [PlanId])> {
+        // A shared node runs through `eval` and the memo, so it is a region input that bounds
+        // the region above it.
+        if self.shared(node) {
+            return None;
+        }
+        let PlanNode::Kernel(id, args) = self.graph.node(node) else {
             return None;
         };
         let def = self.reg.get(*id);
@@ -296,15 +384,26 @@ impl Machine<'_> {
     /// Adds the region kernels of the subtree `node` to `region` in post-order, and the
     /// subtrees just below them to its inputs, left to right. Clears `region.ordered` when an
     /// input that is not trivial follows a kernel. Returns where `node`'s value comes from.
-    fn collect<'p>(&self, node: &'p PlanNode, region: &mut Region<'p>) -> Src {
+    /// A node reached twice is added twice, as in the plan as a tree.
+    fn collect(&self, node: PlanId, region: &mut Region) -> Src {
         let Some((id, args)) = self.region_kernel(node) else {
-            if !trivial(node) && !region.kernels.is_empty() {
+            // A shared input whose value is in the memo can neither block nor fail, so it is
+            // as trivial as a leaf. So is a shared input that is an earlier input of this
+            // region too: whole evaluation reaches the earlier one first, and either stops at
+            // its failure or finds the value in the memo here. Any other shared input is not
+            // trivial.
+            let shared = self.shared(node);
+            let reused = self.memoized(node) || (shared && region.shared_inputs.contains(&node));
+            if !trivial(self.graph, node) && !reused && !region.kernels.is_empty() {
                 region.ordered = false;
+            }
+            if shared {
+                region.shared_inputs.insert(node);
             }
             region.inputs.push(node);
             return Src::Input(region.inputs.len() - 1);
         };
-        let args = args.iter().map(|a| self.collect(a, region)).collect();
+        let args = args.iter().map(|a| self.collect(*a, region)).collect();
         let ValueType::Array(elem) = self.reg.get(id).output else {
             unreachable!("a region kernel has an array output");
         };
@@ -315,11 +414,12 @@ impl Machine<'_> {
     /// Evaluates the region rooted at `node` in tiles of `t` rows. When the tiled run fails
     /// anywhere, or tiling would evaluate an input that is not trivial before a region kernel
     /// that the whole evaluation calls first, it evaluates the region whole instead.
-    fn eval_region(&mut self, node: &PlanNode, t: usize) -> Result<Value, Error> {
+    fn eval_region(&mut self, node: PlanId, t: usize) -> Result<Value, Error> {
         let mut region = Region {
             inputs: Vec::new(),
             kernels: Vec::new(),
             ordered: true,
+            shared_inputs: HashSet::new(),
         };
         self.collect(node, &mut region);
         // A tiled run evaluates every input before any kernel. Such an input after a kernel
@@ -366,7 +466,7 @@ impl Machine<'_> {
     /// failed. The inputs after that prefix are evaluated when reached.
     fn eval_region_whole(
         &mut self,
-        node: &PlanNode,
+        node: PlanId,
         inputs: &mut std::vec::IntoIter<Slot>,
     ) -> Result<Value, Error> {
         let Some((id, args)) = self.region_kernel(node) else {
@@ -379,7 +479,7 @@ impl Machine<'_> {
         };
         let args = args
             .iter()
-            .map(|a| self.eval_region_whole(a, inputs))
+            .map(|a| self.eval_region_whole(*a, inputs))
             .collect::<Result<Vec<_>, _>>()?;
         self.call_whole(id, &args)
     }
@@ -389,9 +489,9 @@ impl Machine<'_> {
     /// a string, the array inputs differ in length or none is an array, an allocation fails,
     /// or a tile fails, and then returns the inputs evaluated so far, ending with the failed
     /// one if any.
-    fn run_tiled(&mut self, region: &Region<'_>, t: usize) -> Result<TiledRun, Vec<Slot>> {
+    fn run_tiled(&mut self, region: &Region, t: usize) -> Result<TiledRun, Vec<Slot>> {
         let mut slots = Vec::with_capacity(region.inputs.len());
-        for n in &region.inputs {
+        for &n in &region.inputs {
             let slot = self.eval(n);
             let failed = slot.is_err();
             slots.push(slot);
@@ -547,10 +647,10 @@ impl Machine<'_> {
 
 /// Whether evaluating `node` can neither block nor do unbounded work: a leaf, or a broadcast
 /// of a leaf. Such a node can still return a stored error.
-fn trivial(node: &PlanNode) -> bool {
-    match node {
+fn trivial(graph: &PlanGraph, node: PlanId) -> bool {
+    match graph.node(node) {
         PlanNode::Leaf(_) => true,
-        PlanNode::Bcast(inner) => matches!(**inner, PlanNode::Leaf(_)),
+        PlanNode::Bcast(inner) => matches!(graph.node(*inner), PlanNode::Leaf(_)),
         PlanNode::Cond(..) | PlanNode::Kernel(..) => false,
     }
 }

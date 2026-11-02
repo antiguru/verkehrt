@@ -7,12 +7,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
-use crate::exec::{Env, Observe, Plan, Sinks, Stats, Tiling, run_plan};
+use crate::exec::{Env, Observe, Plan, Sinks, Stats, Strategy, Tiling, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
-use crate::lower::{LStmt, Mode, lower};
-use crate::plan::{Planner, SumRewrite, render};
+use crate::lower::{Mode, lower};
+use crate::plan::{PlanContext, PlanShapes, Planner, SumRewrite, render, render_leaf};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
+
+#[cfg(test)]
+mod tests;
 
 /// Interpreter settings. The default has everything off except tiling, which runs with
 /// `DEFAULT_TILE_ROWS` rows, and detects the instruction set.
@@ -25,7 +28,8 @@ pub struct Options {
     /// Print one plan line per statement to the diagnostic stream before execution.
     pub show_plan: bool,
     /// Print one line per kernel over its whole arguments to the diagnostic stream. A kernel
-    /// of a tiled region runs as several tile calls and still prints one line.
+    /// of a tiled region runs as several tile calls and still prints one line. A shared value
+    /// computed once and read again prints one line.
     pub trace: bool,
     /// Collect per-kernel totals, written by `Interpreter::write_stats`.
     pub stats: bool,
@@ -37,6 +41,18 @@ pub struct Options {
     pub no_fusion: bool,
     /// How chains of elementwise kernels run, see `Tiling`. It changes no value and no error.
     pub tiling: Tiling,
+    /// Evaluate a plan node that a run reaches several times once per path, instead of once
+    /// per run, see `Strategy::sharing`. It changes no value and no error, only kernel calls.
+    pub no_sharing: bool,
+}
+
+impl Options {
+    fn strategy(&self) -> Strategy {
+        Strategy {
+            tiling: self.tiling,
+            sharing: !self.no_sharing,
+        }
+    }
 }
 
 pub struct Interpreter {
@@ -49,6 +65,8 @@ pub struct Interpreter {
     stats: Stats,
     /// Region runs that completed tiled, see `tiled_regions`.
     tiled_regions: AtomicU64,
+    /// Evaluations of shared nodes that reused a value, see `shared_hits`.
+    shared_hits: AtomicU64,
 }
 
 /// An `input` declaration of a program.
@@ -72,6 +90,8 @@ struct Compiled {
 pub struct Prepared {
     plan: Plan,
     inputs: Vec<InputDecl>,
+    /// The `render_leaf` text of every leaf, by `LeafId`.
+    leaf_texts: Vec<String>,
 }
 
 impl Interpreter {
@@ -99,6 +119,7 @@ impl Interpreter {
             env: Env::new(),
             stats: Stats::default(),
             tiled_regions: AtomicU64::new(0),
+            shared_hits: AtomicU64::new(0),
         })
     }
 
@@ -195,13 +216,14 @@ impl Interpreter {
             trace: self.opts.trace,
             stats: self.opts.stats.then_some(&mut self.stats),
             tiled_regions: &self.tiled_regions,
+            shared_hits: &self.shared_hits,
         };
         let result = run_plan(
             &self.reg,
             &self.dispatch,
             &c.plan,
             &mut self.env,
-            self.opts.tiling,
+            self.opts.strategy(),
             obs,
             &mut sinks,
         );
@@ -236,23 +258,30 @@ impl Interpreter {
             })
             .collect();
         let lowered = lower(&typed, globals, &self.reg, mode)?;
-        let mut nodes = Vec::new();
+        // One context for the whole program, so a term repeated across statements is planned
+        // once and its plan is one node of the plan graph.
+        let mut cx = PlanContext::default();
+        let mut roots = Vec::new();
         let mut plan_lines = Vec::new();
         let mut sum_rewrites = Vec::new();
         for stmt in &lowered.stmts {
-            let (LStmt::Bind { term, .. } | LStmt::Print { term, .. } | LStmt::Show { term, .. }) =
-                stmt;
             let span = stmt.span();
-            let (node, fired) = self.planner.plan_with_sum_rewrites(&self.reg, term)?;
+            let (root, fired) = self.planner.plan_with_sum_rewrites(
+                &self.reg,
+                &lowered.graph,
+                stmt.term(),
+                span,
+                &mut cx,
+            )?;
             if self.opts.show_plan {
-                let text = render(&self.reg, &node, &lowered.leaves, globals);
+                let text = render(&self.reg, &cx.graph, root, &lowered.leaves, globals);
                 plan_lines.push(format!("plan {}: {text}", span.line));
             }
-            nodes.push(node);
+            roots.push(root);
             sum_rewrites.push(fired);
         }
         Ok(Compiled {
-            plan: Plan { lowered, nodes },
+            plan: Plan::new(&self.reg, lowered, cx.graph, roots),
             inputs,
             plan_lines,
             sum_rewrites,
@@ -284,6 +313,14 @@ impl Interpreter {
         self.tiled_regions.load(Ordering::Relaxed)
     }
 
+    /// The number of evaluations of shared plan nodes that reused the value of an earlier
+    /// evaluation in the same run instead of calling kernels, since the interpreter was
+    /// created. It counts runs of `run`, `eval_repl`, and `Prepared::execute` with this
+    /// interpreter, and stays 0 under `Options::no_sharing`.
+    pub fn shared_hits(&self) -> u64 {
+        self.shared_hits.load(Ordering::Relaxed)
+    }
+
     /// Compiles `src` for repeated execution. Names must be declared by the program itself,
     /// and `input` declarations give the types of what `Prepared::execute` is supplied.
     pub fn prepare(&self, src: &str) -> Result<Prepared, Error> {
@@ -304,13 +341,22 @@ impl Interpreter {
         src: &str,
         diag: &mut dyn Write,
     ) -> Result<(Prepared, Vec<BTreeSet<SumRewrite>>), Error> {
-        let c = self.compile(&mut Globals::new(), src, Mode::Run)?;
+        let mut globals = Globals::new();
+        let c = self.compile(&mut globals, src, Mode::Run)?;
         for line in &c.plan_lines {
             writeln!(diag, "{line}").map_err(|e| Error::io(&e))?;
         }
+        let leaf_texts = c
+            .plan
+            .lowered
+            .leaves
+            .iter()
+            .map(|l| render_leaf(l, &globals))
+            .collect();
         let prepared = Prepared {
             plan: c.plan,
             inputs: c.inputs,
+            leaf_texts,
         };
         Ok((prepared, c.sum_rewrites))
     }
@@ -320,6 +366,31 @@ impl Prepared {
     /// The declared inputs as (name, type), in source order.
     pub fn inputs(&self) -> impl Iterator<Item = (&str, ValueType)> {
         self.inputs.iter().map(|d| (d.name.as_str(), d.ty))
+    }
+
+    /// Whether `other` has the statements of this program at the same lines, each with a plan
+    /// that `render` prints as this one's, so that the plan lines of `prepare_to` with
+    /// `show_plan` would be equal. It takes time linear in the sizes of the plan graphs,
+    /// where rendering is exponential in the nesting of shared nodes. This is a test hook.
+    pub fn same_plans(&self, other: &Prepared) -> bool {
+        let (a, b) = (&self.plan, &other.plan);
+        let lines = |p: &Plan| {
+            p.lowered
+                .stmts
+                .iter()
+                .map(|s| s.span().line)
+                .collect::<Vec<_>>()
+        };
+        if lines(a) != lines(b) {
+            return false;
+        }
+        let mut shapes = PlanShapes::default();
+        let sa = shapes.number(&a.graph, &self.leaf_texts);
+        let sb = shapes.number(&b.graph, &other.leaf_texts);
+        a.roots
+            .iter()
+            .zip(&b.roots)
+            .all(|(ra, rb)| sa[ra.index()] == sb[rb.index()])
     }
 
     /// Runs the program on `inputs` and returns its exports in source order. Every declared
@@ -372,13 +443,14 @@ impl Prepared {
             trace: interp.opts.trace,
             stats: None,
             tiled_regions: &interp.tiled_regions,
+            shared_hits: &interp.shared_hits,
         };
         run_plan(
             &interp.reg,
             &interp.dispatch,
             &self.plan,
             &mut env,
-            interp.opts.tiling,
+            interp.opts.strategy(),
             obs,
             &mut sinks,
         )?;

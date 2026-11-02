@@ -29,18 +29,18 @@ impl Higher {
 pub(crate) trait Build {
     type V: Clone;
 
-    fn ty(v: &Self::V) -> ValueType;
+    fn ty(&self, v: &Self::V) -> ValueType;
 
     /// Applies `op`, broadcasting scalars as `Registry::lookup_lifted` decides.
-    fn apply(&self, op: Op, args: Vec<Self::V>, span: Span) -> Result<Self::V, Error>;
+    fn apply(&mut self, op: Op, args: Vec<Self::V>, span: Span) -> Result<Self::V, Error>;
 
     /// Applies `op` to the operands exactly as given.
-    fn apply_exact(&self, op: Op, args: Vec<Self::V>, span: Span) -> Result<Self::V, Error>;
+    fn apply_exact(&mut self, op: Op, args: Vec<Self::V>, span: Span) -> Result<Self::V, Error>;
 }
 
 /// The arrays that the lambda's parameters are bound to, given the call's array arguments.
 pub(crate) fn params<B: Build>(
-    b: &B,
+    b: &mut B,
     kind: Higher,
     xs: Vec<B::V>,
     span: Span,
@@ -53,14 +53,11 @@ pub(crate) fn params<B: Build>(
         xs.next().expect("zip_map takes two arrays"),
         xs.next().expect("zip_map takes two arrays"),
     );
+    let (tx, ty) = (b.ty(&x), b.ty(&y));
     let ctx = |e: Error| {
         context(
             e,
-            format!(
-                "'zip_map' compares the lengths of its {} and {} arrays",
-                B::ty(&x),
-                B::ty(&y)
-            ),
+            format!("'zip_map' compares the lengths of its {tx} and {ty} arrays"),
         )
     };
     // Each parameter reads its array through a check against the other's
@@ -82,7 +79,7 @@ pub(crate) fn params<B: Build>(
 /// The result of the call from its array arguments `xs`, the parameter arrays `params`, and
 /// the lifted lambda body.
 pub(crate) fn result<B: Build>(
-    b: &B,
+    b: &mut B,
     kind: Higher,
     xs: &[B::V],
     params: &[B::V],
@@ -92,9 +89,11 @@ pub(crate) fn result<B: Build>(
     let first = &params[0];
     // A body that does not depend on its parameters stays scalar, so it is filled to the
     // length of the first array.
-    let body = if super::is_array(B::ty(&body)) {
+    let body_ty = b.ty(&body);
+    let body = if super::is_array(body_ty) {
         body
     } else {
+        let first_ty = b.ty(first);
         let ctx = |e: Error| {
             context(
                 e,
@@ -102,8 +101,8 @@ pub(crate) fn result<B: Build>(
                     "the lambda body does not use its parameters, so '{}' fills its {} value \
                      to the length of the {} array",
                     kind.name(),
-                    B::ty(&body),
-                    B::ty(first)
+                    body_ty,
+                    first_ty
                 ),
             )
         };
@@ -117,13 +116,11 @@ pub(crate) fn result<B: Build>(
         return Ok(body);
     }
     let x = xs[0].clone();
+    let x_ty = b.ty(&x);
     let ctx = |e: Error| {
         context(
             e,
-            format!(
-                "'filter' keeps the elements of its {} array where the predicate holds",
-                B::ty(&x)
-            ),
+            format!("'filter' keeps the elements of its {x_ty} array where the predicate holds"),
         )
     };
     b.apply(Op::Compress, vec![x.clone(), body], span)

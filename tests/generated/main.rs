@@ -28,7 +28,7 @@ use proptest::prelude::{Strategy, any};
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestError, TestRng, TestRunner};
 use verkehrt::error::ErrorKind;
 
-use r#gen::{Catalog, Params, Plan as GenPlan};
+use r#gen::{Catalog, DEEP_SHARE_FEATURE, Params, Plan as GenPlan};
 use oracles::Engine;
 
 /// Cases of the CI run, measured to stay well under 30 s in a debug build.
@@ -39,6 +39,12 @@ const CI_SEED: u64 = 0x5eed_0001;
 const MIN_FAILING_UNREAD: usize = 8;
 /// The fewest region runs of a run of `CI_CASES` or more that must complete tiled in oracle 4.
 const MIN_TILED_REGIONS: u64 = 54;
+/// The fewest programs of a run of `CI_CASES` or more that must have a statement with
+/// sharing depth over 3, a third of what `CI_SEED` gives.
+const MIN_DEEP_SHARE: usize = 6;
+/// The fewest evaluations of shared nodes of a run of `CI_CASES` or more that must reuse a
+/// value in oracle 5, a third of what `CI_SEED` gives.
+const MIN_SHARED_HITS: u64 = 111;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -70,6 +76,8 @@ struct Stats {
     failing_unread: usize,
     /// Region runs that completed tiled in oracle 4.
     tiled_regions: u64,
+    /// Evaluations of shared nodes that reused a value in oracle 5.
+    shared_hits: u64,
     /// Per integer sum rewrite, the statements in which it fired.
     rewrites_fired: BTreeMap<verkehrt::plan::SumRewrite, usize>,
     source_bytes: usize,
@@ -88,6 +96,7 @@ impl Stats {
         self.fusion_changed_plan += other.fusion_changed_plan;
         self.failing_unread += other.failing_unread;
         self.tiled_regions += other.tiled_regions;
+        self.shared_hits += other.shared_hits;
         for (r, n) in other.rewrites_fired {
             *self.rewrites_fired.entry(r).or_default() += n;
         }
@@ -171,6 +180,7 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
         stats.failing_unread += usize::from(verdict.failing_unread);
         stats.fusion_changed_plan += usize::from(verdict.fusion_changed_plan);
         stats.tiled_regions += verdict.tiled_regions;
+        stats.shared_hits += verdict.shared_hits;
         for (r, n) in verdict.rewrites_fired {
             *stats.rewrites_fired.entry(r).or_default() += n;
         }
@@ -253,7 +263,8 @@ fn generated_programs() {
     let engine = Engine::new();
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
-         plan of {}, {} have a failing unread binding, {} region runs completed tiled",
+         plan of {}, {} have a failing unread binding, {} region runs completed tiled, {} \
+         shared evaluations reused a value",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
@@ -261,6 +272,7 @@ fn generated_programs() {
         stats.fusion_changed_plan,
         stats.failing_unread,
         stats.tiled_regions,
+        stats.shared_hits,
     );
     eprintln!(
         "slowest case, {:.0?} for planning twice and running:\n{}",
@@ -300,6 +312,23 @@ fn generated_programs() {
             || stats.tiled_regions >= MIN_TILED_REGIONS,
         "only {} region runs of {} programs completed tiled, want {MIN_TILED_REGIONS}",
         stats.tiled_regions,
+        stats.cases
+    );
+    // Oracle 5 compares nothing if no shared evaluation reuses a value.
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || stats.shared_hits >= MIN_SHARED_HITS,
+        "only {} shared evaluations of {} programs reused a value, want {MIN_SHARED_HITS}",
+        stats.shared_hits,
+        stats.cases
+    );
+    // The run must contain programs whose shared bindings nest deeper than 3, so the graphs
+    // see repeats that a tree would expand exponentially.
+    let deep_share = stats.features.get(DEEP_SHARE_FEATURE).copied().unwrap_or(0);
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || deep_share >= MIN_DEEP_SHARE,
+        "only {deep_share} of {} programs have {DEEP_SHARE_FEATURE:?}, want {MIN_DEEP_SHARE}",
         stats.cases
     );
     // Oracle 2 checks an integer sum rewrite only in a plan that uses it, which needs the

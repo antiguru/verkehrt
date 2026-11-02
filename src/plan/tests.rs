@@ -1,7 +1,7 @@
 use super::*;
 use crate::check::{Globals, check};
 use crate::kernels::{InputSpec, Registry};
-use crate::lower::{LStmt, Mode, lower};
+use crate::lower::{LStmt, Lowered, Mode, budget, lower};
 use crate::syntax::parse;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -37,9 +37,9 @@ fn egglog_smoke() {
 const XY: &str = "let x = [1.0, 2.0, 3.0]; let y = [4.0, 5.0, 6.0]; ";
 
 /// Plans every `print` of `XY` followed by `src` in `Mode::Run`, with fused patterns when
-/// `fusion` is set. Returns the registry, the plan of each `print` in source order, and
-/// its rendering.
-fn plan_nodes(src: &str, fusion: bool) -> (Registry, Vec<(PlanNode, String)>) {
+/// `fusion` is set. Returns the registry, the plan graph, the plan of each `print` in
+/// source order, and its rendering.
+fn plan_nodes(src: &str, fusion: bool) -> (Registry, PlanGraph, Vec<(PlanId, String)>) {
     let src = format!("{XY}{src}");
     let prog = parse(&src).unwrap_or_else(|e| panic!("{src}: {e}"));
     let reg = Registry::new();
@@ -47,34 +47,35 @@ fn plan_nodes(src: &str, fusion: bool) -> (Registry, Vec<(PlanNode, String)>) {
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
     let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
     let planner = Planner::new(&reg, fusion);
+    let mut cx = PlanContext::default();
     let plans = lowered
         .stmts
         .iter()
         .filter_map(|s| match s {
-            LStmt::Print { term, .. } => Some(term),
+            LStmt::Print { term, span } => Some((*term, *span)),
             _ => None,
         })
-        .map(|term| {
-            let node = planner
-                .plan(&reg, term)
+        .map(|(term, span)| {
+            let id = planner
+                .plan(&reg, &lowered.graph, term, span, &mut cx)
                 .unwrap_or_else(|e| panic!("{src}: {e}"));
-            assert_broadcasts_fit(&reg, &node);
-            let rendered = render(&reg, &node, &lowered.leaves, &g);
-            (node, rendered)
+            assert_broadcasts_fit(&reg, &cx.graph, id);
+            let rendered = render(&reg, &cx.graph, id, &lowered.leaves, &g);
+            (id, rendered)
         })
         .collect();
-    (reg, plans)
+    (reg, cx.graph, plans)
 }
 
 /// Plans like `plan_nodes`, returning the root kernel name (`-` for a bare leaf) and the
 /// rendered plan of each `print`.
 fn plan_prints(src: &str, fusion: bool) -> Vec<(String, String)> {
-    let (reg, plans) = plan_nodes(src, fusion);
+    let (reg, graph, plans) = plan_nodes(src, fusion);
     plans
         .into_iter()
-        .map(|(node, rendered)| {
-            let root = match &node {
-                PlanNode::Kernel(id, _) => reg.get(*id).name.clone(),
+        .map(|(id, rendered)| {
+            let root = match graph.node(id) {
+                PlanNode::Kernel(k, _) => reg.get(*k).name.clone(),
                 _ => "-".to_string(),
             };
             (root, rendered)
@@ -84,24 +85,24 @@ fn plan_prints(src: &str, fusion: bool) -> Vec<(String, String)> {
 
 /// Asserts that a broadcast only feeds an `Either` input, which is where single-op array
 /// kernels accept one, and that `Array` and `Scalar` inputs never receive a broadcast.
-fn assert_broadcasts_fit(reg: &Registry, node: &PlanNode) {
-    match node {
+fn assert_broadcasts_fit(reg: &Registry, graph: &PlanGraph, id: PlanId) {
+    match graph.node(id) {
         PlanNode::Leaf(_) => {}
-        PlanNode::Bcast(inner) => assert_broadcasts_fit(reg, inner),
+        PlanNode::Bcast(inner) => assert_broadcasts_fit(reg, graph, *inner),
         PlanNode::Cond(c, t, e) => [c, t, e]
             .into_iter()
-            .for_each(|x| assert_broadcasts_fit(reg, x)),
-        PlanNode::Kernel(id, args) => {
-            let def = reg.get(*id);
-            for (spec, arg) in def.inputs.iter().zip(args) {
-                if matches!(arg, PlanNode::Bcast(_)) {
+            .for_each(|x| assert_broadcasts_fit(reg, graph, *x)),
+        PlanNode::Kernel(k, args) => {
+            let def = reg.get(*k);
+            for (spec, &arg) in def.inputs.iter().zip(args) {
+                if matches!(graph.node(arg), PlanNode::Bcast(_)) {
                     assert!(
                         matches!(spec, InputSpec::Either(_)),
                         "{} got a broadcast",
                         def.name
                     );
                 }
-                assert_broadcasts_fit(reg, arg);
+                assert_broadcasts_fit(reg, graph, arg);
             }
         }
     }
@@ -134,17 +135,17 @@ fn datadriven_plans() {
     );
 }
 
-/// Collects the name of every kernel in `node`.
-fn kernel_names(reg: &Registry, node: &PlanNode, out: &mut BTreeSet<String>) {
-    match node {
+/// Collects the name of every kernel in the plan at `id`.
+fn kernel_names(reg: &Registry, graph: &PlanGraph, id: PlanId, out: &mut BTreeSet<String>) {
+    match graph.node(id) {
         PlanNode::Leaf(_) => {}
-        PlanNode::Bcast(inner) => kernel_names(reg, inner, out),
+        PlanNode::Bcast(inner) => kernel_names(reg, graph, *inner, out),
         PlanNode::Cond(c, t, e) => [c, t, e]
             .into_iter()
-            .for_each(|x| kernel_names(reg, x, out)),
-        PlanNode::Kernel(id, args) => {
-            out.insert(reg.get(*id).name.clone());
-            args.iter().for_each(|a| kernel_names(reg, a, out));
+            .for_each(|x| kernel_names(reg, graph, *x, out)),
+        PlanNode::Kernel(k, args) => {
+            out.insert(reg.get(*k).name.clone());
+            args.iter().for_each(|a| kernel_names(reg, graph, *a, out));
         }
     }
 }
@@ -186,10 +187,10 @@ fn fused_sources() -> String {
 #[test]
 fn fusion_off_plans_use_single_op_kernels_only() {
     let src = fused_sources();
-    let (reg, off) = plan_nodes(&src, false);
-    for (node, rendered) in &off {
+    let (reg, off_graph, off) = plan_nodes(&src, false);
+    for (id, rendered) in &off {
         let mut names = BTreeSet::new();
-        kernel_names(&reg, node, &mut names);
+        kernel_names(&reg, &off_graph, *id, &mut names);
         for name in names {
             let def = reg.get(reg.by_name(&name).expect("kernel exists"));
             assert!(
@@ -198,10 +199,10 @@ fn fusion_off_plans_use_single_op_kernels_only() {
             );
         }
     }
-    let (on_reg, on) = plan_nodes(&src, true);
+    let (on_reg, on_graph, on) = plan_nodes(&src, true);
     let mut seen = BTreeSet::new();
-    for (node, _) in &on {
-        kernel_names(&on_reg, node, &mut seen);
+    for (id, _) in &on {
+        kernel_names(&on_reg, &on_graph, *id, &mut seen);
     }
     let missing: Vec<_> = on_reg
         .iter()
@@ -212,5 +213,117 @@ fn fusion_off_plans_use_single_op_kernels_only() {
     assert!(
         missing.is_empty(),
         "fusion on never planned fused kernels {missing:?}"
+    );
+}
+
+/// The lazy-branch form of #39 at `depth`: a block let bound to a lazy conditional,
+/// compressed through a comparison with its own reduction, then nested lazy conditionals
+/// whose taken branch reads the previous value three times and whose other branch reads it
+/// once. As a tree the term repeats the innermost value `4^depth` times.
+fn lazy_branch_program(depth: usize) -> (Registry, Lowered) {
+    let mut src = String::from(
+        "input a: i64[]; input s: i64;\nprint({ let b7 = if false { a } else { a }; \
+         let c0 = compress(b7, (b7 >= reduce(b7, and))); ",
+    );
+    for i in 1..=depth {
+        let p = i - 1;
+        src.push_str(&format!(
+            "let c{i} = if s > {i} {{ compress(c{p}, (c{p} >= reduce(c{p}, and))) }} \
+             else {{ c{p} }}; "
+        ));
+    }
+    src.push_str(&format!("c{depth} }});\n"));
+    let prog = parse(&src).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let reg = Registry::new();
+    let mut g = Globals::new();
+    let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
+    (reg, lowered)
+}
+
+/// Emitting every term the planner emits for the lazy-branch form, each distinct
+/// conditional part and hole once, writes a number of `let` commands and holes linear in
+/// the depth, and each emission has one hole at most. Without the emission memo the
+/// repeated holes are emitted again.
+#[test]
+fn lazy_branch_nesting_emits_linearly() {
+    let depth = 16;
+    let (reg, lowered) = lazy_branch_program(depth);
+    let graph = &lowered.graph;
+    let (mut lets, mut holes) = (0, 0);
+    let mut seen = BTreeSet::new();
+    let mut todo: Vec<_> = lowered.stmts.iter().map(LStmt::term).collect();
+    let c = 16;
+    let ((), steps) = budget::run(c * depth, || {
+        while let Some(t) = todo.pop() {
+            if !seen.insert(t) {
+                continue;
+            }
+            if let TermKind::Cond(k, a, b) = *graph.kind(t) {
+                todo.extend([k, a, b]);
+                continue;
+            }
+            let (commands, _, hs) = egglog::emit(&reg, graph, t).unwrap();
+            lets += commands.matches("(let ").count();
+            assert!(hs.len() <= 1, "{} holes in one emission", hs.len());
+            holes += hs.len();
+            todo.extend(hs);
+        }
+    });
+    assert!(lets <= c * depth, "{lets} lets for depth {depth}");
+    assert!(holes <= depth + 1, "{holes} holes for depth {depth}");
+    assert!(steps <= lets, "{steps} emission steps for {lets} lets");
+}
+
+/// Planning the lazy-branch form at `depth` plans each distinct conditional part and hole
+/// once and maps each extracted DAG node once, so the planner takes a number of steps
+/// linear in the depth, and the plan graph has a number of nodes linear in the depth.
+/// Without the planning memo it plans a hole once per occurrence, `3^depth` times.
+fn assert_lazy_branch_plans_linearly(depth: usize) {
+    let (reg, lowered) = lazy_branch_program(depth);
+    let planner = Planner::new(&reg, true);
+    let mut cx = PlanContext::default();
+    let c = 32;
+    for s in &lowered.stmts {
+        let (plan, steps) = budget::run(c * depth, || {
+            planner.plan(&reg, &lowered.graph, s.term(), s.span(), &mut cx)
+        });
+        plan.unwrap_or_else(|e| panic!("{e} after {steps} steps"));
+    }
+    let n = cx.graph.len();
+    assert!(n <= c * depth, "{n} plan nodes for depth {depth}");
+}
+
+#[test]
+fn lazy_branch_nesting_plans_in_linear_steps() {
+    assert_lazy_branch_plans_linearly(8);
+}
+
+#[test]
+fn deep_lazy_branch_nesting_plans_in_linear_steps() {
+    assert_lazy_branch_plans_linearly(16);
+}
+
+/// A conditional repeated inside one emitted term is one hole, planned once, so a fused
+/// pattern that reads a variable twice matches across the repeats. Each conditional
+/// branch here reads the inner conditional `y` twice.
+#[test]
+fn repeated_conditional_in_a_branch_is_one_hole() {
+    let plans = plan_prints(
+        "let n = length(x);\n\
+         print(if n > 1 { let y = if n > 2 { x } else { x + 1.0 }; sum(y * y) } else { 0.0 });\n\
+         print(if n > 1 { let y = if n > 2 { x } else { x + 1.0 }; filter(y, |v| v > 1.5) } \
+         else { [0.0] });\n",
+        true,
+    );
+    let rendered: Vec<&str> = plans.iter().map(|(_, r)| r.as_str()).collect();
+    assert_eq!(
+        rendered,
+        [
+            "(if (lt_i64_s 1 n) then (sumsq_f64 (if (lt_i64_s 2 n) then x else (add_f64 x 1.0))) \
+             else 0.0)",
+            "(if (lt_i64_s 1 n) then (filter_gt_f64 (if (lt_i64_s 2 n) then x else \
+             (add_f64 x 1.0)) 1.5) else <f64[1]>)",
+        ]
     );
 }

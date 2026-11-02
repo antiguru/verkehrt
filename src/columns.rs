@@ -1,5 +1,5 @@
-//! Loads the column files of the acceptance data into program inputs, and reads the tiling the
-//! acceptance tools run with.
+//! Loads the column files of the acceptance data into program inputs, and reads the tiling and
+//! the sharing the acceptance tools run with.
 
 use std::env::VarError;
 use std::fs;
@@ -27,6 +27,22 @@ pub fn tiling_from_env() -> Tiling {
             Ok(n) => Tiling::Rows(n),
             Err(_) => panic!("VERKEHRT_TILE_ROWS={v}: expected off or a positive row count"),
         },
+    }
+}
+
+/// Whether shared evaluation is on, as the environment variable `VERKEHRT_SHARING` says:
+/// `off` turns it off, and it is on when the variable is unset. The acceptance bench and the
+/// stats example call it.
+///
+/// # Panics
+///
+/// When the variable is set to anything but `off`.
+pub fn sharing_from_env() -> bool {
+    match std::env::var("VERKEHRT_SHARING") {
+        Err(VarError::NotPresent) => true,
+        Ok(v) if v == "off" => false,
+        Ok(v) => panic!("VERKEHRT_SHARING={v}: expected off or unset"),
+        Err(VarError::NotUnicode(v)) => panic!("VERKEHRT_SHARING={v:?}: expected off or unset"),
     }
 }
 

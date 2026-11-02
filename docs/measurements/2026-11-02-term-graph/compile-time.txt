@@ -1,0 +1,16 @@
+load at start: 2.31 5.10 7.55
+program: fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }; let a = iota(10); print(length(f(...f(a)))) at the given depth
+per line: depth, flags, then three runs as elapsed seconds and peak RSS in KB
+depth 2 flags [] | 0.19 s 22952 KB | 0.19 s 24220 KB | 0.19 s 23140 KB
+depth 2 flags [--no-sharing] | 0.19 s 23364 KB | 0.19 s 23640 KB | 0.19 s 23624 KB
+depth 3 flags [] | 0.27 s 24640 KB | 0.27 s 23980 KB | 0.27 s 23820 KB
+depth 3 flags [--no-sharing] | 0.27 s 23836 KB | 0.27 s 24200 KB | 0.27 s 24224 KB
+depth 4 flags [] | 0.36 s 23640 KB | 0.35 s 24040 KB | 0.35 s 23520 KB
+depth 4 flags [--no-sharing] | 0.35 s 23668 KB | 0.35 s 24052 KB | 0.35 s 23716 KB
+depth 5 flags [] | 0.43 s 24184 KB | 0.43 s 24456 KB | 0.43 s 23592 KB
+depth 5 flags [--no-sharing] | 0.43 s 24276 KB | 0.46 s 23968 KB | 0.46 s 24628 KB
+depth 6 flags [] | 0.52 s 24028 KB | 0.51 s 24360 KB | 0.51 s 24576 KB
+depth 6 flags [--no-sharing] | 0.51 s 23700 KB | 0.51 s 23756 KB | 0.51 s 23948 KB
+depth 7 flags [] | 0.59 s 23380 KB | 0.60 s 24028 KB | 0.58 s 24736 KB
+depth 7 flags [--no-sharing] | 0.59 s 23376 KB | 0.58 s 23824 KB | 0.59 s 23196 KB
+load at end: 2.24 4.95 7.46

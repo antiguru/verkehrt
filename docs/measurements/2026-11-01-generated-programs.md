@@ -1,7 +1,7 @@
 # Generated programs: Findings
 
 This document records what the random program generator of `tests/generated` found, and what it cannot tell.
-The generator builds typed programs from the kernel registry and checks each one against four oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, and tiled against untiled runs.
+The generator builds typed programs from the kernel registry and checks each one against five oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, tiled against untiled runs, and shared against unshared runs.
 The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40, which errors as data has since resolved.
 No oracle reported a disagreement between kernels, but that result carries no correctness claim, because the coverage limits below are narrow.
 This is a findings record, not a benchmark, and the timings only size the CI run.
@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 13.7 s in debug with the tiled oracle, measured on the 32-core host |
+| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 16.3 to 16.4 s in debug with shared evaluation and oracle 5, 16.1 to 16.4 s with the generated deep-sharing chains before them, and 15.2 to 15.6 s before the sharing cap was removed, measured on the 32-core host |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -27,9 +27,15 @@ A value that reaches no print or export is not computed, so errors in it are not
 Oracle 4 runs each plan on the scalar interpreter with `Tiling::Rows(3)` and with `Tiling::Off`.
 It requires equal printed text and export bits, and equal errors including the kind, message, and span, which is stricter than oracle 2 because a tiled run falls back to whole evaluation on any error.
 Oracle 1 runs every variant with the same three-row tiles, so the tiled kernels of every ISA are compared too.
-The CI run gates on region runs that complete tiled: at least 54 must do so, a third of the 163 the fixed CI seed gives.
+The CI run gates on region runs that complete tiled: at least 54 must do so, a third of the 163 the fixed CI seed gave when the gate was set. The seed gave 402 once the generator emitted deep-sharing chains, and gives 129 since shared evaluation, which is the only change between the two counts. A region below a shared node runs once instead of once per use, and a shared node is a region input, never a region kernel, so it shortens or removes the regions around it.
 The 5000-case release run at seed 4200000, with oracle 1 tiled and oracle 4 on the unfused plan, had no oracle failure and 13645 region runs that completed tiled.
 Oracle 1 runs every variant with three-row tiles, so a region kernel's vector body does not run on generated values there, and `tests/isa_variants.rs` covers the vector loops of the kernels at lengths up to 300.
+Oracle 5 runs each plan on the scalar interpreter with three-row tiles, with shared evaluation and with `Options::no_sharing`.
+It requires equal printed text and export bits, and equal errors including the kind, message, and span, because reusing a value changes only kernel calls and a failed evaluation is never reused.
+Oracles 1 to 4 run with shared evaluation on.
+The CI run gates on evaluations of shared nodes that reuse a value in oracle 5: at least 111 must do so, a third of the 334 the fixed CI seed gives. The 3000-case release run at seed 5300000 had no oracle failure, with 14092 evaluations that reused a value and 5344 region runs that completed tiled.
+Oracle 5 is weak on failures: a run that kept failed evaluations, and so reported an earlier statement's span, passed 1000 cases at seed 5400000, because generated programs rarely share a failing subtree between a statement whose error is dropped and a later output. The unit test `statements_sharing_a_failing_subtree_report_their_own_spans` in `src/exec/tests.rs` catches that change.
+Whether fusion changed a plan is decided by `Prepared::same_plans`, which numbers the plan graphs by the tree that the plan text prints, in linear time. Rendering the plan text expands shared nodes, so the oracles render it only for failure messages. On 664 programs, the CI seed and 600 cases at seed 5400000, `same_plans` agreed with comparing the rendered text in every case.
 
 ## Runs
 
@@ -109,7 +115,7 @@ Each limit below weakens any statement that the runs found nothing.
   * A `scan_by_add` tail loop on v4 that ignored segment starts for tiles of 8 or more rows failed oracle 1, once unread lets were exported.
   * A second `scan_by_add` mutation (`m |= m << 3`) is wrong only when a segment starts on lane 0 of a later 8-row chunk and the next 7 rows do not start. It was not caught in 3,000 cases, and the kernel property tests in `tests/isa_variants.rs` fit data-pattern bugs of this kind better.
 * **Lowering bugs reach only oracle 3.** Swapping the branches of a lambda `if` in lowering passed oracles 1 and 2, because every variant and both fusion settings share the lowering. Only the reference evaluator failed on it, in the 48-case CI run.
-* **The #39 cap replaces statements.** A statement whose shared bindings nest deeper than `MAX_SHARE_DEPTH = 3` becomes a leaf. The cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000, the latest count, after the generator started to call functions more often. The generator under-covers deep sharing until #39 lands.
+* **Deep sharing is rare.** Until lowering and planning shared repeated terms (#39), a statement whose shared bindings nested deeper than 3 became a leaf. That cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000. The cap is gone, and the histogram counts such programs as "sharing depth over 3". Random expressions reach that depth in about 2% of programs (70 of 3000 at seed 5100000), so 6% of statements get a block of 5 or 6 chained lets, each reading the previous one twice through a binary op or three times through a lazy conditional. With it, 571 of 3000 programs at seed 5200000 (19%) have the feature. The fixed CI seed gives 19 of 64, and the CI run requires at least 6, a third of that.
 * **The chain rule accepts several lines.** Oracle 3 accepts an error at any statement on its chain, so it cannot tell whether lowering computed a binding in the right statement, only that the reported line is one the span rule allows.
 * **Shared code.** All three oracles run the same parser and checker, and the evaluator types lambda bodies through the same registry and prints through the same `Value` display. The generator draws its operations from that registry too. Bugs in parsing, checking, or value formatting are invisible to all three oracles.
 * **Untaken lazy branches.** The generator rarely puts a failing value, such as a zero `div_const` divisor, in a lambda branch that is not taken. The 1000-case run of seed 1000000 did not find the lambda `if` bug, and a hand-written probe did.
@@ -138,7 +144,7 @@ The table below is the function form.
 
 The generator found this as an out-of-memory failure, when 32 workers exceeded a 32 GB cap.
 The fix is a hash-consed term graph in lowering, tracked as #39 and not part of this change.
-The generator works around it with the cap described above, with a comment that points to #39.
+The generator worked around it with the cap described above until lowering built a term graph and planning built a plan graph, and the cap has since been removed.
 
 ### Slow planning inside lazy branches
 
@@ -147,7 +153,8 @@ One generated statement took 7.5 s to plan on a 4-element input.
 A reduced form, `let b7 = if false { a } else { a }; let b11 = compress(b7, (b7 >= reduce(b7, and)));` followed by 1 to 4 nested lazy ifs over `b11`, costs 0.57, 0.85, 1.12, and 1.42 s, against 0.06 s without the scalar-`if` binding.
 Under 32 parallel workers the slowest cases reached 12 to 36 s.
 This is a separate symptom of the same substitution, and it is recorded on #39.
-The generator's cap does not exclude it, because the cost stays in seconds.
+The generator's cap did not exclude it, because the cost stays in seconds.
+The planner now emits each distinct node once and plans each distinct conditional once per program into a plan graph, and `deep_lazy_branch_nesting_plans_in_linear_steps` in `src/plan/tests.rs` plans 16 nested lazy ifs of this form within a step budget linear in the depth.
 
 ### Hoisted binds reported the wrong span
 
@@ -206,6 +213,6 @@ The evaluator stays lazy and does not mirror which bindings lowering inlines, so
 The generator emits `_`-prefixed bindings that nothing reads, some of which fail whenever they are computed.
 Before about 12% of top-level statements it adds a failing let, outside lambdas about 12% of blocks get a failing block let, and a quarter of the top-level lets nothing reads keep the `_` prefix instead of being exported.
 A failing binding takes the `min` of an empty slice, gathers an index one past the end, or compares an array with one longer by one element, mostly on an array in scope.
-The CI run gates on these bindings: at least 8 of its 64 programs must contain one that fails when the evaluator forces it alone, and the fixed CI seed gives 23.
+The CI run gates on these bindings: at least 8 of its 64 programs must contain one that fails when the evaluator forces it alone, and the fixed CI seed gave 23 when the gate was set and gives 16 since the generator emits deep-sharing chains.
 In the 5000-case run at seed 1400000, 1974 programs (39%) had such a binding, 1755 had a failing unread top-level let, and 445 a failing unread block let, while 4492 programs ran to completion.
 

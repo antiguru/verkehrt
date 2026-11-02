@@ -4,16 +4,18 @@
 //! where `QUERY` is a program name such as `q40` and `ISA` is an instruction set name as
 //! `verkehrt run --isa` takes it. `QUERY` names a ClickBench program, or a TPC-H program as
 //! `tpch/q06`, which reads `VERKEHRT_TPCH` instead. `VERKEHRT_TILE_ROWS` is `off` or a tile row
-//! count and replaces the default tiling. The columns load as the acceptance bench loads them
+//! count and replaces the default tiling, and `VERKEHRT_SHARING=off` turns shared evaluation
+//! off. The columns load as the acceptance bench loads them
 //! and are bound as interpreter globals, so `Interpreter::run` collects the statistics that
 //! `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
-//! with the least total kernel time prints. The times still differ from the criterion
+//! with the least total kernel time prints, with the number of region runs that completed tiled
+//! (`Interpreter::tiled_regions`). The times still differ from the criterion
 //! time of the same query, most for the short ones.
 
 use std::io::sink;
 use std::path::Path;
 
-use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, tiling_from_env};
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, sharing_from_env, tiling_from_env};
 use verkehrt::kernels::Isa;
 use verkehrt::{Interpreter, Options};
 
@@ -43,11 +45,12 @@ fn main() {
         isa,
         stats: true,
         tiling: tiling_from_env(),
+        no_sharing: !sharing_from_env(),
         ..Options::default()
     };
     let prepared = Interpreter::new(options()).unwrap().prepare(&src).unwrap();
     let inputs = load_inputs(Path::new(&dir), &prepared, signed).unwrap();
-    let mut best: Option<(f64, Vec<u8>)> = None;
+    let mut best: Option<(f64, Vec<u8>, u64)> = None;
     for _ in 0..5 {
         let mut interp = Interpreter::new(options()).unwrap();
         for (name, value) in &inputs {
@@ -60,11 +63,12 @@ fn main() {
             .lines()
             .filter_map(|l| l.rsplit_once("time=")?.1.parse::<f64>().ok())
             .sum();
-        if best.as_ref().is_none_or(|(t, _)| total < *t) {
-            best = Some((total, text));
+        if best.as_ref().is_none_or(|(t, _, _)| total < *t) {
+            best = Some((total, text, interp.tiled_regions()));
         }
     }
-    let (total, text) = best.unwrap();
+    let (total, text, tiled) = best.unwrap();
     println!("query {query} total kernel time {total:.1} us");
+    println!("tiled_regions {tiled}");
     print!("{}", String::from_utf8_lossy(&text));
 }
