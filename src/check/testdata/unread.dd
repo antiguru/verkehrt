@@ -101,3 +101,15 @@ unread mode=repl
 fn f(a: i64[]) -> i64[] { let b = a; a }
 ----
 error: 'b' is never read, prefix it with '_' if intended at 1:27
+
+# read_only_inside_an_if_in_a_lambda
+unread
+let r = map([1, 2], |v| (if true { v } else { 0 })); print(r);
+----
+ok
+
+# inner_rebind_leaves_the_outer_let_unread
+unread
+let x = [1]; let r = { let x = [2]; x }; print(r);
+----
+error: 'x' is never read, prefix it with '_' if intended at 1:1

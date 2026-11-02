@@ -322,7 +322,7 @@ impl<'a> Gen<'a, '_> {
             fns: self.fns.len(),
         };
         let mut decls = String::new();
-        let mut lets = String::new();
+        let mut lets: Vec<(String, String)> = Vec::new();
         let mut inputs = Vec::new();
         let n_arrays = 1 + self.c.below(4);
         for _ in 0..n_arrays {
@@ -335,7 +335,7 @@ impl<'a> Gen<'a, '_> {
             let name = self.fresh("a");
             let value = self.input_value(t, len, true);
             decls.push_str(&format!("input {name}: {}[];\n", t.name()));
-            lets.push_str(&format!("let {name} = {};\n", literal_of(&value)));
+            lets.push((name.clone(), literal_of(&value)));
             cx.vars.push(Var {
                 name: name.clone(),
                 ty: ValueType::Array(t),
@@ -351,7 +351,7 @@ impl<'a> Gen<'a, '_> {
             let name = self.fresh("s");
             let value = self.input_value(t, 1, false);
             decls.push_str(&format!("input {name}: {};\n", t.name()));
-            lets.push_str(&format!("let {name} = {};\n", literal_of(&value)));
+            lets.push((name.clone(), literal_of(&value)));
             cx.vars.push(Var {
                 name: name.clone(),
                 ty: ValueType::Scalar(t),
@@ -442,6 +442,23 @@ impl<'a> Gen<'a, '_> {
                 body.push_str(&format!("export {x} = {name};\n"));
             }
         }
+        // The reproduction binds the inputs with lets, and the unread-binding rule applies to
+        // them, so one that no function or statement mentions gets the `_` prefix.
+        let code = format!("{head}{body}");
+        let mentioned: BTreeSet<&str> = code
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .collect();
+        let lets: String = lets
+            .iter()
+            .map(|(n, v)| {
+                let p = if mentioned.contains(n.as_str()) {
+                    ""
+                } else {
+                    "_"
+                };
+                format!("let {p}{n} = {v};\n")
+            })
+            .collect();
         Case {
             source: format!("{head}{decls}{body}"),
             repro: format!("{head}{lets}{body}"),
