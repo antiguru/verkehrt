@@ -550,7 +550,8 @@ print(sum((a + 1.0) * (b * 2.0)));",
 }
 
 /// Sums its `i64` rows and fails on the first row holding `FAIL_AT`, naming that row's
-/// position in the update, so a tiled update would report a different position.
+/// position in the update, so a tiled update would report a different position. It also
+/// fails on an update without rows, which a whole call never makes.
 struct FailSum(i64);
 
 const FAIL_AT: i64 = 90;
@@ -560,6 +561,9 @@ impl Reducer for FailSum {
         let [Arg::Rows(a)] = args else {
             return Err("fail_sum takes one array".into());
         };
+        if a.is_empty() {
+            return Err("fail_sum: an update without rows".into());
+        }
         for (i, &x) in a.as_slice::<i64>().iter().enumerate() {
             if x == FAIL_AT {
                 return Err(format!("fail_sum: row {i} holds {x}"));
@@ -647,6 +651,9 @@ fn a_failing_update_after_earlier_tiles_raises_the_untiled_error() {
     assert_eq!(e.span, Some(Span { line: 3, col: 1 }));
     let sum = compare_fused(&reg, &node, 80, 1, 0).unwrap();
     assert_eq!(rows(&sum), text([(1..=80).sum::<i64>()]));
+    // An empty array runs one empty tile and no update, so the fused run completes.
+    let empty = compare_fused(&reg, &node, 0, 1, 0).unwrap();
+    assert_eq!(rows(&empty), text([0]));
 }
 
 #[test]
