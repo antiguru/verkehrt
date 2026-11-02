@@ -17,10 +17,9 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
-Oracle 2 requires the fused and unfused plans to agree on printed text, export bits, and the error kind and message category.
-It does not compare the error line, because a statement can read several bindings that hold errors from different statements, and fusion and the comparison flip change which operand a kernel evaluates first.
-The same category is stricter than the base spec, which leaves open which of several errors surfaces.
-The same operand order makes two failing bindings of different categories surface differently, for example an empty `reduce` and an out-of-range `gather` read by `count(c < x)`, which oracle 2 would reject. The generator has not produced that shape.
+Oracle 2 requires the fused and unfused plans to agree on printed text, export bits, and the error kind.
+It compares neither the error line nor the message category, because a statement can read several bindings that hold errors from different statements, and fusion and the comparison flip change which operand a kernel evaluates first.
+Oracle 3 checks the line and category of both plans' errors instead.
 Oracle 3 compares the scalar outcome against a reference evaluator that calls no kernel, lowering, planner, or executor code.
 It shares the front end with the pipeline: the parser and `check::check`, including the lifted typing of lambda bodies through the kernel registry, and it prints values through the library's `Value` display.
 Floats compare by bits except that all NaNs are equal, per the base spec.
@@ -30,7 +29,7 @@ A value that reaches no print or export is not computed, so errors in it are not
 
 The first table lists the runs of oracles 1 and 2.
 Only the last row used the final generator, and earlier rows used earlier versions of it.
-The oracle 2 column names the comparison of errors: "kind only" compared the error kind, and "strict" compared the kind, the statement line, and the category. Oracle 2 has since stopped comparing the line, see the oracle 3 runs below.
+The oracle 2 column names the comparison of errors: "kind only" compared the error kind, and "strict" compared the kind, the statement line, and the category. Oracle 2 has since stopped comparing the line and the category, see the oracle 3 runs below.
 
 | Seed | Cases | Params | Oracle 2 | Result |
 |---|---|---|---|---|
@@ -180,8 +179,10 @@ The regression test `oracle_3_accepts_lines_on_the_chain` in `tests/generated/or
 
 The final review found a second shape, which the generator had not produced.
 A print that reads two failing lets reports the line of whichever let its kernel evaluates first, and the fused plan `count_gt_f64 x c` evaluates its operands in the opposite order of the unfused `count (lt_f64 c x)`, so the two plans report different lines.
-Both lines are on the evaluator's chains, so oracle 2 no longer compares lines, and oracle 3 checks both plans instead.
-The regression test `plans_may_report_different_failing_lets` pins this shape.
+When the two lets fail with different categories, such as an empty `reduce` and an out-of-range `gather`, the plans also report different categories.
+Both errors are on the evaluator's chains, so oracle 2 no longer compares lines or categories, and oracle 3 checks both plans instead.
+The regression tests `plans_may_report_different_failing_lets` and `plans_may_report_different_categories` pin this shape.
+The 5000-case run with both plans under oracle 3 still compared categories in oracle 2.
 
 ## Reference evaluator
 

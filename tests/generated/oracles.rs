@@ -5,15 +5,13 @@
 //!   variants share the plan, so the outcomes must agree exactly, including the error message
 //!   and its location.
 //! * Oracle 2, fused against unfused: the unfused plan gives the fused plan's output and
-//!   exports, and fails at the same output with the same error kind and category, see
-//!   `Category`. The message text is not compared, because a fused kernel words a length
-//!   mismatch its own way. The line is not compared, because a statement can read several
-//!   bindings that hold errors from different statements, and fusion and the comparison flip
-//!   change which operand a kernel evaluates first. Oracle 3 checks the line and category of
-//!   both plans' errors against the reference evaluator. Requiring the same category is
-//!   stricter than the base spec, which leaves open which of several errors surfaces. The
-//!   same operand order makes two failing bindings of different categories surface
-//!   differently, which this oracle would reject. The generator has not produced that shape.
+//!   exports, and fails at the same output with the same error kind. Which error surfaces may
+//!   differ, because a statement can read several bindings that hold errors from different
+//!   statements, and fusion and the comparison flip change which operand a kernel evaluates
+//!   first. So neither the line, the category, see `Category`, nor the message is compared,
+//!   and the message also differs because a fused kernel words a length mismatch its own way.
+//!   Oracle 3 checks the line and category of both plans' errors against the reference
+//!   evaluator.
 //! * Oracle 3, reference evaluator: the scalar outcome of the fused plan equals what the
 //!   evaluator of `eval` computes from the typed program. On success the output and the
 //!   exports must be equal. Whether an error occurs and which output raises it are fixed, so
@@ -121,25 +119,12 @@ impl Category {
     }
 }
 
-/// The parts of an error that oracle 2 compares.
-#[derive(Debug, PartialEq, Eq)]
-struct FusionError {
-    kind: ErrorKind,
-    category: Category,
-}
-
 impl Outcome {
-    /// The parts that oracle 2 compares: output, exports, and the error's kind and category.
-    fn fusion_view(&self) -> (&str, Result<&[Export], FusionError>) {
+    /// The parts that oracle 2 compares: output, exports, and the error's kind.
+    fn fusion_view(&self) -> (&str, Result<&[Export], ErrorKind>) {
         (
             &self.printed,
-            self.result
-                .as_ref()
-                .map(Vec::as_slice)
-                .map_err(|f| FusionError {
-                    kind: f.kind,
-                    category: Category::of(&f.message),
-                }),
+            self.result.as_ref().map(Vec::as_slice).map_err(|f| f.kind),
         )
     }
 }
@@ -574,6 +559,38 @@ fn plans_may_report_different_failing_lets() {
     };
     assert_eq!(line(&engine.fused), Some(2));
     assert_eq!(line(&engine.unfused), Some(1));
+}
+
+/// Two failing lets of different categories read by one print. The fused plan evaluates `x`
+/// first and reports its out-of-range gather, the unfused plan evaluates `c` first and reports
+/// its empty reduction. Both are errors the reference allows, so the oracles accept both plans.
+#[test]
+fn plans_may_report_different_categories() {
+    let case = Case {
+        source: "let c = reduce(fill(0, 1.0), min);\n\
+                 let x = gather([1.0, 2.0], fill(2, 5));\n\
+                 print(count(c < x));\n\
+                 print(c);\n\
+                 print(x);\n"
+            .to_string(),
+        inputs: Vec::new(),
+        repro: String::new(),
+        features: Default::default(),
+        failing_unread: Vec::new(),
+    };
+    let engine = Engine::new();
+    engine.check(&case).expect("the oracles agree");
+    let failure = |interp: &Interpreter| {
+        let (prepared, _) = prepare(interp, &case).expect("compiles");
+        let outcome = run(interp, &prepared, &case);
+        let failure = outcome.result.expect_err("the program fails");
+        (failure.span.map(|s| s.line), Category::of(&failure.message))
+    };
+    assert_eq!(failure(&engine.fused), (Some(2), Category::GatherIndex));
+    assert_eq!(
+        failure(&engine.unfused),
+        (Some(1), Category::Empty("reduce_min".into()))
+    );
 }
 
 /// A failing binding that nothing reads fails when forced alone, also as a block let, while
