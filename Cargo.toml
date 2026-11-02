@@ -10,7 +10,7 @@ keywords = ["array-language", "interpreter", "simd", "egglog"]
 categories = ["compilers", "command-line-utilities"]
 
 [dependencies]
-bytemuck = { version = "1.25.2", features = ["derive"] }
+bytemuck = { version = "1.25.2", features = ["derive", "track_caller"] }
 clap = { version = "4.6.7", features = ["derive"] }
 egglog = { version = "3", default-features = false }
 rustyline = { version = "19.0.0", default-features = false }
