@@ -24,15 +24,18 @@
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
 //! compared as text, which writes every NaN as `NaN`.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use verkehrt::error::{ErrorKind, Span};
 use verkehrt::kernels::{Backend, Isa, Registry, Variant};
+use verkehrt::plan::SumRewrite;
 use verkehrt::value::{Scalar, Value, ValueType};
 use verkehrt::{Interpreter, Options, Prepared};
 
 use crate::eval::{self, Reference};
 use crate::r#gen::Case;
+use crate::rewrites;
 
 /// An export: its name, type, comparable bits, and the value as printed.
 #[derive(Debug)]
@@ -205,6 +208,8 @@ pub struct Engine {
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
     reg: Registry,
+    /// The integer sum rewrites the fused planner emits.
+    rewrites: Vec<SumRewrite>,
 }
 
 /// What a checked case did, for the statistics.
@@ -213,6 +218,8 @@ pub struct Verdict {
     pub error: Option<(ErrorKind, String)>,
     /// Whether the fused plan differs from the unfused one in some statement.
     pub fusion_changed_plan: bool,
+    /// The integer sum rewrites that fired, with the number of statements in which each did.
+    pub rewrites_fired: BTreeMap<SumRewrite, usize>,
     /// Why oracle 3 skipped the case, which only the #40 stopgap does.
     pub reference_skipped: Option<String>,
 }
@@ -240,11 +247,13 @@ impl Engine {
                 (v, interp)
             })
             .collect();
+        let reg = Registry::new();
         Engine {
             fused: planner(false),
             unfused: planner(true),
             runners,
-            reg: Registry::new(),
+            rewrites: rewrites::expected(&reg),
+            reg,
         }
     }
 
@@ -252,12 +261,17 @@ impl Engine {
         self.runners.len()
     }
 
+    /// The integer sum rewrites the fused planner emits.
+    pub fn rewrites(&self) -> &[SumRewrite] {
+        &self.rewrites
+    }
+
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
     /// with the reference evaluator, and applies the three oracles. A program that does not
     /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
-        let (fused, fused_plan) = prepare(&self.fused, case)?;
-        let (unfused, unfused_plan) = prepare(&self.unfused, case)?;
+        let (fused, fused_plan, fused_rewrites) = prepare(&self.fused, case)?;
+        let (unfused, unfused_plan, _) = prepare(&self.unfused, case)?;
         // A plan holds kernel ids of the registry, which every interpreter builds alike, so a
         // plan from the scalar planner runs on each variant's interpreter. Every variant of a
         // program shares one plan in normal use too.
@@ -318,6 +332,7 @@ impl Engine {
         Ok(Verdict {
             error: f.result.as_ref().err().map(|e| (e.kind, e.message.clone())),
             fusion_changed_plan: fused_plan != unfused_plan,
+            rewrites_fired: rewrites::fired(&fused_rewrites),
             reference_skipped,
         })
     }
@@ -416,15 +431,26 @@ pub fn describe(case: &Case) -> String {
     )
 }
 
-fn prepare(interp: &Interpreter, case: &Case) -> Result<(Prepared, String), String> {
+/// The prepared program, its plan lines, and per statement the integer sum rewrites that
+/// fired.
+fn prepare(
+    interp: &Interpreter,
+    case: &Case,
+) -> Result<(Prepared, String, Vec<BTreeSet<SumRewrite>>), String> {
     let mut plan = Vec::new();
-    let prepared = interp.prepare_to(&case.source, &mut plan).map_err(|e| {
-        format!(
-            "generator bug, the program does not compile: {e}\n{}",
-            describe(case)
-        )
-    })?;
-    Ok((prepared, String::from_utf8(plan).expect("plans are text")))
+    let (prepared, fired) = interp
+        .prepare_with_sum_rewrites(&case.source, &mut plan)
+        .map_err(|e| {
+            format!(
+                "generator bug, the program does not compile: {e}\n{}",
+                describe(case)
+            )
+        })?;
+    Ok((
+        prepared,
+        String::from_utf8(plan).expect("plans are text"),
+        fired,
+    ))
 }
 
 fn run(interp: &Interpreter, plan: &Prepared, case: &Case) -> Outcome {

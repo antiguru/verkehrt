@@ -1,14 +1,18 @@
-//! Kernel selection. Each statement's term goes into an egglog e-graph with exact rewrites
-//! and one rewrite per fused kernel pattern, and the cheapest cover by kernels is extracted.
+//! Kernel selection. Each statement's term goes into an egglog e-graph with exact rewrites,
+//! the integer sum rewrites, and one rewrite per fused kernel pattern, and the cheapest cover
+//! by kernels is extracted.
 
 mod egglog;
 mod sexpr;
+
+use std::collections::BTreeSet;
+use std::fmt;
 
 use crate::check::Globals;
 use crate::error::Error;
 use crate::kernels::{KernelId, Registry};
 use crate::lower::{Leaf, LeafId, Term, TermKind};
-use crate::value::Value;
+use crate::value::{ScalarType, Value};
 
 use sexpr::Sexp;
 
@@ -32,6 +36,54 @@ pub enum PlanNode {
     Cond(Box<PlanNode>, Box<PlanNode>, Box<PlanNode>),
 }
 
+/// The arithmetic that an integer sum rewrite moves out of a sum, see `SumRewrite`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SumRule {
+    /// `sum(x + k)` to `sum(x) + n * k`.
+    Add,
+    /// `sum(x - k)` to `sum(x) - n * k`.
+    Sub,
+    /// `sum(k - x)` to `n * k - sum(x)`.
+    SubFrom,
+    /// `sum(x * k)` to `sum(x) * k`.
+    Mul,
+}
+
+impl SumRule {
+    pub const ALL: [SumRule; 4] = [SumRule::Add, SumRule::Sub, SumRule::SubFrom, SumRule::Mul];
+}
+
+/// An integer sum rewrite on one element type. Rewrites order by type name, then rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SumRewrite {
+    pub ty: ScalarType,
+    pub rule: SumRule,
+}
+
+impl Ord for SumRewrite {
+    fn cmp(&self, other: &SumRewrite) -> std::cmp::Ordering {
+        (self.ty.name(), self.rule).cmp(&(other.ty.name(), other.rule))
+    }
+}
+
+impl PartialOrd for SumRewrite {
+    fn partial_cmp(&self, other: &SumRewrite) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for SumRewrite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let shape = match self.rule {
+            SumRule::Add => "sum(x + k)",
+            SumRule::Sub => "sum(x - k)",
+            SumRule::SubFrom => "sum(k - x)",
+            SumRule::Mul => "sum(x * k)",
+        };
+        write!(f, "{shape} on {}", self.ty.name())
+    }
+}
+
 /// Selects kernels for terms. Holds the egglog prelude generated from one registry, which
 /// must be the registry passed to `plan`.
 pub struct Planner {
@@ -39,9 +91,9 @@ pub struct Planner {
 }
 
 impl Planner {
-    /// Builds the prelude. With `fusion` off no fused pattern is rewritten, so every plan
-    /// uses single-op kernels only. Panics on a malformed fused pattern, a bug in the kernel
-    /// tables.
+    /// Builds the prelude. With `fusion` off no fused pattern and no integer sum rewrite
+    /// applies, so every plan uses single-op kernels only and keeps each sum over its array.
+    /// Panics on a malformed fused pattern, a bug in the kernel tables.
     pub fn new(reg: &Registry, fusion: bool) -> Planner {
         let prelude =
             egglog::prelude(reg, fusion).unwrap_or_else(|e| panic!("kernel patterns: {e}"));
@@ -53,18 +105,48 @@ impl Planner {
     /// conditional are planned on their own, so no kernel spans a conditional's boundary.
     /// Errors are internal planner failures and carry the term's span.
     pub fn plan(&self, reg: &Registry, term: &Term) -> Result<PlanNode, Error> {
+        self.plan_with_sum_rewrites(reg, term).map(|(node, _)| node)
+    }
+
+    /// Like `plan`, and also returns the integer sum rewrites that matched at least once
+    /// while planning `term`, the parts of its conditionals included. A matched rewrite
+    /// added its right-hand side to the e-graph, whether or not extraction chose it. This is
+    /// a test hook, the plan is the one `plan` returns.
+    pub fn plan_with_sum_rewrites(
+        &self,
+        reg: &Registry,
+        term: &Term,
+    ) -> Result<(PlanNode, BTreeSet<SumRewrite>), Error> {
+        let mut fired = BTreeSet::new();
+        let node = self.plan_into(reg, term, &mut fired)?;
+        Ok((node, fired))
+    }
+
+    /// `plan`, adding the integer sum rewrites that matched to `fired`.
+    fn plan_into(
+        &self,
+        reg: &Registry,
+        term: &Term,
+        fired: &mut BTreeSet<SumRewrite>,
+    ) -> Result<PlanNode, Error> {
         if let TermKind::Cond(c, t, e) = &term.kind {
-            let part = |x: &Term| self.plan(reg, x).map(Box::new);
+            let mut part = |x: &Term| self.plan_into(reg, x, fired).map(Box::new);
             return Ok(PlanNode::Cond(part(c)?, part(t)?, part(e)?));
         }
         let fail = |msg: String| Error::runtime(format!("planner: {msg}"), Some(term.span));
         let (commands, root, holes) = egglog::emit(reg, term).map_err(fail)?;
         let holes = holes
             .iter()
-            .map(|h| self.plan(reg, h))
+            .map(|h| self.plan_into(reg, h, fired))
             .collect::<Result<Vec<_>, _>>()?;
-        let extracted = egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
-            .map_err(fail)?;
+        let (extracted, matched) =
+            egglog::extract(&self.prelude, &commands, &root, SATURATION_ITERATIONS)
+                .map_err(fail)?;
+        fired.extend(
+            matched
+                .iter()
+                .filter_map(|name| egglog::sum_rewrite_named(name)),
+        );
         let sexp = sexpr::parse(&extracted).map_err(fail)?;
         to_node(reg, &sexp, &holes).map_err(fail)
     }

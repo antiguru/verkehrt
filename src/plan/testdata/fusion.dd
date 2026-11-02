@@ -1,5 +1,6 @@
 # Each program planned with fusion on and off. With fusion off every kernel is a single-op
-# kernel, and the exact rewrites (commutativity, comparison flips) still apply.
+# kernel, the integer sum rewrites are dropped, and the exact rewrites (commutativity,
+# comparison flips) still apply.
 
 plan fusion=on
 print(sum(x * y));

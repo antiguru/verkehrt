@@ -1,0 +1,53 @@
+load start: 2.79 4.35 6.22 2/2554 1377327
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2m 08s
+     Running benches/acceptance.rs (target/release/deps/acceptance-a1c2f2e6d5b8d959)
+Benchmarking acceptance/clickbench/q29/scalar
+Benchmarking acceptance/clickbench/q29/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/scalar: Collecting 10 samples in estimated 3.3738 s (220 iterations)
+Benchmarking acceptance/clickbench/q29/scalar: Analyzing
+acceptance/clickbench/q29/scalar
+                        time:   [15.316 ms 15.330 ms 15.351 ms]
+                        change: [−63.850% −63.761% −63.653%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Collecting 10 samples in estimated 3.1894 s (385 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v3-auto
+                        time:   [8.2455 ms 8.2615 ms 8.2753 ms]
+                        change: [−73.843% −73.712% −73.618%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1556 s (385 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v3-intrinsics
+                        time:   [8.2306 ms 8.2565 ms 8.2821 ms]
+                        change: [−73.879% −73.753% −73.643%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Collecting 10 samples in estimated 3.1122 s (385 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v4-auto
+                        time:   [8.0260 ms 8.0345 ms 8.0421 ms]
+                        change: [−74.981% −74.724% −74.496%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0907 s (385 iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v4-intrinsics
+                        time:   [8.0183 ms 8.0273 ms 8.0414 ms]
+                        change: [−74.994% −74.699% −74.449%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set
+load end: 2.59 3.45 5.49 1/2559 1377545

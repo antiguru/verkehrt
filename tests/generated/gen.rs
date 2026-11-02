@@ -550,7 +550,7 @@ impl<'a> Gen<'a, '_> {
 
     fn scalar_expr(&mut self, cx: &mut Ctx, t: ScalarType) -> Option<E> {
         let want = ValueType::Scalar(t);
-        match self.c.weighted(&[3, 4, 5, 3, 1, 3, 1, 1]) {
+        match self.c.weighted(&[3, 4, 5, 3, 1, 3, 1, 1, 15]) {
             0 => None,
             1 => self.generic(cx, want, None, is_elementwise),
             2 => self.generic(cx, want, None, is_reduction),
@@ -558,7 +558,8 @@ impl<'a> Gen<'a, '_> {
             4 => self.cond(cx, want, None),
             5 => self.call_fn(cx, want, None),
             6 => self.block(cx, want, None),
-            _ => self.div_const(cx, want, None),
+            7 => self.div_const(cx, want, None),
+            _ => self.bcast_sum(cx, t),
         }
     }
 
@@ -1381,6 +1382,48 @@ impl<'a> Gen<'a, '_> {
             e
         });
         self.finish(cx, binding, e)
+    }
+
+    /// The shapes the integer sum rewrites match: `sum` over `x + k`, `k + x`, `x - k`,
+    /// `k - x`, `x * k`, and `k * x`, where `k` is a scalar broadcast to the array `x`, derived
+    /// to type `t`. The sums of `i32` and `u8`, which widen and so are not rewritten, are
+    /// generated too.
+    fn bcast_sum(&mut self, cx: &mut Ctx, t: ScalarType) -> Option<E> {
+        // `INTS` is `i64`, `i32`, `u8`, `u64`. Each CI run must fire every rewrite, which
+        // exist for `i64` and `u64` only, so those are favoured.
+        let s = INTS[self.c.weighted(&[4, 1, 1, 4])];
+        // Subtraction has one rewrite per operand order, the commutative ops one for both.
+        let (op, k_first) = [
+            (Op::Add, false),
+            (Op::Sub, false),
+            (Op::Sub, true),
+            (Op::Mul, false),
+            (Op::Add, true),
+            (Op::Mul, true),
+        ][self.c.weighted(&[2, 4, 4, 2, 2, 2])];
+        let x = self.expr(cx, ValueType::Array(s), None);
+        // The largest literals of a type overflow it in every operation, so the count times
+        // `k` wraps.
+        let k = if self.c.flip(30) {
+            let lits = literals(s);
+            let text = *self.c.pick(&lits[lits.len() - 2..]);
+            E {
+                k: K::Lit(text.to_string()),
+                ty: ValueType::Scalar(s),
+                lt: ValueType::Scalar(s),
+                len: None,
+            }
+        } else {
+            self.expr(cx, ValueType::Scalar(s), None)
+        };
+        let args = if k_first { vec![k, x] } else { vec![x, k] };
+        let arith = self.op(cx, op, args, None)?;
+        let sugar = self.c.flip(70);
+        let mut e = self.op(cx, Op::Reduce(ReduceOp::Add), vec![arith], None)?;
+        if let K::Op(_, _, written_sum) = &mut e.k {
+            *written_sum = sugar;
+        }
+        Some(self.derive(cx, e, t))
     }
 
     /// The filter shapes the fused kernels match: `compress(x, x < c)` and

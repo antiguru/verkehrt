@@ -129,6 +129,12 @@ impl<'f> Walk<'f> {
                     self.out.insert("op in lambda");
                 }
                 match (op, args.first().map(|a| &a.k)) {
+                    (
+                        Op::Reduce(ReduceOp::Add),
+                        Some(K::Op(Op::Add | Op::Sub | Op::Mul, xs, _)),
+                    ) if xs.iter().any(|x| !is_array(x.ty)) => {
+                        self.out.insert("shape sum(x op k)");
+                    }
                     (Op::Reduce(ReduceOp::Add), Some(K::Op(Op::Mul, xs, _))) => {
                         self.out.insert(
                             if matches!((&xs[0].k, &xs[1].k), (K::Var(a, _), K::Var(b, _)) if a == b)
