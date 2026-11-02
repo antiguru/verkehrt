@@ -2,7 +2,7 @@
 
 This document measures the term graph in lowering, the plan graph in planning, and shared evaluation in the executor (issue #39).
 ClickBench q29 drops from 8.13 ms to 0.123 ms in its best variant, about 66 times faster (both times from run b, the lower of the two runs without sharing, and 71 times from run a in the q29 table), because the ninety identical `reduce_add_i64` passes become one.
-No other acceptance query changes plan, kernel calls, or tiled regions, and the 20 other ClickBench and TPC-H queries stay inside the 10% noise band in the repeated runs, except q03, which is unresolved (see "The full suites").
+No other acceptance query changes plan, kernel calls, or tiled regions. In the full suites, run once per mode, the 20 queries other than q29 and q03 stay inside the 10% noise band. q03 moved beyond it in both directions and stays unresolved after two repeats (see "The full suites").
 The function form of the generated-program case, which took 4.84 s and 1.8 GB at depth 7, takes 0.58 to 0.60 s and 24 MB, and grows linearly with depth.
 The before numbers come from the same build with shared evaluation off (`VERKEHRT_SHARING=off`), and the DuckDB and corgi figures are reused from an earlier record and were not re-run.
 
