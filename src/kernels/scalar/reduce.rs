@@ -11,14 +11,15 @@ use crate::kernels::arch;
 use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
-    InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, Reducer, ReductionBody, Registry,
+    InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, REDUCE_BLOCK, Reducer,
+    ReductionBody, Registry,
 };
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, Value, ValueType};
 
 /// Number of independent accumulators in the canonical order, and the rows in a block of
 /// `Accum::feed_blocks`.
-pub(crate) const LANES: usize = 16;
+pub(crate) const LANES: usize = REDUCE_BLOCK;
 
 /// Float element types of the canonical reductions.
 pub trait Float: Num {

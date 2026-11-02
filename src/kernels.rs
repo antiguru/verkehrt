@@ -45,12 +45,15 @@ pub type ElementwiseFn = unsafe fn(args: &[Arg], out: &mut [u8]) -> Result<(), S
 /// safety must check them itself.
 pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
 
+/// The row multiple of every `Reducer::update` but the last.
+pub const REDUCE_BLOCK: usize = 16;
+
 /// The running state of one reduction.
 ///
-/// Every `update` except the last receives a row count that is a multiple of 16, and `finish`
-/// follows the last `update`. An empty input means no `update` at all, and `finish` then
-/// returns the identity, or the empty-array error for `reduce_min`, `reduce_max`, `argmin`,
-/// and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
+/// Every `update` except the last receives a row count that is a multiple of `REDUCE_BLOCK`,
+/// and `finish` follows the last `update`. An empty input means no `update` at all, and
+/// `finish` then returns the identity, or the empty-array error for `reduce_min`,
+/// `reduce_max`, `argmin`, and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
 /// local index is offset by the rows consumed before it.
 pub trait Reducer: Send {
     /// Consumes one tile. `args` may arrive with unchecked kinds and row counts, see

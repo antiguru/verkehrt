@@ -22,8 +22,8 @@ pub(super) struct Tiles<'r> {
     pub(super) inputs: &'r [Value],
     /// Per region kernel, see `Machine::guards`.
     pub(super) guards: &'r [Option<bool>],
-    /// One tile buffer per inner kernel, where a kernel writes the rows of the tile it runs
-    /// over at their positions in the tile.
+    /// One tile buffer per inner kernel of a plain region, and per kernel of a fused region,
+    /// where a kernel writes the rows of the tile it runs over at their positions in the tile.
     pub(super) bufs: Vec<TileBuf>,
     /// The first row of the tile in the region's arrays.
     pub(super) start: usize,
@@ -39,7 +39,8 @@ pub(super) struct Tiles<'r> {
 
 impl Tiles<'_> {
     /// Runs the subtree of region kernel `j` over the rows `lo..hi` of the tile, writing the
-    /// root's rows into `out`, the region's output. A guard runs its right operand and itself
+    /// rows of a kernel without a tile buffer, the root of a plain region, into `out`, the
+    /// region's output. A guard runs its right operand and itself
     /// only over the rows from the first to the last row of `lo..hi` where its left operand
     /// leaves the result open, and fills its other rows with the result they have whatever
     /// the right operand.
@@ -105,7 +106,7 @@ impl Tiles<'_> {
     }
 
     /// The rows `lo..hi` of the tile of `src`, or its scalar.
-    fn rows_of(&self, src: Src, lo: usize, hi: usize) -> Arg {
+    pub(super) fn rows_of(&self, src: Src, lo: usize, hi: usize) -> Arg {
         match src {
             Src::Input(i) => match &self.inputs[i] {
                 Value::Array(a) => Arg::Rows(a.slice(self.start + lo, hi - lo)),
@@ -175,7 +176,8 @@ fn open_span(rows: &[u8], open: bool) -> Option<(usize, usize)> {
 }
 
 /// The bytes of the rows `lo..hi` of the tile that starts at row `start`, in the tile buffer
-/// of region kernel `j`, or in the region's output `out` when `j` is the root.
+/// of region kernel `j`, or in the region's output `out` when `j` has none, which is the root
+/// of a plain region.
 fn dst<'b>(
     bufs: &'b mut [TileBuf],
     region: &Region,

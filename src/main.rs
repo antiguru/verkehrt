@@ -55,6 +55,10 @@ struct Flags {
     /// first to the last row the left operand leaves open
     #[arg(long)]
     no_selective: bool,
+    /// Run a reduction over a chain of elementwise kernels after the chain's whole result,
+    /// instead of updating it with each tile of the chain
+    #[arg(long)]
+    no_reduction_fusion: bool,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
@@ -85,6 +89,7 @@ impl Flags {
             },
             no_sharing: self.no_sharing,
             no_selective: self.no_selective,
+            no_reduction_fusion: self.no_reduction_fusion,
         }
     }
 

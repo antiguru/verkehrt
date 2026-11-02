@@ -1,7 +1,7 @@
 //! The library API: an interpreter with persistent bindings, and compile-once programs for
 //! embedding in a host.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -48,6 +48,10 @@ pub struct Options {
     /// the rows the left operand leaves open, see `Strategy::selective`. It changes no value
     /// and no error, only the rows kernels run over.
     pub no_selective: bool,
+    /// Run a reduction over a chain of elementwise kernels after the chain's whole result,
+    /// instead of updating it with each tile of the chain, see `Strategy::fuse_reductions`.
+    /// It changes no value and no error.
+    pub no_reduction_fusion: bool,
 }
 
 impl Options {
@@ -56,6 +60,7 @@ impl Options {
             tiling: self.tiling,
             sharing: !self.no_sharing,
             selective: !self.no_selective,
+            fuse_reductions: !self.no_reduction_fusion,
         }
     }
 }
@@ -72,6 +77,9 @@ pub struct Interpreter {
     tiled_regions: AtomicU64,
     /// Guard evaluations that narrowed, see `narrowed_tiles`.
     narrowed_tiles: AtomicU64,
+    /// Per `KernelId`, fused region runs with that root that completed tiled, see
+    /// `fused_reductions`.
+    fused_reductions: Vec<AtomicU64>,
     /// Evaluations of shared nodes that reused a value, see `shared_hits`.
     shared_hits: AtomicU64,
 }
@@ -117,6 +125,7 @@ impl Interpreter {
         let reg = Registry::new();
         let planner = Planner::new(&reg, !opts.no_fusion);
         let dispatch = reg.resolve(isa, opts.backend, opts.disable);
+        let fused_reductions = reg.iter().map(|_| AtomicU64::new(0)).collect();
         Ok(Interpreter {
             opts,
             dispatch,
@@ -127,6 +136,7 @@ impl Interpreter {
             stats: Stats::default(),
             tiled_regions: AtomicU64::new(0),
             narrowed_tiles: AtomicU64::new(0),
+            fused_reductions,
             shared_hits: AtomicU64::new(0),
         })
     }
@@ -226,6 +236,7 @@ impl Interpreter {
             tiled_regions: &self.tiled_regions,
             narrowed_tiles: &self.narrowed_tiles,
             shared_hits: &self.shared_hits,
+            fused_reductions: &self.fused_reductions,
         };
         let result = run_plan(
             &self.reg,
@@ -329,6 +340,22 @@ impl Interpreter {
     /// whether or not statistics are collected, and stays 0 under `Options::no_selective`.
     pub fn narrowed_tiles(&self) -> u64 {
         self.narrowed_tiles.load(Ordering::Relaxed)
+    }
+
+    /// Per root kernel name, the number of fused region runs, reductions updated tile by tile
+    /// with a chain of elementwise kernels, that completed tiled since the interpreter was
+    /// created, see `Strategy::fuse_reductions`. Only kernels with runs appear. It counts runs
+    /// of `run`, `eval_repl`, and `Prepared::execute` with this interpreter, whether or not
+    /// statistics are collected, and each run counts in `tiled_regions` too.
+    pub fn fused_reductions(&self) -> BTreeMap<String, u64> {
+        self.reg
+            .iter()
+            .zip(&self.fused_reductions)
+            .filter_map(|((_, def), count)| {
+                let count = count.load(Ordering::Relaxed);
+                (count > 0).then(|| (def.name.clone(), count))
+            })
+            .collect()
     }
 
     /// The number of evaluations of shared plan nodes that reused the value of an earlier
@@ -463,6 +490,7 @@ impl Prepared {
             tiled_regions: &interp.tiled_regions,
             narrowed_tiles: &interp.narrowed_tiles,
             shared_hits: &interp.shared_hits,
+            fused_reductions: &interp.fused_reductions,
         };
         run_plan(
             &interp.reg,

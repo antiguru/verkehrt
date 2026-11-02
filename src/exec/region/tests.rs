@@ -356,7 +356,7 @@ fn kernel_failing_in_a_later_tile_raises_the_untiled_error() {
 
 thread_local! {
     /// The calls of `Probe` on this thread.
-    static PROBE_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static PROBE_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
 /// Returns its one argument and counts the call in `PROBE_CALLS`. Its class is `Whole`, so

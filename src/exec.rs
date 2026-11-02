@@ -84,6 +84,10 @@ pub struct Strategy {
     /// the result open, true for `and` and false for `or`, when every region kernel of that
     /// operand is total, see `KernelDef::total`. It has no effect without tiling.
     pub selective: bool,
+    /// Whether a kernel of class `Reduction` with a region kernel argument runs as the root
+    /// of a tiled region, with the values and errors of a whole call. It has no effect
+    /// without tiling.
+    pub fuse_reductions: bool,
 }
 
 /// Totals of one kernel over a run.
@@ -127,6 +131,10 @@ pub struct Observe<'a> {
     pub narrowed_tiles: &'a AtomicU64,
     /// Incremented once per evaluation of a shared node that reused its value.
     pub shared_hits: &'a AtomicU64,
+    /// Per `KernelId`, incremented once per fused region run with that kernel as its root
+    /// that completed tiled, see `Strategy::fuse_reductions`. Such a run also counts in
+    /// `tiled_regions`.
+    pub fused_reductions: &'a [AtomicU64],
 }
 
 /// Where statement output goes.
@@ -180,7 +188,9 @@ pub fn run_plan(
             stats: obs.stats.as_deref_mut(),
             tiling: how.tiling,
             selective: how.selective,
+            fuse_reductions: how.fuse_reductions,
             tiled_regions: obs.tiled_regions,
+            fused_reductions: obs.fused_reductions,
             narrowed_tiles: obs.narrowed_tiles,
             shared,
             memo: &mut memo,
@@ -231,7 +241,11 @@ struct Machine<'a> {
     tiling: Tiling,
     /// See `Strategy::selective`.
     selective: bool,
+    /// See `Strategy::fuse_reductions`.
+    fuse_reductions: bool,
     tiled_regions: &'a AtomicU64,
+    /// See `Observe::fused_reductions`.
+    fused_reductions: &'a [AtomicU64],
     narrowed_tiles: &'a AtomicU64,
     /// Per `PlanId`, whether the node is shared. Empty when nothing is shared.
     shared: &'a [bool],
@@ -297,16 +311,23 @@ impl<'a> Machine<'a> {
         }
     }
 
-    /// Evaluates the kernel node `node`, a call of kernel `id` on `args`, as a region root
-    /// or with one whole call.
+    /// Evaluates the kernel node `node`, a call of kernel `id` on `args`, as a region root,
+    /// as the root of a fused region, or with one whole call.
     fn eval_kernel(&mut self, node: PlanId, id: KernelId, args: &[PlanId]) -> Result<Value, Error> {
-        // A region root is a region kernel with a region kernel argument. Evaluation
-        // reaches a region's root before its other kernels, so the region is maximal.
-        if let Tiling::Rows(t) = self.tiling
-            && self.region_kernel(node).is_some()
-            && args.iter().any(|a| self.region_kernel(*a).is_some())
-        {
-            return self.eval_region(node, t.get());
+        if let Tiling::Rows(t) = self.tiling {
+            // A region root is a region kernel with a region kernel argument. Evaluation
+            // reaches a region's root before its other kernels, so the region is maximal.
+            if self.region_kernel(node).is_some()
+                && args.iter().any(|a| self.region_kernel(*a).is_some())
+            {
+                return self.eval_region(node, t.get());
+            }
+            if self.fuse_reductions
+                && self.fused_root(id, args)
+                && let Some(result) = self.eval_fused(id, args, t.get())
+            {
+                return result;
+            }
         }
         let args = args
             .iter()
