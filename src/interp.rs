@@ -8,7 +8,7 @@ use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
-use crate::lower::{LStmt, Mode, lower};
+use crate::lower::{LStmt, Leaf, Mode, lower};
 use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
@@ -95,7 +95,9 @@ impl Interpreter {
     }
 
     /// Runs a whole program. Every statement is checked and planned before any executes.
-    /// `print` writes to `out`, plan and trace lines go to `diag`.
+    /// `print` writes to `out`, plan and trace lines go to `diag`. Expression statements are no
+    /// outputs: they are evaluated and dropped with their runtime errors. An `input`, or a read,
+    /// of a name whose binding holds an error is a usage error.
     pub fn run(
         &mut self,
         src: &str,
@@ -131,25 +133,39 @@ impl Interpreter {
         for decl in &c.inputs {
             let slot = before
                 .lookup(&decl.name)
-                .and_then(|(var, ty)| self.env.get(&var).map(|slot| (ty, slot)));
-            let Some((ty, slot)) = slot else {
-                return Err(Error::usage(format!("input '{}' is not bound", decl.name)));
+                .and_then(|(var, _)| self.env.get(&var));
+            let v = match slot {
+                None => return Err(Error::usage(format!("input '{}' is not bound", decl.name))),
+                Some(Err(e)) => {
+                    return Err(Error::usage(format!(
+                        "input '{}' is bound to a value that failed: {}",
+                        decl.name, e.message
+                    )));
+                }
+                Some(Ok(v)) => v,
             };
-            // A binding that holds an error has no value to take the type from, so its
-            // declared type stands in.
-            let bound_ty = match slot {
-                Ok(v) => v.ty(),
-                Err(_) => ty,
-            };
-            if bound_ty != decl.ty {
+            if v.ty() != decl.ty {
                 return Err(Error::usage(format!(
-                    "input '{}' is declared {} but bound as {bound_ty}",
-                    decl.name, decl.ty,
+                    "input '{}' is declared {} but bound as {}",
+                    decl.name,
+                    decl.ty,
+                    v.ty()
                 )));
             }
-            // An input of a failed binding holds its error, which an output reading the
-            // input raises.
-            aliases.push((decl.var, slot.clone()));
+            aliases.push((decl.var, Ok(v.clone())));
+        }
+        // A binding of an earlier program that holds an error is not handed on as data, so
+        // a read of it fails here like an input of it, before anything runs.
+        for leaf in &c.plan.lowered.leaves {
+            if let Leaf::Var(var) = leaf
+                && let Some(Err(e)) = self.env.get(var)
+            {
+                return Err(Error::usage(format!(
+                    "'{}' is bound to a value that failed: {}",
+                    before.name(*var),
+                    e.message
+                )));
+            }
         }
         // Plan lines go out before anything is committed, so a failing sink changes nothing.
         for line in &c.plan_lines {

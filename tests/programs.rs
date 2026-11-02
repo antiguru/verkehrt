@@ -568,13 +568,16 @@ fn failing_repl_let_raises_at_its_line() {
     assert_eq!(e.kind, ErrorKind::Runtime);
     assert_eq!(e.span.map(|s| s.line), Some(2), "{e}");
     assert!(interp.get("a").is_none());
-    assert!(interp.get("v").is_none());
+    // The failed input is rolled back, so `v` is an unknown name and not a held error.
+    let unknown = interp
+        .eval_repl("print(v);", &mut out, &mut diag)
+        .unwrap_err();
+    assert_eq!(unknown.kind, ErrorKind::Type, "{unknown}");
+    assert!(unknown.message.contains("'v'"), "{unknown}");
 }
 
-/// A failed binding of a successful run holds its error. `get` does not return it, and an
-/// `input` of it raises the error when an output reads it.
-#[test]
-fn failed_binding_of_a_run_holds_its_error() {
+/// Runs a program whose unread binding `_v` fails, which leaves `_v` holding the error.
+fn interp_with_failed_binding() -> Interpreter {
     let mut interp = Interpreter::new(Options::default()).unwrap();
     let (mut out, mut diag) = (Vec::new(), Vec::new());
     interp
@@ -585,24 +588,62 @@ fn failed_binding_of_a_run_holds_its_error() {
         )
         .unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), "1\n");
+    interp
+}
+
+/// A failed binding of a successful run holds its error, which `get` does not return.
+#[test]
+fn get_of_failed_binding_is_none() {
+    let interp = interp_with_failed_binding();
     assert_eq!(interp.get("_ok").unwrap().to_string(), "[1.0]");
     assert!(interp.get("_v").is_none());
-    let mut second_out = Vec::new();
-    interp
-        .run(
-            "input _v: f64;\nlet _w = _v;\nprint(2);\n",
-            &mut second_out,
-            &mut diag,
-        )
-        .unwrap();
-    assert_eq!(String::from_utf8(second_out).unwrap(), "2\n");
+}
+
+/// An `input` of a binding that holds an error fails before anything runs, even when
+/// nothing reads the input.
+#[test]
+fn input_of_failed_binding_is_a_usage_error() {
+    let mut interp = interp_with_failed_binding();
+    let mut out = Vec::new();
     let e = interp
-        .run("input _v: f64;\nprint(_v);\n", &mut Vec::new(), &mut diag)
+        .run(
+            "print(2);\ninput _v: f64;\nlet _w = _v;\n",
+            &mut out,
+            &mut Vec::new(),
+        )
         .unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Runtime);
-    assert_eq!(e.message, "reduce_min of an empty array");
-    // The error keeps the span of the statement that computed it, in the earlier program.
-    assert_eq!(e.span.map(|s| s.line), Some(2), "{e}");
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(
+        e.message,
+        "input '_v' is bound to a value that failed: reduce_min of an empty array"
+    );
+    assert!(out.is_empty());
+}
+
+/// A later program that reads a binding holding an error, in a run or in the REPL, fails
+/// before anything runs, like an `input` of it.
+#[test]
+fn read_of_failed_binding_is_a_usage_error() {
+    let mut interp = interp_with_failed_binding();
+    let want = "'_v' is bound to a value that failed: reduce_min of an empty array";
+    let mut out = Vec::new();
+    let e = interp
+        .run("print(2);\nprint(_v);\n", &mut out, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!((e.kind, e.message.as_str()), (ErrorKind::Usage, want));
+    assert!(out.is_empty());
+    let repl_err = interp
+        .eval_repl("_v;", &mut out, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!(
+        (repl_err.kind, repl_err.message.as_str()),
+        (ErrorKind::Usage, want)
+    );
+    // A program that does not read it runs.
+    interp
+        .run("print(3);\n", &mut out, &mut Vec::new())
+        .unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "3\n");
 }
 
 /// A sink whose every write fails.

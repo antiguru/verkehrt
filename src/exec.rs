@@ -141,10 +141,11 @@ impl Machine<'_> {
             PlanNode::Leaf(id) => {
                 match &self.leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
                     Leaf::Const(v) => Ok(v.clone()),
-                    // A stored error keeps the span of the statement that raised it.
+                    // A stored error keeps the span of the statement that raised it. A read of
+                    // an unbound variable is a lowering bug, never a value of the program.
                     Leaf::Var(v) => match self.env.get(v) {
                         Some(slot) => slot.clone(),
-                        None => Err(Error::runtime("variable has no value", Some(self.span))),
+                        None => panic!("variable {v:?} has no value"),
                     },
                 }
             }
