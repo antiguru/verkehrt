@@ -5,14 +5,19 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 use crate::check::VarId;
-use crate::error::{Error, Span};
+use crate::error::{Error, ErrorKind, Span};
 use crate::kernels::{Dispatch, KernelId, Registry, Variant};
 use crate::lower::{LStmt, Leaf, Lowered};
+use crate::ops::Op;
 use crate::plan::PlanNode;
 use crate::value::{Scalar, Value};
 
-/// The variable environment. Values are `Arc`-backed, so cloning one never copies data.
-pub type Env = HashMap<VarId, Value>;
+/// What a variable holds: its value, or the runtime error its binding raised. Values are
+/// `Arc`-backed, so cloning one never copies data.
+pub type Slot = Result<Value, Error>;
+
+/// The variable environment. A read of a variable that holds an error raises that error.
+pub type Env = HashMap<VarId, Slot>;
 
 /// A lowered program with one plan per statement, parallel to `lowered.stmts`.
 pub struct Plan {
@@ -58,12 +63,17 @@ pub struct Sinks<'a> {
     /// Trace lines go here, and `print` output too when `print_to_diag` is set.
     pub diag: &'a mut dyn Write,
     pub print_to_diag: bool,
-    /// Expression statements write to `out` when set, otherwise they are evaluated and dropped.
+    /// Expression statements are outputs that write to `out` when set. Otherwise they are
+    /// evaluated and dropped, with their runtime errors.
     pub show: bool,
 }
 
 /// Runs every statement of `plan` in order. A kernel failure becomes a runtime error with
-/// the span of its statement.
+/// the span of its statement, except a failed `load_*`, which is an I/O error. A `Bind` that is not an output and fails with a runtime error
+/// stores the error in its variable, and the error is raised by the first output that reads
+/// the variable, directly or through other bindings. Outputs are `Print`, `Show` when
+/// `sinks.show` is set, and a `Bind` marked as an output, and the first one whose value is an
+/// error fails the run. Errors of other kinds fail the run at once.
 pub fn run_plan(
     reg: &Registry,
     dispatch: &Dispatch,
@@ -74,7 +84,7 @@ pub fn run_plan(
 ) -> Result<(), Error> {
     for (stmt, node) in plan.lowered.stmts.iter().zip(&plan.nodes) {
         let span = stmt.span();
-        let value = Machine {
+        let result = Machine {
             reg,
             dispatch,
             leaves: &plan.lowered.leaves,
@@ -83,12 +93,18 @@ pub fn run_plan(
             trace: obs.trace.then_some(&mut *sinks.diag),
             stats: obs.stats.as_deref_mut(),
         }
-        .eval(node)?;
+        .eval(node);
         match stmt {
-            LStmt::Bind { var, .. } => {
-                env.insert(*var, value);
+            LStmt::Bind { var, output, .. } => {
+                let slot = match result {
+                    // Only a runtime error is a value. A failed write is not.
+                    Err(e) if *output || e.kind != ErrorKind::Runtime => return Err(e),
+                    slot => slot,
+                };
+                env.insert(*var, slot);
             }
             LStmt::Print { .. } => {
+                let value = result?;
                 let w = if sinks.print_to_diag {
                     &mut *sinks.diag
                 } else {
@@ -96,11 +112,15 @@ pub fn run_plan(
                 };
                 writeln!(w, "{value}").map_err(|e| Error::io(&e))?;
             }
-            LStmt::Show { .. } => {
-                if sinks.show {
+            LStmt::Show { .. } => match result {
+                Ok(value) if sinks.show => {
                     writeln!(sinks.out, "{value}").map_err(|e| Error::io(&e))?;
                 }
-            }
+                // Without the echo an expression statement is no output, and its runtime
+                // error is dropped like its value.
+                Err(e) if sinks.show || e.kind != ErrorKind::Runtime => return Err(e),
+                Ok(_) | Err(_) => {}
+            },
         }
     }
     Ok(())
@@ -122,21 +142,21 @@ impl Machine<'_> {
             PlanNode::Leaf(id) => {
                 match &self.leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
                     Leaf::Const(v) => Ok(v.clone()),
-                    Leaf::Var(v) => self
-                        .env
-                        .get(v)
-                        .cloned()
-                        .ok_or_else(|| Error::runtime("variable has no value", Some(self.span))),
+                    // A stored error keeps the span of the statement that raised it. A read of
+                    // an unbound variable is a lowering bug, never a value of the program.
+                    Leaf::Var(v) => match self.env.get(v) {
+                        Some(slot) => slot.clone(),
+                        None => panic!("variable {v:?} has no value"),
+                    },
                 }
             }
             // Single-op array kernels take a scalar operand directly and repeat it themselves.
             PlanNode::Bcast(inner) => self.eval(inner),
             PlanNode::Cond(c, t, e) => match self.eval(c)? {
                 Value::Scalar(Scalar::Bool(b)) => self.eval(if b { t } else { e }),
-                other => Err(Error::runtime(
-                    format!("if condition is {}, not bool", other.ty()),
-                    Some(self.span),
-                )),
+                // The checker types every condition as bool, so another value is a typing or
+                // lowering bug, never a value of the program.
+                other => panic!("if condition is {}, not bool", other.ty()),
             },
             PlanNode::Kernel(id, args) => {
                 let args = args
@@ -145,10 +165,18 @@ impl Machine<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let observing = self.trace.is_some() || self.stats.is_some();
                 let start = observing.then(Instant::now);
-                let result = self
-                    .dispatch
-                    .call(self.reg, *id, &args)
-                    .map_err(|m| Error::runtime(m, Some(self.span)))?;
+                let result = self.dispatch.call(self.reg, *id, &args).map_err(|m| {
+                    // A file that cannot be loaded is an I/O failure, not a runtime value.
+                    let kind = match self.reg.get(*id).op {
+                        Some(Op::Load(_)) => ErrorKind::Io,
+                        _ => ErrorKind::Runtime,
+                    };
+                    Error {
+                        kind,
+                        message: m,
+                        span: Some(self.span),
+                    }
+                })?;
                 if let Some(start) = start {
                     self.observe(
                         *id,

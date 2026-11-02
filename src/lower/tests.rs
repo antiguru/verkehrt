@@ -90,6 +90,38 @@ fn datadriven_lowering() {
     );
 }
 
+/// The names of the `Bind` statements of `src` lowered in `mode`, each with whether it is an
+/// output, in statement order.
+fn bind_outputs(src: &str, mode: Mode) -> Vec<(String, bool)> {
+    let (l, g) = lowered(src, mode);
+    l.stmts
+        .iter()
+        .filter_map(|s| match s {
+            LStmt::Bind { var, output, .. } => Some((g.name(*var).to_string(), *output)),
+            LStmt::Print { .. } | LStmt::Show { .. } => None,
+        })
+        .collect()
+}
+
+#[test]
+fn exports_and_repl_lets_are_outputs() {
+    let src = "input x: f64[];\nlet a = x + x;\nprint(sum(a));\nprint(sum(a));\n\
+               export d = sum(x * x) + sum(x * x);\n";
+    let binds = |mode| bind_outputs(src, mode);
+    let names = |v: &[(&str, bool)]| -> Vec<(String, bool)> {
+        v.iter().map(|(n, o)| (n.to_string(), *o)).collect()
+    };
+    // The hoisted temporary of the export is no output, the export after it is.
+    assert_eq!(
+        binds(Mode::Run),
+        names(&[("a", false), ("_t0", false), ("d", true)])
+    );
+    assert_eq!(
+        binds(Mode::Repl),
+        names(&[("a", true), ("_t0", false), ("d", true)])
+    );
+}
+
 #[test]
 fn input_and_export() {
     // The dump of this case is in `testdata/lets.dd`.

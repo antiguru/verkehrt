@@ -79,9 +79,23 @@ impl Hash for Term {
 
 #[derive(Clone, Debug)]
 pub enum LStmt {
-    Bind { var: VarId, term: Term, span: Span },
-    Print { term: Term, span: Span },
-    Show { term: Term, span: Span },
+    /// Binds `var` to the value of `term`. An `output` bind is demanded: a runtime error of
+    /// its term fails the program at this statement. Any other bind holds the error in `var`
+    /// until an output reads it.
+    Bind {
+        var: VarId,
+        term: Term,
+        span: Span,
+        output: bool,
+    },
+    Print {
+        term: Term,
+        span: Span,
+    },
+    Show {
+        term: Term,
+        span: Span,
+    },
 }
 
 impl LStmt {
@@ -97,7 +111,8 @@ impl LStmt {
 pub struct Lowered {
     pub leaves: Vec<Leaf>,
     pub stmts: Vec<LStmt>,
-    /// Exported names in source order. Each variable has a `Bind` in `stmts`.
+    /// Exported names in source order. Each variable has an `output` `Bind` in `stmts`, which
+    /// places the export among the outputs in statement order.
     pub exports: Vec<(String, VarId)>,
 }
 
@@ -210,6 +225,9 @@ pub fn lower(
                     var: *var,
                     term,
                     span: *span,
+                    // A top-level let of the REPL stays bound for later inputs, so it is
+                    // demanded where it stands.
+                    output: mode == Mode::Repl,
                 });
             }
             TStmt::Export { var, value, span } => {
@@ -220,6 +238,7 @@ pub fn lower(
                     var: *var,
                     term,
                     span: *span,
+                    output: true,
                 });
             }
             TStmt::Print { value, span } => {
@@ -670,10 +689,13 @@ impl Hoister<'_> {
                     return rebuilt;
                 }
                 let var = self.g.fresh_temp();
+                // The statement reads the temporary unconditionally, so it raises the
+                // temporary's error if it is an output.
                 self.binds.push(LStmt::Bind {
                     var,
                     term: rebuilt,
                     span: self.span,
+                    output: false,
                 });
                 let id = self.leaves.var(var);
                 let leaf = Term {

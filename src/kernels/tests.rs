@@ -30,6 +30,17 @@ fn call(reg: &Registry, name: &str, args: &[Value]) -> Result<Value, String> {
     dispatch.call(reg, id, args)
 }
 
+/// Asserts that calling a kernel by name panics because it does not accept `args`.
+fn assert_rejects(reg: &Registry, name: &str, args: &[Value]) {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(reg, name, args)));
+    let payload = r.expect_err(&format!("{name} accepted {args:?}"));
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(msg.contains("does not accept arguments"), "{msg}");
+}
+
 fn arr(v: Value) -> Array {
     match v {
         Value::Array(a) => a,
@@ -301,8 +312,8 @@ fn scalar_kernels_return_scalars() {
     let not_bool_s_res = call(&reg, "not_bool_s", &[Value::Scalar(Scalar::Bool(true))]);
     assert_eq!(not_bool_s_res.unwrap(), Value::Scalar(Scalar::Bool(false)));
     // A scalar kernel rejects arrays and an array kernel rejects all-scalar arguments.
-    assert!(call(&reg, "add_f64_s", &[f64s(&[1.0]), f64_s(1.0)]).is_err());
-    assert!(call(&reg, "add_f64", &[f64_s(1.0), f64_s(1.0)]).is_err());
+    assert_rejects(&reg, "add_f64_s", &[f64s(&[1.0]), f64_s(1.0)]);
+    assert_rejects(&reg, "add_f64", &[f64_s(1.0), f64_s(1.0)]);
 }
 
 #[test]
@@ -413,11 +424,18 @@ fn float_only_ops() {
 }
 
 #[test]
-fn wrong_argument_types_are_errors() {
+fn wrong_argument_types_panic() {
     let reg = Registry::new();
-    assert!(call(&reg, "add_f64", &[f64s(&[1.0]), i32s(&[1])]).is_err());
-    assert!(call(&reg, "add_f64", &[f64s(&[1.0])]).is_err());
-    assert!(call(&reg, "add_f64", &[f64s(&[1.0]), Value::Str("x".into())]).is_err());
+    assert_rejects(&reg, "add_f64", &[f64s(&[1.0]), i32s(&[1])]);
+    assert_rejects(&reg, "add_f64", &[f64s(&[1.0])]);
+    assert_rejects(&reg, "add_f64", &[f64s(&[1.0]), Value::Str("x".into())]);
+    // Whole kernels are checked the same way.
+    assert_rejects(
+        &reg,
+        "fill_f64",
+        &[Value::Scalar(Scalar::I64(1)), i32s(&[1])],
+    );
+    assert_rejects(&reg, "load_f64", &[f64_s(1.0)]);
 }
 
 #[test]
@@ -1109,8 +1127,8 @@ fn prev_shifts_rows_and_fills_row_zero() {
     );
     let flags = arr(flags.unwrap());
     assert_eq!(flags.as_bool_bytes(), &[1, 1, 0]);
-    // A fill of the wrong type is an error, not a reinterpretation.
-    assert!(call(&reg, "prev_i64", &[i64s(&[1]), f64_s(1.0)]).is_err());
+    // A fill of the wrong type is rejected, not reinterpreted.
+    assert_rejects(&reg, "prev_i64", &[i64s(&[1]), f64_s(1.0)]);
 }
 
 /// A whole body with auto entries, which no registered kernel is built from yet.

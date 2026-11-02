@@ -19,13 +19,14 @@ use verkehrt::ops::{Op, ReduceOp};
 use verkehrt::value::{ScalarType, Value, ValueType};
 
 mod choices;
+mod failing;
 mod features;
 mod inputs;
 mod render;
 mod tier2;
 
 use choices::Choices;
-use features::walk;
+use features::{reads, walk};
 use inputs::{literal_of, literals};
 
 /// Size limits of generated programs.
@@ -49,6 +50,9 @@ pub struct Case {
     pub repro: String,
     /// The features the program uses, for the histogram.
     pub features: BTreeSet<&'static str>,
+    /// The source names of the unread bindings made to fail, see `Gen::failing`. A block let
+    /// among them may sit in a function body, where `eval::fails_alone` does not find it.
+    pub failing_unread: Vec<String>,
 }
 
 /// The choices of a program: one sequence for the inputs, one per function, and one per
@@ -238,6 +242,8 @@ struct Gen<'a, 'r> {
     fns: Vec<FnDef>,
     names: usize,
     classes: u32,
+    /// The names of the unread block lets made to fail, without the `_` prefix.
+    failing_blocks: Vec<String>,
 }
 
 /// The kernel signatures the generator draws from: single-op kernels on generated types,
@@ -284,6 +290,7 @@ pub fn generate(cat: &Catalog, plan: &Plan, p: Params) -> Case {
         fns: Vec::new(),
         names: 0,
         classes: 0,
+        failing_blocks: Vec::new(),
     };
     g.program(plan)
 }
@@ -322,7 +329,7 @@ impl<'a> Gen<'a, '_> {
             fns: self.fns.len(),
         };
         let mut decls = String::new();
-        let mut lets = String::new();
+        let mut lets: Vec<(String, String)> = Vec::new();
         let mut inputs = Vec::new();
         let n_arrays = 1 + self.c.below(4);
         for _ in 0..n_arrays {
@@ -335,7 +342,7 @@ impl<'a> Gen<'a, '_> {
             let name = self.fresh("a");
             let value = self.input_value(t, len, true);
             decls.push_str(&format!("input {name}: {}[];\n", t.name()));
-            lets.push_str(&format!("let {name} = {};\n", literal_of(&value)));
+            lets.push((name.clone(), literal_of(&value)));
             cx.vars.push(Var {
                 name: name.clone(),
                 ty: ValueType::Array(t),
@@ -351,7 +358,7 @@ impl<'a> Gen<'a, '_> {
             let name = self.fresh("s");
             let value = self.input_value(t, 1, false);
             decls.push_str(&format!("input {name}: {};\n", t.name()));
-            lets.push_str(&format!("let {name} = {};\n", literal_of(&value)));
+            lets.push((name.clone(), literal_of(&value)));
             cx.vars.push(Var {
                 name: name.clone(),
                 ty: ValueType::Scalar(t),
@@ -362,8 +369,11 @@ impl<'a> Gen<'a, '_> {
             inputs.push((name, value));
         }
 
-        let mut body = String::new();
         let mut stmts: Vec<(&'static str, String, E)> = Vec::new();
+        // Top-level lets that stay unread with the `_` prefix instead of being exported, and
+        // among them those made to fail.
+        let mut may_stay_unread = BTreeSet::new();
+        let mut failing_lets = Vec::new();
         let mut too_large = 0;
         let n_stmts = plan.stmts.len().clamp(1, self.p.max_stmts);
         for i in 0..n_stmts {
@@ -405,10 +415,20 @@ impl<'a> Gen<'a, '_> {
                 too_large += 1;
                 e = self.leaf(&cx, want, None);
             }
+            // A let that nothing reads and that fails, before the statement.
+            if self.c.flip(12) {
+                let name = self.fresh("v");
+                let value = self.failing(&cx);
+                may_stay_unread.insert(name.clone());
+                failing_lets.push(name.clone());
+                stmts.push(("let", name, value));
+            }
             match kind {
                 "let" => {
                     let name = self.fresh("v");
-                    body.push_str(&format!("let {name} = {};\n", self.render(&e)));
+                    if self.c.flip(25) {
+                        may_stay_unread.insert(name.clone());
+                    }
                     cx.vars.push(Var {
                         name: name.clone(),
                         ty: e.ty,
@@ -418,35 +438,82 @@ impl<'a> Gen<'a, '_> {
                     });
                     stmts.push(("let", name, e));
                 }
-                "print" => {
-                    body.push_str(&format!("print({});\n", self.render(&e)));
-                    stmts.push(("print", String::new(), e));
-                }
+                "print" => stmts.push(("print", String::new(), e)),
                 _ => {
                     let name = self.fresh("x");
-                    body.push_str(&format!("export {name} = {};\n", self.render(&e)));
                     stmts.push(("export", name, e));
                 }
             }
         }
 
-        let (mut features, uses) = self.features(&stmts);
+        // A let stays unread only if no statement mentions it, as the checker counts reads,
+        // also in block lets that nothing reads.
+        let mentioned: BTreeSet<String> = stmts
+            .iter()
+            .flat_map(|(_, _, e)| reads(e).into_keys())
+            .collect();
+        may_stay_unread.retain(|n| !mentioned.contains(n));
+        let (mut features, uses) = self.features(&stmts, &may_stay_unread);
         if too_large > 0 {
             features.insert("statement over the sharing depth cap");
         }
-        // Only what reaches a print or an export runs, so a let that nothing reads is
+        let mut body = String::new();
+        for (kind, name, e) in &stmts {
+            let value = self.render(e);
+            match *kind {
+                "let" if may_stay_unread.contains(name) => {
+                    body.push_str(&format!("let _{name} = {value};\n"));
+                }
+                "let" => body.push_str(&format!("let {name} = {value};\n")),
+                "print" => body.push_str(&format!("print({value});\n")),
+                _ => body.push_str(&format!("export {name} = {value};\n")),
+            }
+        }
+        // Only what reaches a print or an export runs, so most lets that nothing reads are
         // exported, which keeps the lets that are read once single-use.
         for (kind, name, _) in &stmts {
-            if *kind == "let" && !uses.contains_key(name) {
+            if *kind == "let" && !uses.contains_key(name) && !may_stay_unread.contains(name) {
                 let x = self.fresh("x");
                 body.push_str(&format!("export {x} = {name};\n"));
             }
         }
+        // The reproduction binds the inputs with lets, and the unread-binding rule applies to
+        // them, so one that no function or statement mentions gets the `_` prefix.
+        let code = format!("{head}{body}");
+        let words: BTreeSet<&str> = code
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .collect();
+        let lets: String = lets
+            .iter()
+            .map(|(n, v)| {
+                let p = if words.contains(n.as_str()) { "" } else { "_" };
+                format!("let {p}{n} = {v};\n")
+            })
+            .collect();
+        // Block lets are rendered with the `_` prefix, as nothing reads them.
+        let blocks: Vec<String> = self
+            .failing_blocks
+            .iter()
+            .map(|n| format!("_{n}"))
+            .filter(|n| words.contains(n.as_str()))
+            .collect();
+        if !failing_lets.is_empty() {
+            features.insert("failing unread let");
+        }
+        if !blocks.is_empty() {
+            features.insert("failing unread block let");
+        }
+        let failing_unread = failing_lets
+            .iter()
+            .map(|n| format!("_{n}"))
+            .chain(blocks)
+            .collect();
         Case {
             source: format!("{head}{decls}{body}"),
             repro: format!("{head}{lets}{body}"),
             inputs,
             features,
+            failing_unread,
         }
     }
 
@@ -1137,6 +1204,14 @@ impl<'a> Gen<'a, '_> {
             if uses.contains_key(&name) || self.c.flip(20) {
                 kept.push((name, value));
             }
+        }
+        // A let that nothing reads and that fails. It reads only names from outside the block,
+        // so it stays valid whichever lets are kept.
+        if !cx.lambda && self.c.flip(12) {
+            let name = self.fresh("b");
+            let value = self.failing(cx);
+            self.failing_blocks.push(name.clone());
+            kept.insert(0, (name, value));
         }
         if kept.is_empty() {
             return Some(r);

@@ -152,16 +152,23 @@ fn call_checks_lengths() {
 }
 
 #[test]
-fn call_checks_arity_and_kinds() {
+#[should_panic(expected = "kernel add_f64 does not accept arguments")]
+fn call_panics_on_wrong_arity() {
     let reg = Registry::new();
     let id = reg.by_name("add_f64").unwrap();
     let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let one = [Value::Array(f64s(2, 1.0))];
-    let err = dispatch.call(&reg, id, &one).unwrap_err();
-    assert!(err.contains("expected 2 arguments"), "{err}");
+    let _ = dispatch.call(&reg, id, &one);
+}
+
+#[test]
+#[should_panic(expected = "kernel add_f64 does not accept arguments")]
+fn call_panics_on_wrong_kinds() {
+    let reg = Registry::new();
+    let id = reg.by_name("add_f64").unwrap();
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
     let mixed = [Value::Array(f64s(2, 1.0)), Value::Scalar(Scalar::I64(1))];
-    let kind_err = dispatch.call(&reg, id, &mixed).unwrap_err();
-    assert!(kind_err.contains("expected f64"), "{kind_err}");
+    let _ = dispatch.call(&reg, id, &mixed);
 }
 
 #[test]

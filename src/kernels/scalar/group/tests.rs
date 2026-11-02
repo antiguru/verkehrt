@@ -323,20 +323,21 @@ fn length_mismatch() {
     );
 }
 
+/// Wrong arguments are a typing or lowering bug, so the call panics.
 #[test]
 fn wrong_arguments() {
-    assert_eq!(
-        call("group_id_i64", &[col(&[1i64]), col(&[1i64])]).unwrap_err(),
-        "expected 1 arguments, got 2"
-    );
-    assert_eq!(
-        call("group_id2_i64_i64", &[col(&[1i64])]).unwrap_err(),
-        "expected 2 arguments, got 1"
-    );
-    assert_eq!(
-        call("group_id_i32", &[col(&[1i64])]).unwrap_err(),
-        "expected i32[], got i64[]"
-    );
+    let rejects = |name: &str, args: &[Value]| {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(name, args)));
+        let payload = r.expect_err(&format!("{name} accepted {args:?}"));
+        let msg = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .unwrap_or_default();
+        assert!(msg.contains("does not accept arguments"), "{msg}");
+    };
+    rejects("group_id_i64", &[col(&[1i64]), col(&[1i64])]);
+    rejects("group_id2_i64_i64", &[col(&[1i64])]);
+    rejects("group_id_i32", &[col(&[1i64])]);
 }
 
 /// Every length around the growth thresholds of the table: more than half of

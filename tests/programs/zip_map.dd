@@ -4,7 +4,7 @@
 run
 let x = [1.0, 2.0, 3.0];
 let y = [4.0, 5.0, 6.0];
-print(zip_map(x, y, |a, b| a));
+print(zip_map(x, y, |a, _b| a));
 ----
 [1.0, 2.0, 3.0]
 
@@ -12,7 +12,7 @@ print(zip_map(x, y, |a, b| a));
 error
 let x = [1.0, 2.0, 3.0];
 let y = [4.0];
-print(zip_map(x, y, |a, b| a));
+print(zip_map(x, y, |a, _b| a));
 ----
 Runtime error at 3:1: length mismatch: 3 vs 1
 
@@ -20,7 +20,7 @@ Runtime error at 3:1: length mismatch: 3 vs 1
 run
 let x = [1.0, 2.0, 3.0];
 let y = [4.0, 5.0, 6.0];
-print(zip_map(x, y, |a, b| b));
+print(zip_map(x, y, |_a, b| b));
 ----
 [4.0, 5.0, 6.0]
 
@@ -28,7 +28,7 @@ print(zip_map(x, y, |a, b| b));
 error
 let x = [1.0, 2.0, 3.0];
 let y = [4.0];
-print(zip_map(x, y, |a, b| b));
+print(zip_map(x, y, |_a, b| b));
 ----
 Runtime error at 3:1: length mismatch: 1 vs 3
 
@@ -36,7 +36,7 @@ Runtime error at 3:1: length mismatch: 1 vs 3
 run
 let x = [1.0, 2.0, 3.0];
 let y = [4.0, 5.0, 6.0];
-print(zip_map(x, y, |a, b| 1.0));
+print(zip_map(x, y, |_a, _b| 1.0));
 ----
 [1.0, 1.0, 1.0]
 
@@ -44,7 +44,7 @@ print(zip_map(x, y, |a, b| 1.0));
 error
 let x = [1.0, 2.0, 3.0];
 let y = [4.0];
-print(zip_map(x, y, |a, b| 1.0));
+print(zip_map(x, y, |_a, _b| 1.0));
 ----
 Runtime error at 3:1: length mismatch: 3 vs 1
 

@@ -30,18 +30,44 @@ fn type_of(src: &str) -> String {
     }
 }
 
-/// Runs the `type` directive on every file in `testdata`. The input is a program, the
-/// output is one line from `type_of`.
+/// Runs the checker, then the unread-binding rule in the given mode, and renders the first
+/// error as `error: <message> at <line>:<col>`, or `ok`.
+fn unread(src: &str, repl: bool) -> String {
+    let prog = parse(src).unwrap();
+    let mut g = Globals::new();
+    let res = check(&prog, &Registry::new(), &mut g).and_then(|_| check_unread(&prog, repl));
+    match res {
+        Ok(()) => "ok".into(),
+        Err(e) => {
+            assert_eq!(e.kind, ErrorKind::Type, "{e}");
+            let s = e.span.expect("the rule reports a span");
+            format!("error: {} at {}:{}", e.message, s.line, s.col)
+        }
+    }
+}
+
+/// Runs the datadriven cases in `testdata`. The `type` directive takes a program and renders
+/// one line from `type_of`. The `unread` directive takes a program and an optional
+/// `mode=repl` and renders the outcome of the unread-binding rule.
 #[test]
 fn datadriven_types() {
     crate::testutil::run_dir(
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/check/testdata"),
-        |tc| {
-            crate::testutil::reject_unknown_args(tc, &[]);
-            match tc.directive.as_str() {
-                "type" => format!("{}\n", type_of(&tc.input)),
-                d => panic!("unknown directive {d}"),
+        |tc| match tc.directive.as_str() {
+            "type" => {
+                crate::testutil::reject_unknown_args(tc, &[]);
+                format!("{}\n", type_of(&tc.input))
             }
+            "unread" => {
+                crate::testutil::reject_unknown_args(tc, &["mode"]);
+                let repl = match tc.args.get("mode").map(|v| v[0].as_str()) {
+                    None | Some("run") => false,
+                    Some("repl") => true,
+                    Some(m) => panic!("unknown mode {m}"),
+                };
+                format!("{}\n", unread(&tc.input, repl))
+            }
+            d => panic!("unknown directive {d}"),
         },
     );
 }
