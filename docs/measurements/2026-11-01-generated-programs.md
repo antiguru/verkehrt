@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 13.7 s in debug with the tiled oracle, measured on the 32-core host |
+| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 15.3 to 15.8 s in debug without the sharing cap, against 15.2 to 15.6 s with it in the same session, measured on the 32-core host |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -109,7 +109,7 @@ Each limit below weakens any statement that the runs found nothing.
   * A `scan_by_add` tail loop on v4 that ignored segment starts for tiles of 8 or more rows failed oracle 1, once unread lets were exported.
   * A second `scan_by_add` mutation (`m |= m << 3`) is wrong only when a segment starts on lane 0 of a later 8-row chunk and the next 7 rows do not start. It was not caught in 3,000 cases, and the kernel property tests in `tests/isa_variants.rs` fit data-pattern bugs of this kind better.
 * **Lowering bugs reach only oracle 3.** Swapping the branches of a lambda `if` in lowering passed oracles 1 and 2, because every variant and both fusion settings share the lowering. Only the reference evaluator failed on it, in the 48-case CI run.
-* **The #39 cap replaces statements.** A statement whose shared bindings nest deeper than `MAX_SHARE_DEPTH = 3` becomes a leaf. The cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000, the latest count, after the generator started to call functions more often. The generator under-covers deep sharing until #39 lands.
+* **Deep sharing is rare.** Until lowering and planning shared repeated terms (#39), a statement whose shared bindings nested deeper than 3 became a leaf. That cap hit 49 of 6000 programs at seed 500000 and 101 of 6000 at seed 800000. The cap is gone, and the histogram counts such programs as "sharing depth over 3". The fixed CI seed gives 3 of 64, and the CI run requires at least 1, a third of that.
 * **The chain rule accepts several lines.** Oracle 3 accepts an error at any statement on its chain, so it cannot tell whether lowering computed a binding in the right statement, only that the reported line is one the span rule allows.
 * **Shared code.** All three oracles run the same parser and checker, and the evaluator types lambda bodies through the same registry and prints through the same `Value` display. The generator draws its operations from that registry too. Bugs in parsing, checking, or value formatting are invisible to all three oracles.
 * **Untaken lazy branches.** The generator rarely puts a failing value, such as a zero `div_const` divisor, in a lambda branch that is not taken. The 1000-case run of seed 1000000 did not find the lambda `if` bug, and a hand-written probe did.
@@ -138,7 +138,7 @@ The table below is the function form.
 
 The generator found this as an out-of-memory failure, when 32 workers exceeded a 32 GB cap.
 The fix is a hash-consed term graph in lowering, tracked as #39 and not part of this change.
-The generator works around it with the cap described above, with a comment that points to #39.
+The generator worked around it with the cap described above until lowering built a term graph and planning built a plan graph, and the cap has since been removed.
 
 ### Slow planning inside lazy branches
 
@@ -147,7 +147,8 @@ One generated statement took 7.5 s to plan on a 4-element input.
 A reduced form, `let b7 = if false { a } else { a }; let b11 = compress(b7, (b7 >= reduce(b7, and)));` followed by 1 to 4 nested lazy ifs over `b11`, costs 0.57, 0.85, 1.12, and 1.42 s, against 0.06 s without the scalar-`if` binding.
 Under 32 parallel workers the slowest cases reached 12 to 36 s.
 This is a separate symptom of the same substitution, and it is recorded on #39.
-The generator's cap does not exclude it, because the cost stays in seconds.
+The generator's cap did not exclude it, because the cost stays in seconds.
+The planner now emits each distinct node once and plans each distinct conditional once per program into a plan graph, and `deep_lazy_branch_nesting_plans_in_linear_steps` in `src/plan/tests.rs` plans 16 nested lazy ifs of this form within a step budget linear in the depth.
 
 ### Hoisted binds reported the wrong span
 

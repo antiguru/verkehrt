@@ -407,11 +407,44 @@ impl ElementwiseBody for FailAt {
     }
 }
 
+/// A hand-built plan: its graph and its root.
+struct Built {
+    graph: PlanGraph,
+    root: PlanId,
+}
+
+/// Builds a plan into one graph node by node, interning as it goes.
+#[derive(Default)]
+struct Builder(PlanGraph);
+
+impl Builder {
+    fn leaf(&mut self, i: u32) -> PlanId {
+        self.0.intern(PlanNode::Leaf(LeafId(i)))
+    }
+
+    /// A broadcast of leaf `i`.
+    fn bcast(&mut self, i: u32) -> PlanId {
+        let leaf = self.leaf(i);
+        self.0.intern(PlanNode::Bcast(leaf))
+    }
+
+    fn kernel(&mut self, id: KernelId, args: Vec<PlanId>) -> PlanId {
+        self.0.intern(PlanNode::Kernel(id, args))
+    }
+
+    fn finish(self, root: PlanId) -> Built {
+        Built {
+            graph: self.0,
+            root,
+        }
+    }
+}
+
 /// Evaluates `node` over `leaves` with `tiling` on the instruction set and backend of
 /// `variant`, and returns the result and the tiled region count.
 fn eval_node(
     reg: &Registry,
-    node: &PlanNode,
+    node: &Built,
     leaves: &[Leaf],
     variant: (Isa, Backend),
     tiling: Tiling,
@@ -422,6 +455,7 @@ fn eval_node(
     let result = Machine {
         reg,
         dispatch: &dispatch,
+        graph: &node.graph,
         leaves,
         env: &env,
         span: Span { line: 3, col: 1 },
@@ -430,7 +464,7 @@ fn eval_node(
         tiling,
         tiled_regions: &tiled,
     }
-    .eval(node);
+    .eval(node.root);
     (result, tiled.load(Ordering::Relaxed))
 }
 
@@ -449,16 +483,13 @@ fn kernel_failing_in_a_later_tile_raises_the_untiled_error() {
         impls: KernelImpl::elementwise_scalar::<FailAt>().scalar_only(),
     });
     let add = reg.by_name("add_i64").unwrap();
-    let leaf = |i| Box::new(PlanNode::Leaf(LeafId(i)));
-    let one = || PlanNode::Bcast(leaf(1));
+    let mut b = Builder::default();
     // (fail_at (x + 1)) + 1 over x = 0..100 fails at the row holding 90, row 89 of x.
-    let node = PlanNode::Kernel(
-        add,
-        vec![
-            PlanNode::Kernel(fail, vec![PlanNode::Kernel(add, vec![*leaf(0), one()])]),
-            one(),
-        ],
-    );
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let inc = b.kernel(add, vec![x, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let root = b.kernel(add, vec![failed, one]);
+    let node = b.finish(root);
     let leaves = |n: i64| {
         vec![
             Leaf::Const(Value::Array(Array::from_vec((0..n).collect()))),
@@ -548,7 +579,7 @@ fn probe_registry() -> (Registry, KernelId, KernelId, KernelId) {
 /// Evaluates `node` over the leaves `0..n` and the scalar 1 with every tiling on every
 /// variant, and checks that each run gives the untiled scalar result, tiles `regions`
 /// regions when tiled, and calls `Probe` `probes` times. Returns the untiled scalar result.
-fn compare_probed(reg: &Registry, node: &PlanNode, n: i64, regions: u64, probes: usize) -> Slot {
+fn compare_probed(reg: &Registry, node: &Built, n: i64, regions: u64, probes: usize) -> Slot {
     let leaves = vec![
         Leaf::Const(Value::Array(Array::from_vec((0..n).collect()))),
         Leaf::Const(Value::Scalar(Scalar::I64(1))),
@@ -582,23 +613,16 @@ fn compare_probed(reg: &Registry, node: &PlanNode, n: i64, regions: u64, probes:
 #[test]
 fn an_input_after_a_failing_kernel_is_never_evaluated() {
     let (reg, fail, probe, add) = probe_registry();
-    let leaf = |i| PlanNode::Leaf(LeafId(i));
+    let mut b = Builder::default();
     // fail_at(x + 1) + probe(x): over 0..100 the whole evaluation fails in `fail_at` before
     // it reaches `probe`, which a tiled run would evaluate first. Over 0..80 `probe` runs
     // once, after the left operand, and the region runs whole.
-    let node = PlanNode::Kernel(
-        add,
-        vec![
-            PlanNode::Kernel(
-                fail,
-                vec![PlanNode::Kernel(
-                    add,
-                    vec![leaf(0), PlanNode::Bcast(Box::new(leaf(1)))],
-                )],
-            ),
-            PlanNode::Kernel(probe, vec![leaf(0)]),
-        ],
-    );
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let inc = b.kernel(add, vec![x, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let probed = b.kernel(probe, vec![x]);
+    let root = b.kernel(add, vec![failed, probed]);
+    let node = b.finish(root);
     let e = compare_probed(&reg, &node, 100, 0, 0).unwrap_err();
     assert_eq!(e.message, "fail_at: row 89 holds 90");
     compare_probed(&reg, &node, 80, 0, 1).unwrap();
@@ -607,24 +631,16 @@ fn an_input_after_a_failing_kernel_is_never_evaluated() {
 #[test]
 fn an_input_before_the_first_region_kernel_tiles() {
     let (reg, fail, probe, add) = probe_registry();
-    let leaf = |i| PlanNode::Leaf(LeafId(i));
-    let one = || PlanNode::Bcast(Box::new(leaf(1)));
+    let mut b = Builder::default();
     // fail_at(probe(x) + 1) + 1: the whole evaluation reaches `probe` before any region
     // kernel, so the region tiles over 0..80. Over 0..100 the tiled run fails, and its
     // fallback reuses the value of `probe` instead of evaluating it again.
-    let node = PlanNode::Kernel(
-        add,
-        vec![
-            PlanNode::Kernel(
-                fail,
-                vec![PlanNode::Kernel(
-                    add,
-                    vec![PlanNode::Kernel(probe, vec![leaf(0)]), one()],
-                )],
-            ),
-            one(),
-        ],
-    );
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let probed = b.kernel(probe, vec![x]);
+    let inc = b.kernel(add, vec![probed, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let root = b.kernel(add, vec![failed, one]);
+    let node = b.finish(root);
     let got = compare_probed(&reg, &node, 80, 1, 1).unwrap();
     assert_eq!(rows(&got), text(2..82));
     let e = compare_probed(&reg, &node, 100, 0, 1).unwrap_err();
@@ -636,10 +652,15 @@ fn a_mask_chain_over_leaves_tiles() {
     // and(x >= 10, x < 90) as in q40: every input is a leaf or a broadcast leaf.
     let reg = Registry::new();
     let id = |n| reg.by_name(n).unwrap();
-    let leaf = |i| PlanNode::Leaf(LeafId(i));
-    let cmp =
-        |name, c| PlanNode::Kernel(id(name), vec![leaf(0), PlanNode::Bcast(Box::new(leaf(c)))]);
-    let node = PlanNode::Kernel(id("and_bool"), vec![cmp("ge_i64", 1), cmp("lt_i64", 2)]);
+    let mut b = Builder::default();
+    let col = b.leaf(0);
+    let mut cmp = |name, c| {
+        let k = b.bcast(c);
+        b.kernel(id(name), vec![col, k])
+    };
+    let (ge, lt) = (cmp("ge_i64", 1), cmp("lt_i64", 2));
+    let root = b.kernel(id("and_bool"), vec![ge, lt]);
+    let node = b.finish(root);
     let leaves = vec![
         Leaf::Const(Value::Array(Array::from_vec((0..100i64).collect()))),
         Leaf::Const(Value::Scalar(Scalar::I64(10))),

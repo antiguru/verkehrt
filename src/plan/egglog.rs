@@ -328,24 +328,25 @@ impl Emitter<'_> {
 }
 
 /// Runs `prelude` and the statement `commands`, saturates for `iterations`, and returns the
-/// cheapest term extracted for `root` as text, with the names of the rules that matched at
-/// least once.
+/// cheapest term extracted for `root` as a hash-consed egglog DAG with the term's id in it,
+/// and the names of the rules that matched at least once.
 pub fn extract(
     prelude: &str,
     commands: &str,
     root: &str,
     iterations: usize,
-) -> Result<(String, Vec<String>), String> {
+) -> Result<(::egglog::TermDag, ::egglog::TermId, Vec<String>), String> {
     let program = format!("{prelude}{commands}(run {iterations})\n(extract {root})\n");
     let mut eg = ::egglog::EGraph::default();
-    let outputs = eg
+    let mut outputs = eg
         .parse_and_run_program(None, &program)
         .map_err(|e| format!("egglog: {e}"))?;
-    let term = outputs
-        .iter()
+    // The DAG is walked rather than printed, because printing expands it into a tree.
+    let (dag, term) = outputs
+        .iter_mut()
         .rev()
         .find_map(|o| match o {
-            ::egglog::CommandOutput::ExtractBest(dag, _, t) => Some(dag.to_string(*t)),
+            ::egglog::CommandOutput::ExtractBest(dag, _, t) => Some((std::mem::take(dag), *t)),
             _ => None,
         })
         .ok_or_else(|| "egglog produced no extraction".to_string())?;
@@ -357,5 +358,5 @@ pub fn extract(
         .filter(|(_, n)| **n > 0)
         .map(|(name, _)| name.to_string())
         .collect();
-    Ok((term, matched))
+    Ok((dag, term, matched))
 }

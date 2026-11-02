@@ -28,7 +28,7 @@ use proptest::prelude::{Strategy, any};
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestError, TestRng, TestRunner};
 use verkehrt::error::ErrorKind;
 
-use r#gen::{Catalog, Params, Plan as GenPlan};
+use r#gen::{Catalog, DEEP_SHARE_FEATURE, Params, Plan as GenPlan};
 use oracles::Engine;
 
 /// Cases of the CI run, measured to stay well under 30 s in a debug build.
@@ -39,6 +39,9 @@ const CI_SEED: u64 = 0x5eed_0001;
 const MIN_FAILING_UNREAD: usize = 8;
 /// The fewest region runs of a run of `CI_CASES` or more that must complete tiled in oracle 4.
 const MIN_TILED_REGIONS: u64 = 54;
+/// The fewest programs of a run of `CI_CASES` or more that must have a statement with
+/// sharing depth over 3, a third of what `CI_SEED` gives.
+const MIN_DEEP_SHARE: usize = 1;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -300,6 +303,15 @@ fn generated_programs() {
             || stats.tiled_regions >= MIN_TILED_REGIONS,
         "only {} region runs of {} programs completed tiled, want {MIN_TILED_REGIONS}",
         stats.tiled_regions,
+        stats.cases
+    );
+    // Without deeply shared bindings the term and plan graphs share nothing a tree would
+    // repeat, so the run must contain programs that the generator once capped.
+    let deep_share = stats.features.get(DEEP_SHARE_FEATURE).copied().unwrap_or(0);
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || deep_share >= MIN_DEEP_SHARE,
+        "only {deep_share} of {} programs have {DEEP_SHARE_FEATURE:?}, want {MIN_DEEP_SHARE}",
         stats.cases
     );
     // Oracle 2 checks an integer sum rewrite only in a plan that uses it, which needs the

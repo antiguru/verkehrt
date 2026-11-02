@@ -10,9 +10,12 @@ use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, Tiling, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
 use crate::lower::{Mode, lower};
-use crate::plan::{Planner, SumRewrite, render};
+use crate::plan::{PlanContext, Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
+
+#[cfg(test)]
+mod tests;
 
 /// Interpreter settings. The default has everything off except tiling, which runs with
 /// `DEFAULT_TILE_ROWS` rows, and detects the instruction set.
@@ -236,26 +239,34 @@ impl Interpreter {
             })
             .collect();
         let lowered = lower(&typed, globals, &self.reg, mode)?;
-        let mut nodes = Vec::new();
+        // One context for the whole program, so a term repeated across statements is planned
+        // once and its plan is one node of the plan graph.
+        let mut cx = PlanContext::default();
+        let mut roots = Vec::new();
         let mut plan_lines = Vec::new();
         let mut sum_rewrites = Vec::new();
         for stmt in &lowered.stmts {
             let span = stmt.span();
-            let (node, fired) = self.planner.plan_with_sum_rewrites(
+            let (root, fired) = self.planner.plan_with_sum_rewrites(
                 &self.reg,
                 &lowered.graph,
                 stmt.term(),
                 span,
+                &mut cx,
             )?;
             if self.opts.show_plan {
-                let text = render(&self.reg, &node, &lowered.leaves, globals);
+                let text = render(&self.reg, &cx.graph, root, &lowered.leaves, globals);
                 plan_lines.push(format!("plan {}: {text}", span.line));
             }
-            nodes.push(node);
+            roots.push(root);
             sum_rewrites.push(fired);
         }
         Ok(Compiled {
-            plan: Plan { lowered, nodes },
+            plan: Plan {
+                lowered,
+                graph: cx.graph,
+                roots,
+            },
             inputs,
             plan_lines,
             sum_rewrites,

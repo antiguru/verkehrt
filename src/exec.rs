@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind, Span};
 use crate::kernels::{Dispatch, KernelClass, KernelId, Registry, Variant};
 use crate::lower::{LStmt, Leaf, Lowered};
 use crate::ops::Op;
-use crate::plan::PlanNode;
+use crate::plan::{PlanGraph, PlanId, PlanNode};
 use crate::value::{Arg, Array, Scalar, ScalarType, TileBuf, Value, ValueType};
 
 #[cfg(test)]
@@ -46,10 +46,12 @@ pub type Slot = Result<Value, Error>;
 /// The variable environment. A read of a variable that holds an error raises that error.
 pub type Env = HashMap<VarId, Slot>;
 
-/// A lowered program with one plan per statement, parallel to `lowered.stmts`.
+/// A lowered program with its plan graph and one plan root per statement, parallel to
+/// `lowered.stmts`.
 pub struct Plan {
     pub lowered: Lowered,
-    pub nodes: Vec<PlanNode>,
+    pub graph: PlanGraph,
+    pub roots: Vec<PlanId>,
 }
 
 /// Totals of one kernel over a run.
@@ -113,11 +115,12 @@ pub fn run_plan(
     mut obs: Observe<'_>,
     sinks: &mut Sinks<'_>,
 ) -> Result<(), Error> {
-    for (stmt, node) in plan.lowered.stmts.iter().zip(&plan.nodes) {
+    for (stmt, &root) in plan.lowered.stmts.iter().zip(&plan.roots) {
         let span = stmt.span();
         let result = Machine {
             reg,
             dispatch,
+            graph: &plan.graph,
             leaves: &plan.lowered.leaves,
             env,
             span,
@@ -126,7 +129,7 @@ pub fn run_plan(
             tiling,
             tiled_regions: obs.tiled_regions,
         }
-        .eval(node);
+        .eval(root);
         match stmt {
             LStmt::Bind { var, output, .. } => {
                 let slot = match result {
@@ -162,6 +165,7 @@ pub fn run_plan(
 struct Machine<'a> {
     reg: &'a Registry,
     dispatch: &'a Dispatch,
+    graph: &'a PlanGraph,
     leaves: &'a [Leaf],
     env: &'a Env,
     span: Span,
@@ -191,8 +195,8 @@ struct RegionKernel {
 /// A region of a plan: its inputs in the order the whole evaluation reaches them, and its
 /// kernels in post-order, so that every kernel comes after the kernels it reads and the root
 /// comes last.
-struct Region<'p> {
-    inputs: Vec<&'p PlanNode>,
+struct Region {
+    inputs: Vec<PlanId>,
     kernels: Vec<RegionKernel>,
     /// Whether every input that is not trivial comes before the first kernel in post-order,
     /// so that the whole evaluation reaches all of them before it calls any region kernel.
@@ -211,13 +215,14 @@ struct TiledRun {
     value: Value,
 }
 
-impl Machine<'_> {
+impl<'a> Machine<'a> {
     fn observing(&self) -> bool {
         self.trace.is_some() || self.stats.is_some()
     }
 
-    fn eval(&mut self, node: &PlanNode) -> Result<Value, Error> {
-        match node {
+    fn eval(&mut self, node: PlanId) -> Result<Value, Error> {
+        let graph = self.graph;
+        match graph.node(node) {
             PlanNode::Leaf(id) => {
                 match &self.leaves[usize::try_from(id.0).expect("u32 fits in usize")] {
                     Leaf::Const(v) => Ok(v.clone()),
@@ -230,9 +235,9 @@ impl Machine<'_> {
                 }
             }
             // Single-op array kernels take a scalar operand directly and repeat it themselves.
-            PlanNode::Bcast(inner) => self.eval(inner),
-            PlanNode::Cond(c, t, e) => match self.eval(c)? {
-                Value::Scalar(Scalar::Bool(b)) => self.eval(if b { t } else { e }),
+            PlanNode::Bcast(inner) => self.eval(*inner),
+            PlanNode::Cond(c, t, e) => match self.eval(*c)? {
+                Value::Scalar(Scalar::Bool(b)) => self.eval(if b { *t } else { *e }),
                 // The checker types every condition as bool, so another value is a typing or
                 // lowering bug, never a value of the program.
                 other => panic!("if condition is {}, not bool", other.ty()),
@@ -242,13 +247,13 @@ impl Machine<'_> {
                 // reaches a region's root before its other kernels, so the region is maximal.
                 if let Tiling::Rows(t) = self.tiling
                     && self.region_kernel(node).is_some()
-                    && args.iter().any(|a| self.region_kernel(a).is_some())
+                    && args.iter().any(|a| self.region_kernel(*a).is_some())
                 {
                     return self.eval_region(node, t.get());
                 }
                 let args = args
                     .iter()
-                    .map(|a| self.eval(a))
+                    .map(|a| self.eval(*a))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.call_whole(*id, &args)
             }
@@ -284,8 +289,8 @@ impl Machine<'_> {
 
     /// The kernel and arguments of `node` when it is a region kernel: a kernel of class
     /// `Elementwise` with an array output.
-    fn region_kernel<'p>(&self, node: &'p PlanNode) -> Option<(KernelId, &'p [PlanNode])> {
-        let PlanNode::Kernel(id, args) = node else {
+    fn region_kernel(&self, node: PlanId) -> Option<(KernelId, &'a [PlanId])> {
+        let PlanNode::Kernel(id, args) = self.graph.node(node) else {
             return None;
         };
         let def = self.reg.get(*id);
@@ -296,15 +301,16 @@ impl Machine<'_> {
     /// Adds the region kernels of the subtree `node` to `region` in post-order, and the
     /// subtrees just below them to its inputs, left to right. Clears `region.ordered` when an
     /// input that is not trivial follows a kernel. Returns where `node`'s value comes from.
-    fn collect<'p>(&self, node: &'p PlanNode, region: &mut Region<'p>) -> Src {
+    /// A node reached twice is added twice, as in the plan as a tree.
+    fn collect(&self, node: PlanId, region: &mut Region) -> Src {
         let Some((id, args)) = self.region_kernel(node) else {
-            if !trivial(node) && !region.kernels.is_empty() {
+            if !trivial(self.graph, node) && !region.kernels.is_empty() {
                 region.ordered = false;
             }
             region.inputs.push(node);
             return Src::Input(region.inputs.len() - 1);
         };
-        let args = args.iter().map(|a| self.collect(a, region)).collect();
+        let args = args.iter().map(|a| self.collect(*a, region)).collect();
         let ValueType::Array(elem) = self.reg.get(id).output else {
             unreachable!("a region kernel has an array output");
         };
@@ -315,7 +321,7 @@ impl Machine<'_> {
     /// Evaluates the region rooted at `node` in tiles of `t` rows. When the tiled run fails
     /// anywhere, or tiling would evaluate an input that is not trivial before a region kernel
     /// that the whole evaluation calls first, it evaluates the region whole instead.
-    fn eval_region(&mut self, node: &PlanNode, t: usize) -> Result<Value, Error> {
+    fn eval_region(&mut self, node: PlanId, t: usize) -> Result<Value, Error> {
         let mut region = Region {
             inputs: Vec::new(),
             kernels: Vec::new(),
@@ -366,7 +372,7 @@ impl Machine<'_> {
     /// failed. The inputs after that prefix are evaluated when reached.
     fn eval_region_whole(
         &mut self,
-        node: &PlanNode,
+        node: PlanId,
         inputs: &mut std::vec::IntoIter<Slot>,
     ) -> Result<Value, Error> {
         let Some((id, args)) = self.region_kernel(node) else {
@@ -379,7 +385,7 @@ impl Machine<'_> {
         };
         let args = args
             .iter()
-            .map(|a| self.eval_region_whole(a, inputs))
+            .map(|a| self.eval_region_whole(*a, inputs))
             .collect::<Result<Vec<_>, _>>()?;
         self.call_whole(id, &args)
     }
@@ -389,9 +395,9 @@ impl Machine<'_> {
     /// a string, the array inputs differ in length or none is an array, an allocation fails,
     /// or a tile fails, and then returns the inputs evaluated so far, ending with the failed
     /// one if any.
-    fn run_tiled(&mut self, region: &Region<'_>, t: usize) -> Result<TiledRun, Vec<Slot>> {
+    fn run_tiled(&mut self, region: &Region, t: usize) -> Result<TiledRun, Vec<Slot>> {
         let mut slots = Vec::with_capacity(region.inputs.len());
-        for n in &region.inputs {
+        for &n in &region.inputs {
             let slot = self.eval(n);
             let failed = slot.is_err();
             slots.push(slot);
@@ -547,10 +553,10 @@ impl Machine<'_> {
 
 /// Whether evaluating `node` can neither block nor do unbounded work: a leaf, or a broadcast
 /// of a leaf. Such a node can still return a stored error.
-fn trivial(node: &PlanNode) -> bool {
-    match node {
+fn trivial(graph: &PlanGraph, node: PlanId) -> bool {
+    match graph.node(node) {
         PlanNode::Leaf(_) => true,
-        PlanNode::Bcast(inner) => matches!(**inner, PlanNode::Leaf(_)),
+        PlanNode::Bcast(inner) => matches!(graph.node(*inner), PlanNode::Leaf(_)),
         PlanNode::Cond(..) | PlanNode::Kernel(..) => false,
     }
 }

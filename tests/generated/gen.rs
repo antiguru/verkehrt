@@ -84,8 +84,13 @@ const INTS: [ScalarType; 4] = [
 
 const CMPS: [Op; 6] = [Op::Lt, Op::Gt, Op::Le, Op::Ge, Op::Eq, Op::Ne];
 
-/// The deepest nesting of bindings read more than once, see `Gen::share_depth`.
-const MAX_SHARE_DEPTH: usize = 3;
+/// The nesting of bindings read more than once, see `Gen::share_depth`, beyond which a
+/// statement counts as deep sharing. The generator capped statements at this depth before
+/// lowering and planning shared repeated terms.
+const DEEP_SHARE_DEPTH: usize = 3;
+
+/// The feature of a program with a statement whose sharing depth exceeds `DEEP_SHARE_DEPTH`.
+pub const DEEP_SHARE_FEATURE: &str = "sharing depth over 3";
 
 /// The length of an array, as far as generation knows it. Arrays of one class have equal
 /// lengths at run time.
@@ -374,7 +379,7 @@ impl<'a> Gen<'a, '_> {
         // among them those made to fail.
         let mut may_stay_unread = BTreeSet::new();
         let mut failing_lets = Vec::new();
-        let mut too_large = 0;
+        let mut deep_share = false;
         let n_stmts = plan.stmts.len().clamp(1, self.p.max_stmts);
         for i in 0..n_stmts {
             self.c = Choices::new(plan.stmts.get(i).map_or(&[], Vec::as_slice));
@@ -403,17 +408,15 @@ impl<'a> Gen<'a, '_> {
             } else {
                 None
             };
-            let mut e = match call {
+            let e = match call {
                 Some(e) => e,
                 None => self.expr(&mut cx, want, None),
             };
-            // Lowering inlines function calls and block lets by deep-cloning substitution, so
-            // bindings read more than once that nest deeply grow the term exponentially, to
-            // gigabytes at seven levels. Such a statement is replaced by a leaf.
-            // See #39, a term graph for lowering.
-            if self.share_depth(&e, &HashMap::new()) > MAX_SHARE_DEPTH {
-                too_large += 1;
-                e = self.leaf(&cx, want, None);
+            // Bindings read more than once that nest deeply grow the term as a tree
+            // exponentially. Lowering and planning share them in graphs (#39), and the
+            // histogram counts the programs that exercise this.
+            if self.share_depth(&e, &HashMap::new()) > DEEP_SHARE_DEPTH {
+                deep_share = true;
             }
             // A let that nothing reads and that fails, before the statement.
             if self.c.flip(12) {
@@ -454,8 +457,8 @@ impl<'a> Gen<'a, '_> {
             .collect();
         may_stay_unread.retain(|n| !mentioned.contains(n));
         let (mut features, uses) = self.features(&stmts, &may_stay_unread);
-        if too_large > 0 {
-            features.insert("statement over the sharing depth cap");
+        if deep_share {
+            features.insert(DEEP_SHARE_FEATURE);
         }
         let mut body = String::new();
         for (kind, name, e) in &stmts {
