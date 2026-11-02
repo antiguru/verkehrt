@@ -1,0 +1,103 @@
+# The unread-binding rule: a let, a function parameter, or a lambda parameter that nothing
+# reads is a type error. A name that starts with `_` opts out.
+
+# unread_top_level_let
+unread
+let x = [1, 2]; let y = [3]; print(y);
+----
+error: 'x' is never read, prefix it with '_' if intended at 1:1
+
+# unread_top_level_let_prefixed
+unread
+let _x = [1, 2]; let y = [3]; print(y);
+----
+ok
+
+# unread_block_let
+unread
+fn f(a: i64[]) -> i64[] { let b = a; a }
+let r = f([1]); print(r);
+----
+error: 'b' is never read, prefix it with '_' if intended at 1:27
+
+# unread_block_let_prefixed
+unread
+fn f(a: i64[]) -> i64[] { let _b = a; a }
+let r = f([1]); print(r);
+----
+ok
+
+# unread_function_parameter
+unread
+fn f(a: i64[], b: i64[]) -> i64[] { a }
+let r = f([1], [2]); print(r);
+----
+error: 'b' is never read, prefix it with '_' if intended at 1:1
+
+# unread_function_parameter_prefixed
+unread
+fn f(a: i64[], _b: i64[]) -> i64[] { a }
+let r = f([1], [2]); print(r);
+----
+ok
+
+# unread_lambda_parameter
+unread
+let r = map([1, 2], |v| 5); print(r);
+----
+error: 'v' is never read, prefix it with '_' if intended at 1:21
+
+# unread_lambda_parameter_prefixed
+unread
+let r = map([1, 2], |_v| 5); print(r);
+----
+ok
+
+# unread_unreads_a_let_that_only_shadows
+unread
+let x = [1]; let x = [2]; print(x);
+----
+error: 'x' is never read, prefix it with '_' if intended at 1:1
+
+# read_through_lambda
+unread
+let t = 2; let r = map([1, 2], |v| v + t); print(r);
+----
+ok
+
+# read_through_export
+unread
+let x = [1]; export y = x;
+----
+ok
+
+# export_is_not_checked
+unread
+export y = [1];
+----
+ok
+
+# read_in_one_branch_of_an_if
+unread
+let a = 3; let b = if 1 < 2 { 5 } else { a }; print(b);
+----
+ok
+
+# read_in_a_function_body_only
+unread
+fn f(a: i64[]) -> i64[] { let b = a; b }
+let r = f([1]); print(r);
+----
+ok
+
+# repl_accepts_unread_top_level_let
+unread mode=repl
+let x = [1, 2];
+----
+ok
+
+# repl_still_rejects_unread_block_let
+unread mode=repl
+fn f(a: i64[]) -> i64[] { let b = a; a }
+----
+error: 'b' is never read, prefix it with '_' if intended at 1:27

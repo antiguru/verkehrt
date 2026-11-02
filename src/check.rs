@@ -15,7 +15,9 @@ use crate::value::{ScalarType, ValueType};
 
 mod lifting;
 mod typed;
+mod unread;
 pub use typed::*;
+pub use unread::check_unread;
 
 use lifting::Lifting;
 

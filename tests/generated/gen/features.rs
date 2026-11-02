@@ -65,7 +65,7 @@ pub(super) fn walk(
 }
 
 /// The variables `e` reads, syntactically.
-fn reads(e: &E) -> BTreeMap<String, usize> {
+pub(super) fn reads(e: &E) -> BTreeMap<String, usize> {
     let mut uses = BTreeMap::new();
     walk(e, false, &mut BTreeSet::new(), &mut uses);
     uses

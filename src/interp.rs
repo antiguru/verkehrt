@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 
-use crate::check::{Globals, TStmt, VarId, check};
+use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
@@ -184,6 +184,7 @@ impl Interpreter {
     fn compile(&self, globals: &mut Globals, src: &str, mode: Mode) -> Result<Compiled, Error> {
         let ast = parse(src)?;
         let typed = check(&ast, &self.reg, globals)?;
+        check_unread(&ast, mode == Mode::Repl)?;
         let inputs = typed
             .stmts
             .iter()
