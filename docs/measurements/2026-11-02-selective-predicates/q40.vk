@@ -1,0 +1,8 @@
+let CounterID = iota(100) + 1;
+let EventDate = iota(100) + 2;
+let IsRefresh = iota(100) + 3;
+let TraficSourceID = iota(100) + 4;
+let RefererHash = iota(100) + 5;
+let m = and(and(CounterID == 62, and(EventDate >= 15887, EventDate <= 15917)),
+            and(and(IsRefresh == 0, or(TraficSourceID == -1, TraficSourceID == 6)), RefererHash == 3594120000172545465));
+export m = m;

@@ -1,0 +1,19 @@
+reduced programs q40.vk q41.vk q42.vk q06.vk in this directory, run as: verkehrt run --plan FILE
+each column is a distinct iota(100) + k stand-in, so the term graph does not merge equal columns
+== q40
+plan 2: (add_i64 (iota 100) 2)
+plan 4: (add_i64 (iota 100) 4)
+plan 8: (iota 100)
+plan 8: (and_bool (and_bool (eq_i64 (add_i64 _t0 1) 62) (and_bool (le_i64 15887 EventDate) (le_i64 EventDate 15917))) (and_bool (and_bool (eq_i64 (add_i64 _t0 3) 0) (or_bool (eq_i64 TraficSourceID -1) (eq_i64 TraficSourceID 6))) (eq_i64 (add_i64 _t0 5) 3594120000172545465)))
+== q41
+plan 2: (add_i64 (iota 100) 2)
+plan 8: (iota 100)
+plan 8: (and_bool (and_bool (eq_i64 (add_i64 _t0 1) 62) (and_bool (le_i64 15887 EventDate) (le_i64 EventDate 15917))) (and_bool (and_bool (eq_i64 (add_i64 _t0 3) 0) (eq_i64 (add_i64 _t0 4) 0)) (eq_i64 (add_i64 _t0 5) 2868770270353813622)))
+== q42
+plan 2: (add_i64 (iota 100) 2)
+plan 6: (iota 100)
+plan 6: (and_bool (and_bool (eq_i64 (add_i64 _t0 1) 62) (and_bool (le_i64 15900 EventDate) (le_i64 EventDate 15901))) (and_bool (eq_i64 (add_i64 _t0 3) 0) (eq_i64 (add_i64 _t0 4) 0)))
+== q06
+plan 1: (add_i64 (iota 100) 1)
+plan 3: (add_i64 (iota 100) 3)
+plan 5: (and_bool (and_bool (le_i64 8766 l_shipdate) (lt_i64 l_shipdate 9131)) (and_bool (and_bool (le_i64 5 l_discount) (le_i64 l_discount 7)) (lt_i64 (add_i64 (iota 100) 2) 24)))

@@ -1,0 +1,5 @@
+let l_discount = iota(100) + 1;
+let l_quantity = iota(100) + 2;
+let l_shipdate = iota(100) + 3;
+let m = and(and(l_shipdate >= 8766, l_shipdate < 9131), and(and(l_discount >= 5, l_discount <= 7), l_quantity < 24));
+export m = m;
