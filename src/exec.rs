@@ -20,8 +20,7 @@ mod tests;
 /// The tile row count of `Tiling::default()`.
 // 1024 rows is 22% slower than untiled, and 4096 rows is up to 6% slower on the scalar and AVX2
 // variants.
-// The time stops improving at 16384 rows, which keeps one `i64` tile at 128 KiB, so the smallest
-// size on the plateau wins. See `docs/measurements/2026-11-02-tiled-regions.md`.
+// The time does not improve measurably beyond 16384 rows, which keeps one `i64` tile at 128 KiB. See `docs/measurements/2026-11-02-tiled-regions.md`.
 pub const DEFAULT_TILE_ROWS: usize = 16384;
 
 /// How the executor runs regions, the subtrees of a plan made of at least two elementwise

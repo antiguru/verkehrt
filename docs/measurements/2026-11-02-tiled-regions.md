@@ -1,9 +1,10 @@
 # Tiled elementwise regions: measurements
 
 This document measures the effect of running chains of elementwise kernels in tiles on the mask-chain queries of issue #16, and picks the default tile size.
-Tiling lowers the best variant of TPC-H q06 from 1.90 to 1.60 ms (0.84 times) and ClickBench q40, q41 and q42 by 4% to 7%, which is inside the noise band for those three.
-The default tile is 16384 rows, because 1024 rows is 22% slower than untiled and the time stops improving from 16384 rows on.
-Across both suites, 21 of 110 query and variant pairs run more than 10% faster, none run more than 10% slower, and the largest gains are on queries that are not mask chains (ClickBench q30, q31 and q03, TPC-H q01).
+Tiling lowers the best variant of TPC-H q06 from 1.90 to 1.60 ms (0.84 times, from one pair of runs) and ClickBench q40, q41 and q42 by 4% to 7%, which is inside the noise band for those three.
+The default tile is 16384 rows, because 1024 rows is 22% slower than untiled and the time does not improve measurably beyond 16384 rows.
+Across both suites, 21 of 110 query and variant pairs run more than 10% faster in the first pair of runs, 18 of them reproduce in a second pair (q03, q30, q31, and three variants of TPC-H q01), the two AVX-512 variants of TPC-H q06 were not repeated, and none run more than 10% slower in the first pair.
+The largest gains are on queries that are not mask chains (ClickBench q30, q31 and q03, TPC-H q01).
 The before numbers come from the same build with tiling off (`VERKEHRT_TILE_ROWS=off`), and the DuckDB and corgi figures are reused from earlier records and were not re-run.
 
 ## Setup
@@ -52,9 +53,9 @@ The totals are in us, the first number untiled and the second tiled.
 | TPC-H q06 | none | 890.8 to 639.8 (`le`), 586.7 to 378.8 (`lt`) | 306.1 to 112.1 | 70.5% to 60.7% | 2530.1 to 1863.3 |
 
 The `and_bool` kernels get 2.1 to 2.7 times faster in q40, q41, q42 and q06, and `le_i64` and `lt_i64` drop by 24% to 35%, which fits the masks staying in cache but was not tested.
-`eq_i64` drops by only 7% to 11%, because the first comparison on each column reads it from memory either way, and q40 reads `EventDate` and `TraficSourceID` twice.
-The three queries keep their sort (`argsort_i64` is 1010 us of q40 and does not change) and their `compress_i64` calls, which are not part of any region.
-The kernel total falls by 8%, 13%, 14% and 26%, and the criterion means of the best variant fall by less, 4%, 6%, 7% and 16%, because the stats timer and criterion do not measure the same span.
+`eq_i64` drops by only 7% to 11%. The spec predicted that tiling would remove about half of the chain's bytes moved, and the kernel totals fall by 8% to 14% on the ClickBench queries against a chain share of 49% to 57%, so the prediction did not hold. A comparison reads 8 bytes per row and writes 1 byte per row, so the mask traffic that tiling removes is a small part of the bytes of the chain, and the column reads dominate. This document did not measure bytes moved or cache misses, so it does not establish why `eq_i64` gains least, and whether the repeated reads of `EventDate` and `TraficSourceID` are served from cache inside a tile is unknown.
+q40 and q41 keep their sort (`argsort_i64` is 1010 us of q40 and does not change) and their `compress_i64` calls, which are not part of any region.
+The kernel total falls by 8%, 13%, 14% and 26%, and the criterion means of the best variant fall by less, 4%, 6%, 7% and 16%, which fits that the stats timer and criterion do not measure the same span.
 
 ## Tile size
 
@@ -70,10 +71,12 @@ Criterion means in ms of `x86-64-v4-intrinsics`, and the ratio to untiled over a
 | 32768 | 3.35 | 2.75 | 2.05 | 1.60 | 0.921 | 1.00 | 0.76 |
 | 65536 | 3.31 | 2.73 | 2.08 | 1.66 | 0.923 | 0.99 | 0.78 |
 
-The untiled column of this sweep ran 7% above the untiled run of `bench-full-off.txt` for q40 on this variant (3.73 against 3.48 ms), so ratios to untiled carry about that much uncertainty, and the comparison between tile sizes is the sound one.
+The 1-minute gate does not cover a recent busy period: the 4096, 1024 and 16384 sweeps started with a 15-minute load of 9.00, 8.38 and 7.76, the untiled sweep with 3.31, and the sweeps ran once each in that order, not interleaved.
+The untiled run of this sweep ran above the untiled run of `bench-full-off.txt` on this variant by 7% for q40 (3.73 against 3.48 ms), 6% for q41, 3% for q42 and 12% for TPC-H q06 (2.12 against 1.90 ms), so the sweep's ratios to untiled are too low by up to that much, for example 0.75 for q06 against 0.84 in the full run.
+The comparison between tile sizes is better controlled but ran once per size without interleaving, so differences below the 10% band, such as 4096 against 16384, are indicative only.
 1024 rows loses on every row (1.08 to 1.33 times untiled), and 4096 rows is slower than or level with untiled on the scalar and `x86-64-v3` variants of q40 and q42 (worst ratio 1.06).
-From 16384 rows the geomean stays between 0.921 and 0.924, and each row differs by at most 3% between 16384, 32768 and 65536 rows.
-The default is 16384 rows, the smallest size on that plateau, so one `i64` tile is 128 KiB and a region holds only a few tiles of intermediates at once.
+From 16384 rows the geomean stays between 0.921 and 0.924, and each row differs by at most 4% between 16384, 32768 and 65536 rows.
+The default is 16384 rows. The evidence cannot separate it from 8192 (geomean 0.943 against 0.924, the larger gap on q41 and q42 AVX-512 rows at 5% to 6%), but 16384 rows is the smallest size with every row within 4% of the larger sizes, so one `i64` tile is 128 KiB and a region holds only a few tiles of intermediates at once.
 The sweep did not test sizes between the listed ones, so the true optimum on the plateau is not known.
 
 ## Results
@@ -104,7 +107,7 @@ The ratio is tiled over untiled, and values below 1.0 mean tiling is faster.
 | TPC-H q06 | x86-64-v4-auto | 2.671 | 2.342 | 0.88 |
 | TPC-H q06 | x86-64-v4-intrinsics | 1.899 | 1.595 | 0.84 |
 
-Only the two AVX-512 variants of TPC-H q06 leave the noise band (0.88 and 0.84).
+Among these four queries only the two AVX-512 variants of TPC-H q06 leave the noise band (0.88 and 0.84), from one pair of runs each.
 The three ClickBench mask-chain queries move by 7% at most, and their scalar and AVX2 variants move by 2% at most.
 The stats come from the AVX-512 build only, so this document does not say why the other builds gain less.
 
@@ -120,12 +123,12 @@ Ratios below 1.0 mean Verkehrt is faster, and the before and after columns use t
 
 The q40, q41 and q42 reference times are the one-thread DuckDB and best-of corgi figures of `2026-10-31-clickbench-now.md`, and the TPC-H q06 figures are those of `2026-10-31-tier2.md`.
 Verkehrt's own times for q40 and q41 are lower than in `2026-10-31-clickbench-now.md` because other changes landed in between, so the ratios here are not a before and after of this layer alone.
-The tiled-over-untiled change of each ratio is what this layer contributes, and it is 0.03 to 0.06 for the three ClickBench queries and 0.06 to 0.07 for TPC-H q06.
+The tiled-over-untiled change of each ratio is what this layer contributes, and it is 0.02 to 0.04 for the three ClickBench queries and 0.06 to 0.07 for TPC-H q06.
 
 ## The full suites
 
 Ratios of the best variant over all 22 queries, from `bench-full-off.txt` and `bench-full-default.txt`.
-No variant of any query ran more than 10% slower with tiling.
+No variant of any query ran more than 10% slower with tiling in the first pair (the second q27 pair has one variant at 1.18, discussed below).
 
 | Query | untiled best | tiled best | tiled / untiled | variants more than 10% faster |
 |---|---|---|---|---|
