@@ -3,17 +3,19 @@
 
 use std::collections::BTreeSet;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
-use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
+use crate::exec::{Env, Observe, Plan, Sinks, Stats, Tiling, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
 use crate::lower::{LStmt, Mode, lower};
 use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
 
-/// Interpreter settings. The default has everything off and detects the instruction set.
+/// Interpreter settings. The default has everything off except tiling, which runs with
+/// `DEFAULT_TILE_ROWS` rows, and detects the instruction set.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
     /// The instruction set to run kernels with, `None` detects the best one.
@@ -22,7 +24,8 @@ pub struct Options {
     pub backend: Backend,
     /// Print one plan line per statement to the diagnostic stream before execution.
     pub show_plan: bool,
-    /// Print one line per kernel call to the diagnostic stream.
+    /// Print one line per kernel over its whole arguments to the diagnostic stream. A kernel
+    /// of a tiled region runs as several tile calls and still prints one line.
     pub trace: bool,
     /// Collect per-kernel totals, written by `Interpreter::write_stats`.
     pub stats: bool,
@@ -32,6 +35,8 @@ pub struct Options {
     /// Plan without fused kernel patterns and without the integer sum rewrites, so every plan
     /// uses single-op kernels only and keeps each sum over the array the program sums.
     pub no_fusion: bool,
+    /// How chains of elementwise kernels run, see `Tiling`. It changes no value and no error.
+    pub tiling: Tiling,
 }
 
 pub struct Interpreter {
@@ -42,6 +47,8 @@ pub struct Interpreter {
     globals: Globals,
     env: Env,
     stats: Stats,
+    /// Region runs that completed tiled, see `tiled_regions`.
+    tiled_regions: AtomicU64,
 }
 
 /// An `input` declaration of a program.
@@ -91,6 +98,7 @@ impl Interpreter {
             globals: Globals::new(),
             env: Env::new(),
             stats: Stats::default(),
+            tiled_regions: AtomicU64::new(0),
         })
     }
 
@@ -186,12 +194,14 @@ impl Interpreter {
         let obs = Observe {
             trace: self.opts.trace,
             stats: self.opts.stats.then_some(&mut self.stats),
+            tiled_regions: &self.tiled_regions,
         };
         let result = run_plan(
             &self.reg,
             &self.dispatch,
             &c.plan,
             &mut self.env,
+            self.opts.tiling,
             obs,
             &mut sinks,
         );
@@ -265,6 +275,13 @@ impl Interpreter {
     /// Writes the per-kernel totals collected under `Options::stats`.
     pub fn write_stats(&self, diag: &mut dyn Write) {
         self.stats.write(diag);
+    }
+
+    /// The number of region runs that completed tiled, not through the whole fallback, since
+    /// the interpreter was created. It counts runs of `run`, `eval_repl`, and
+    /// `Prepared::execute` with this interpreter, whether or not statistics are collected.
+    pub fn tiled_regions(&self) -> u64 {
+        self.tiled_regions.load(Ordering::Relaxed)
     }
 
     /// Compiles `src` for repeated execution. Names must be declared by the program itself,
@@ -354,12 +371,14 @@ impl Prepared {
         let obs = Observe {
             trace: interp.opts.trace,
             stats: None,
+            tiled_regions: &interp.tiled_regions,
         };
         run_plan(
             &interp.reg,
             &interp.dispatch,
             &self.plan,
             &mut env,
+            interp.opts.tiling,
             obs,
             &mut sinks,
         )?;

@@ -408,6 +408,56 @@ impl Array {
     }
 }
 
+/// A reusable 64-byte aligned buffer of rows of one element type, written tile by tile and
+/// read through short-lived `Array` views. Holds the intermediates of a tiled run.
+pub(crate) struct TileBuf {
+    buf: Arc<Vec<Block>>,
+    /// Rows the buffer holds.
+    rows: usize,
+    elem: ScalarType,
+}
+
+impl TileBuf {
+    /// A zeroed buffer of `rows` rows of `elem`. Fails like `Array::build_bytes` when the size
+    /// exceeds `isize::MAX` bytes or the allocation fails.
+    pub(crate) fn new(elem: ScalarType, rows: usize) -> Result<TileBuf, String> {
+        Ok(TileBuf {
+            buf: Arc::new(Array::try_zeroed(rows, elem)?),
+            rows,
+            elem,
+        })
+    }
+
+    /// The bytes of the first `len` rows, to be overwritten. Panics when `len` exceeds the
+    /// buffer's rows or a view returned by `view` is still alive.
+    pub(crate) fn rows_mut(&mut self, len: usize) -> &mut [u8] {
+        assert!(
+            len <= self.rows,
+            "{len} rows exceed a tile buffer of {}",
+            self.rows
+        );
+        let w = self.elem.width();
+        let blocks = Arc::get_mut(&mut self.buf).expect("a tile buffer view outlived its tile");
+        let bytes: &mut [u8] = bytemuck::cast_slice_mut(blocks.as_mut_slice());
+        &mut bytes[..len * w]
+    }
+
+    /// A view of the first `len` rows. Panics when `len` exceeds the buffer's rows.
+    pub(crate) fn view(&self, len: usize) -> Array {
+        assert!(
+            len <= self.rows,
+            "{len} rows exceed a tile buffer of {}",
+            self.rows
+        );
+        Array {
+            buf: Arc::clone(&self.buf),
+            offset: 0,
+            len,
+            elem: self.elem,
+        }
+    }
+}
+
 /// One operand of a kernel entry for one tile: rows of an array or one value repeated for
 /// every row. `Rows` is a view, so a tile is `array.slice(start, len)`.
 #[derive(Clone, Debug)]

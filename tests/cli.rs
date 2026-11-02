@@ -22,6 +22,25 @@ fn run_prints_result() {
 }
 
 #[test]
+fn no_tiling_traces_the_same_kernels() {
+    // `(x * 2.0) + 1.0` is a region of two kernels that runs tiled by default.
+    let traced = |flags: &[&str]| {
+        let a = verkehrt()
+            .args(["run", "--trace"])
+            .args(flags)
+            .arg("tests/cli/chain.vk")
+            .assert()
+            .success()
+            .stdout("15.0\n");
+        stderr_of(&a)
+            .lines()
+            .map(|l| l.split(" time=").next().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(traced(&[]), traced(&["--no-tiling"]));
+}
+
+#[test]
 fn plan_goes_to_stderr() {
     let a = verkehrt()
         .args(["run", "--plan", "tests/cli/dot.vk"])

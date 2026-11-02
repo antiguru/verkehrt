@@ -12,4 +12,5 @@ pub mod syntax;
 mod testutil;
 pub mod value;
 
+pub use exec::{DEFAULT_TILE_ROWS, Tiling};
 pub use interp::{Interpreter, Options, Prepared};

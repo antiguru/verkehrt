@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use verkehrt::kernels::{Backend, Feature, FeatureSet, Isa};
-use verkehrt::{Interpreter, Options};
+use verkehrt::{Interpreter, Options, Tiling};
 
 #[derive(Parser)]
 #[command(name = "verkehrt", version, about = "An interpreted array language")]
@@ -45,10 +45,14 @@ struct Flags {
     /// Plan without fused kernels or integer sum rewrites, using single-op kernels only
     #[arg(long)]
     no_fusion: bool,
+    /// Run chains of elementwise kernels over whole arrays instead of in tiles of rows
+    #[arg(long)]
+    no_tiling: bool,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
-    /// Print one line per kernel call to stderr
+    /// Print one line per kernel over its whole arguments to stderr, which may have run as
+    /// several tile calls
     #[arg(long)]
     trace: bool,
     /// Print per-kernel totals to stderr when done
@@ -66,6 +70,11 @@ impl Flags {
             stats: self.stats,
             disable: self.disable_set(),
             no_fusion: self.no_fusion,
+            tiling: if self.no_tiling {
+                Tiling::Off
+            } else {
+                Tiling::default()
+            },
         }
     }
 
