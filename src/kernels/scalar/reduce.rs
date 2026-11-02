@@ -12,7 +12,7 @@ use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::{Num, arity_error, rows_arg, scalar_from};
 use crate::kernels::{
     InputSpec, KernelClass, KernelDef, KernelImpl, KernelTable, REDUCE_BLOCK, Reducer,
-    ReductionBody, Registry,
+    ReductionBody, Registry, Split,
 };
 use crate::ops::{Op, ReduceOp};
 use crate::value::{Arg, Array, Elem, Scalar, ScalarType, Value, ValueType};
@@ -639,7 +639,10 @@ fn add_reduction_with<T: Elem, A: Accum<T> + 'static>(
     name: String,
     extend: impl FnOnce(&mut KernelTable),
 ) {
-    let mut impls = KernelImpl::reduction::<Fold<T, A>>();
+    // Every accumulator here is split free: the canonical float state keeps its 16
+    // accumulators and its tail across updates, and the other folds combine rows in an
+    // order that does not change their result.
+    let mut impls = KernelImpl::reduction::<Fold<T, A>>(Split::Free);
     extend(&mut impls);
     reg.add(KernelDef {
         name,

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use self::tiles::Tiles;
 use super::{Machine, Slot};
 use crate::error::Error;
-use crate::kernels::{KernelClass, KernelId};
+use crate::kernels::{KernelClass, KernelId, Split};
 use crate::ops::Op;
 use crate::plan::{PlanGraph, PlanId, PlanNode};
 use crate::value::{Array, ScalarType, TileBuf, Value, ValueType};
@@ -113,9 +113,12 @@ impl<'a> Machine<'a> {
     }
 
     /// Whether a call of kernel `id` on `args` is the root of a fused region: a kernel of
-    /// class `Reduction` with at least one region kernel argument.
+    /// class `Reduction` whose entry is `Split::Free`, with at least one region kernel
+    /// argument.
     pub(super) fn fused_root(&self, id: KernelId, args: &[PlanId]) -> bool {
+        // A `Split::Bound` entry may give other bits over tiles than over all rows at once.
         self.reg.get(id).class == KernelClass::Reduction
+            && self.dispatch.reducer_split(id) == Some(Split::Free)
             && args.iter().any(|a| self.region_kernel(*a).is_some())
     }
 

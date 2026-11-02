@@ -47,6 +47,7 @@ Every reduction kernel, including the fused `dot`, `sumsq`, `count_*` and `conds
 A fused region is a region whose root is a kernel of class `KernelClass::Reduction` with at least one argument that is a region kernel, that is an elementwise kernel with an array output that is not shared.
 Its elementwise part is the union of the region kernel subtrees below the root's arguments, and it may hold a single elementwise kernel, unlike a plain region, because fusing one kernel already saves its full output.
 The root's other arguments are region inputs like any other: leaves, broadcasts, shared nodes, and kernels of other classes, evaluated whole before the first tile, with the ordering rule of tiled regions unchanged.
+When the rule fails, because an input that is not trivial follows a region kernel, the reduction evaluates as without fusion: each argument through `Machine::eval`, where it may still run as a plain tiled region, and the root with one whole call.
 The root itself may be shared, because `Machine::eval` consults the memo before it reaches `eval_kernel`, and a shared elementwise argument is a region input, so a reduction over it has nothing to fuse and runs as today.
 The planner, the plans, and `--plan` output stay unchanged, and the executor finds fused regions while evaluating, as it finds regions today.
 
@@ -68,6 +69,7 @@ An argument that is a region kernel passes the rows of its tile buffer, an array
 After the last tile the executor calls `finish`, and the root's value is the scalar it returns.
 An empty array runs one empty tile through the elementwise kernels, as a plain region does, so that each is called once as in whole evaluation, and calls no `update`, because `Dispatch::call` never updates a reduction with no rows.
 Selective evaluation is unchanged inside the elementwise part: a guard fills its whole tile range, so the accumulator always receives complete tiles.
+A narrowed operand runs over the open rows of each tile, so its rows and bytes and `narrowed_tiles` are equal with fusion on and off when the tile row count `t` is a multiple of 16 or selective evaluation is off, and may differ otherwise, because fused tiles have `T'` rows and plain ones `t`.
 
 ## Tile rows and float order
 
@@ -81,6 +83,12 @@ Float `add` and `mul` use the canonical 16-accumulator order of `CanonicalAcc` i
 Every ISA variant of a reduction instantiates the same body (`arch::add_reduction` compiles it per ISA in `src/kernels/x86.rs`), and the only hand-written reduction entries are the NEON float extremes of `src/kernels/aarch64/extreme.rs`, which `tests/isa_variants.rs` checks across tiles against the scalar entries, including the first NaN and ties in later tiles.
 `tiled_reductions_match_whole` in `src/kernels/dispatch/tests.rs` checks every kernel of class `Reduction` fed in tiles of 64, 320, 608, and 8 rows against one update, and `isa_variants_match_scalar` in `tests/isa_variants.rs` checks every variant's tiled reduction against the scalar whole call.
 The fused path stores each elementwise row through the same entry into a tile buffer before the accumulator reads it, so no operation is contracted or reordered, and the result is bit-identical to the unfused plan on every ISA and backend.
+
+Those tests compare a NaN result only as NaN, and one entry's NaN bits do depend on the split.
+The NEON `reduce_min` and `reduce_max` entries on `f32` and `f64` fold each update's whole vectors with `FMIN` or `FMAX`, which keep an input NaN's sign and payload, and hand the folded value to the scalar `Extreme`, which keeps it raw as its first value and returns the canonical NaN once it combines two values.
+So one update over all rows can return a negative NaN where two updates return the canonical one.
+Designer's call, revised in review: each reduction entry records at registration whether its result bits are independent of the split (`Split::Free`) or not (`Split::Bound`, the default), and only `Split::Free` entries fuse, so those NEON entries run unfused and the kernels stay unchanged.
+Every other entry is `Split::Free`: the scalar and x86-64 auto entries instantiate the same bodies, and the NEON `argmin` and `argmax` entries return an index.
 
 ## Errors
 
@@ -104,7 +112,7 @@ Designer's call: a fused run also counts in `tiled_regions()`, because it is a r
 
 ## Observation
 
-Designer's call: statistics and trace report a fused region as the whole evaluation would, except for time, so turning fusion off changes no call count, row count, or byte count.
+Designer's call: statistics and trace report a fused region as the whole evaluation would, except for time, so turning fusion off changes no call count, row count, or byte count, apart from the rows of narrowed operands when the tile row count is not a multiple of 16 (see "Mechanism").
 Every elementwise kernel records one call per fused run with the rows of its tile calls and their bytes, as in a plain region, and the topmost elementwise kernels now report write bytes of a tile buffer, which equal those of the full array they no longer write.
 The root records one call with the region's row count, read bytes equal to the rows times the widths of its array arguments, which is what `Machine::observe` reports for a whole call, no write bytes, and the time of its `update` and `finish` calls plus the allocation of the tile buffers.
 Trace lines keep their format and order: the region's inputs, then the elementwise kernels in post-order, then the root.
@@ -114,7 +122,7 @@ Executor tests compare the stats and trace lines of fused and unfused runs field
 
 * **Executor unit tests.** With `Tiling::Rows(t)` for t in 1, 3, 16, 17 and 48, fused against unfused and against `Tiling::Off`: `sum` over a chain, over a single elementwise kernel, over a view starting at row 7, over an empty array, and over a length that is a multiple of the tile; `min`, `max`, `argmin` and `argmax` over chains with ties and a NaN in a later tile; `count`, `any` and `all` over a mask chain with a guard; `dot` with two region-kernel arguments and with one input argument; a root with a scalar argument; a shared root and a shared elementwise argument. Values, call counts, row counts and bytes must be equal, and `fused_reductions` must count only completed runs.
 * **Float bits.** Float `sum` and product over chains of `mul` and `add` with mixed magnitudes, signed zeros and NaN, on every variant the host supports, fused with tiles of 16, 48 and 16384 rows against the unfused whole call, compared by bits.
-* **Error tests.** `reduce_min` of an empty chain, `div_const` with a zero divisor inside a fused region with selective evaluation on, a kernel failing in a later tile after earlier `update` calls, an input after a region kernel that is not trivial (ordering rule), and arrays of different lengths under `dot`. Each must raise the unfused error by kind, message and span.
+* **Error tests.** `reduce_min` of an empty chain, `div_const` with a zero divisor inside a fused region with selective evaluation on, a kernel failing in a later tile after earlier `update` calls, an input after a region kernel that is not trivial (ordering rule, which evaluates as without fusion), and arrays of different lengths under `dot`. Each must raise the unfused error by kind, message and span.
 * **Oracle 7, fused against unfused.** On the scalar interpreter with three-row tiles, each plan run with fusion gives the output and exports of the run with `no_reduction_fusion`, and fails with the same error by kind, message and span. Oracles 1 to 6 run with fusion on, so oracle 4 compares fused runs with whole evaluation and oracle 1 compares fused runs across variants.
 * **Gates for fused shapes.** The CI run requires a minimum of fused runs in oracle 7, a third of what the fixed CI seed gives, and at least one fused run per shape class that the CI seed exercises: integer sums and products, float sums and products, `min` and `max`, `argmin` and `argmax`, bool reductions (`count`, `any`, `all`, `reduce_*_bool`), bitwise folds, and the fused multi-argument kernels. Designer's call: the generator's weights stay as they are, because changing them changes every gate's baseline, and a class the CI seed does not produce is named in the record and covered by the executor unit tests.
 

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::{
-    InputSpec, KernelDef, KernelId, KernelImpl, Reducer, Registry, Scanner, Variant,
+    InputSpec, KernelDef, KernelId, KernelImpl, Reducer, Registry, Scanner, Split, Variant,
 };
 use crate::value::{Arg, Array, ArrayBuilder, Scalar, Value, ValueType};
 
@@ -98,7 +98,7 @@ impl Dispatch {
                     ValueType::Str => Err("an elementwise kernel cannot produce a string".into()),
                 }
             }
-            KernelImpl::Reduction(make) => {
+            KernelImpl::Reduction(make, _) => {
                 let (call_args, rows) = prepare(def, args)?;
                 let n = rows.ok_or("a reduction needs an array operand")?;
                 // SAFETY: resolve installs an entry only when `select` found `features::runnable`
@@ -158,8 +158,17 @@ impl Dispatch {
         match self.entry(id) {
             // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
             // for it on this CPU.
-            KernelImpl::Reduction(make) => Ok(unsafe { make() }),
+            KernelImpl::Reduction(make, _) => Ok(unsafe { make() }),
             _ => Err(format!("{} is not a reduction", reg.get(id).name)),
+        }
+    }
+
+    /// The `Split` of the entry that `call` and `reducer` run for reduction `id`, `None` for
+    /// a kernel that is not a reduction.
+    pub fn reducer_split(&self, id: KernelId) -> Option<Split> {
+        match self.entry(id) {
+            KernelImpl::Reduction(_, split) => Some(split),
+            _ => None,
         }
     }
 

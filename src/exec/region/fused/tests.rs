@@ -8,7 +8,8 @@ use crate::exec::region::tests::{PROBE_CALLS, probe_registry};
 use crate::exec::tests::{Builder, Built, Outcome, calls_only, eval_with, rows, text, variants};
 use crate::exec::{Slot, Tiling};
 use crate::kernels::{
-    Backend, InputSpec, Isa, KernelClass, KernelDef, KernelImpl, Reducer, ReductionBody, Registry,
+    Backend, FeatureSet, InputSpec, Isa, KernelClass, KernelDef, KernelImpl, Reducer,
+    ReductionBody, Registry, Split,
 };
 use crate::lower::Leaf;
 use crate::value::{Arg, Array, Scalar, ScalarType, Value, ValueType};
@@ -393,8 +394,8 @@ fn prepared_execute_counts_fused_reductions() {
 }
 
 /// The values of the float bits tests: mixed magnitudes and signs, signed zeros, and every
-/// fifth row of `z` a negative zero. With `nan`, row 700 of `x` is NaN.
-fn float_leaves(n: usize, product: bool, nan: bool, f32_rows: bool) -> Vec<Leaf> {
+/// fifth row of `z` a negative zero. With `nan`, row 700 of `x` holds that NaN.
+fn float_leaves(n: usize, product: bool, nan: Option<f64>, f32_rows: bool) -> Vec<Leaf> {
     let mut x: Vec<f64> = (0..n)
         .map(|i| {
             let i = f64::from(u32::try_from(i).unwrap());
@@ -405,8 +406,8 @@ fn float_leaves(n: usize, product: bool, nan: bool, f32_rows: bool) -> Vec<Leaf>
             }
         })
         .collect();
-    if nan {
-        x[700] = f64::NAN;
+    if let Some(nan) = nan {
+        x[700] = nan;
     }
     let y: Vec<f64> = (0..n)
         .map(|i| {
@@ -459,28 +460,51 @@ fn bits(slot: &Slot) -> u64 {
     }
 }
 
+/// Whether `bits` is the bits of a NaN of element type `ty`.
+fn is_nan_bits(ty: &str, bits: u64) -> bool {
+    match ty {
+        "f64" => f64::from_bits(bits).is_nan(),
+        _ => f32::from_bits(u32::try_from(bits).unwrap()).is_nan(),
+    }
+}
+
 #[test]
-fn float_sums_and_products_keep_their_bits() {
+fn float_reductions_keep_their_bits() {
     let reg = Registry::new();
     let scalar = (Isa::Scalar, Backend::Auto);
+    let reductions = ["reduce_add", "reduce_mul", "reduce_min", "reduce_max"];
+    // A NaN with the sign bit set is what x86 arithmetic produces, and what `neg` makes of
+    // the default NaN.
+    let nans = [None, Some(f64::NAN), Some(-f64::NAN)];
     for ty in ["f64", "f32"] {
-        for reduce in ["reduce_add", "reduce_mul"] {
-            for nan in [false, true] {
+        for reduce in reductions {
+            for nan in nans {
                 // 1000 rows end every tested tiling in a partial tile with a canonical tail.
                 let leaves = float_leaves(1000, reduce == "reduce_mul", nan, ty == "f32");
                 let node = float_chain(&reg, ty, reduce);
+                let root = reg.by_name(&format!("{reduce}_{ty}")).unwrap();
                 let whole = eval_with(&reg, &node, &leaves, scalar, Tiling::Off, true, true);
-                let want = bits(&whole.result);
+                let reference = bits(&whole.result);
                 for variant in variants() {
-                    let at = format!("{ty} {reduce} nan {nan} {variant:?}");
+                    let at = format!("{ty} {reduce} nan {nan:?} {variant:?}");
                     let untiled = eval_with(&reg, &node, &leaves, variant, Tiling::Off, true, true);
-                    assert_eq!(bits(&untiled.result), want, "untiled {at}");
+                    let want = bits(&untiled.result);
+                    // Across variants a NaN result needs only be NaN, within one variant
+                    // fusion keeps every bit.
+                    if is_nan_bits(ty, reference) {
+                        assert!(is_nan_bits(ty, want), "untiled {at}");
+                    } else {
+                        assert_eq!(want, reference, "untiled {at}");
+                    }
+                    let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
+                    let free = dispatch.reducer_split(root) == Some(Split::Free);
                     for t in [16, 48, 16384] {
                         let on = eval_with(&reg, &node, &leaves, variant, rows_of(t), true, true);
                         let off = eval_with(&reg, &node, &leaves, variant, rows_of(t), true, false);
                         assert_eq!(bits(&on.result), want, "fused rows {t} {at}");
                         assert_eq!(bits(&off.result), want, "unfused rows {t} {at}");
-                        assert_eq!((on.fused, on.regions), (1, 1), "rows {t} {at}");
+                        let fused = u64::from(free);
+                        assert_eq!((on.fused, on.regions), (fused, 1), "rows {t} {at}");
                         assert_eq!((off.fused, off.regions), (0, 1), "rows {t} {at}");
                     }
                 }
@@ -584,8 +608,8 @@ impl ReductionBody for FailSum {
     }
 }
 
-/// `probe_registry` with `fail_sum_i64` added, and its id.
-fn fail_registry() -> (Registry, crate::kernels::KernelId) {
+/// `probe_registry` with `fail_sum_i64` added, whose entries have `split`, and its id.
+fn fail_registry(split: Split) -> (Registry, crate::kernels::KernelId) {
     let (mut reg, ..) = probe_registry();
     let id = reg.add(KernelDef {
         name: "fail_sum_i64".into(),
@@ -597,7 +621,7 @@ fn fail_registry() -> (Registry, crate::kernels::KernelId) {
         commutative: false,
         pattern: None,
         total: false,
-        impls: KernelImpl::reduction::<FailSum>(),
+        impls: KernelImpl::reduction::<FailSum>(split),
     });
     (reg, id)
 }
@@ -637,7 +661,7 @@ fn compare_fused(reg: &Registry, node: &Built, n: i64, fused: u64, probes: usize
 
 #[test]
 fn a_failing_update_after_earlier_tiles_raises_the_untiled_error() {
-    let (reg, fail_sum) = fail_registry();
+    let (reg, fail_sum) = fail_registry(Split::Free);
     let add = reg.by_name("add_i64").unwrap();
     let mut b = Builder::default();
     // fail_sum(x + 1) over 0..100 fails at the row holding 90, row 89 of the whole call and
@@ -654,6 +678,23 @@ fn a_failing_update_after_earlier_tiles_raises_the_untiled_error() {
     // An empty array runs one empty tile and no update, so the fused run completes.
     let empty = compare_fused(&reg, &node, 0, 1, 0).unwrap();
     assert_eq!(rows(&empty), text([0]));
+}
+
+#[test]
+fn a_split_bound_reduction_runs_unfused() {
+    let (reg, bound_sum) = fail_registry(Split::Bound);
+    let add = reg.by_name("add_i64").unwrap();
+    let mut b = Builder::default();
+    // fail_sum(x + 1) with entries whose bits may depend on the split never fuses, and
+    // gives the values and errors of the whole call.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let inc = b.kernel(add, vec![x, one]);
+    let root = b.kernel(bound_sum, vec![inc]);
+    let node = b.finish(root);
+    let sum = compare_fused(&reg, &node, 80, 0, 0).unwrap();
+    assert_eq!(rows(&sum), text([(1..=80).sum::<i64>()]));
+    let e = compare_fused(&reg, &node, 100, 0, 0).unwrap_err();
+    assert_eq!(e.message, "fail_sum: row 89 holds 90");
 }
 
 #[test]

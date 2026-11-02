@@ -14,7 +14,7 @@ use crate::kernels::scalar::reduce::{Accum, LANES, Reducible};
 use crate::kernels::scalar::select::{append_chunks, predicated};
 use crate::kernels::{
     Backend, Dispatch, FeatureSet, FusedPattern, InputSpec, Isa, KernelClass, KernelDef, KernelId,
-    KernelImpl, KernelTable, Reducer, ReductionBody, Registry, SelectionBody,
+    KernelImpl, KernelTable, Reducer, ReductionBody, Registry, SelectionBody, Split,
 };
 use crate::value::{Arg, ArrayBuilder, Elem, Scalar, ScalarType, Value, ValueType};
 
@@ -303,7 +303,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         1,
         format!("(count {mask})"),
         &["?x", "?c"],
-        KernelImpl::reduction::<CountCmp<T, C>>(),
+        KernelImpl::reduction::<CountCmp<T, C>>(Split::Free),
     );
     add_fused(
         reg,
@@ -331,7 +331,7 @@ fn register_cmp<T: Reducible, const C: usize>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (select_{n} {mask} ?x (Bcast ?e)))"),
         &["?x", "?c", "?e"],
-        KernelImpl::reduction::<CondSum<T, C>>(),
+        KernelImpl::reduction::<CondSum<T, C>>(Split::Free),
     );
 }
 
@@ -348,7 +348,7 @@ fn register_type<T: Reducible>(reg: &mut Registry) {
         2,
         format!("(reduce_add_{n} (mul_{n} ?x ?y))"),
         &["?x", "?y"],
-        KernelImpl::reduction::<Dot<T>>(),
+        KernelImpl::reduction::<Dot<T>>(Split::Free),
     );
     add_fused(
         reg,
@@ -360,7 +360,7 @@ fn register_type<T: Reducible>(reg: &mut Registry) {
         1,
         format!("(reduce_add_{n} (mul_{n} ?x ?x))"),
         &["?x"],
-        KernelImpl::reduction::<SumSq<T>>(),
+        KernelImpl::reduction::<SumSq<T>>(Split::Free),
     );
     register_cmp::<T, 0>(reg);
     register_cmp::<T, 1>(reg);

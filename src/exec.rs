@@ -84,9 +84,9 @@ pub struct Strategy {
     /// the result open, true for `and` and false for `or`, when every region kernel of that
     /// operand is total, see `KernelDef::total`. It has no effect without tiling.
     pub selective: bool,
-    /// Whether a kernel of class `Reduction` with a region kernel argument runs as the root
-    /// of a tiled region, with the values and errors of a whole call. It has no effect
-    /// without tiling.
+    /// Whether a kernel of class `Reduction` with a region kernel argument, whose entry is
+    /// `Split::Free`, runs as the root of a tiled region, with the values and errors of a
+    /// whole call. It has no effect without tiling.
     pub fuse_reductions: bool,
 }
 
@@ -131,9 +131,10 @@ pub struct Observe<'a> {
     pub narrowed_tiles: &'a AtomicU64,
     /// Incremented once per evaluation of a shared node that reused its value.
     pub shared_hits: &'a AtomicU64,
-    /// Per `KernelId`, incremented once per fused region run with that kernel as its root
-    /// that completed tiled, see `Strategy::fuse_reductions`. Such a run also counts in
-    /// `tiled_regions`.
+    /// One counter per kernel of the registry, by `KernelId`, incremented once per fused
+    /// region run with that kernel as its root that completed tiled, see
+    /// `Strategy::fuse_reductions`. Such a run also counts in `tiled_regions`. A shorter
+    /// slice panics at the first fused run of a kernel it lacks.
     pub fused_reductions: &'a [AtomicU64],
 }
 

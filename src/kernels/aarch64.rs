@@ -16,7 +16,7 @@
 
 use crate::kernels::{
     Backend, ElementwiseBody, Isa, KernelImpl, KernelTable, ReductionBody, ScanBody, SelectionBody,
-    Variant, WholeBody,
+    Split, Variant, WholeBody,
 };
 use crate::value::Elem;
 
@@ -31,8 +31,8 @@ const NEON_INTRINSICS: Variant = Variant {
 /// Adds the ISA variants of an elementwise body to its table.
 pub(crate) fn add_elementwise<B: ElementwiseBody>(_impls: &mut KernelTable) {}
 
-/// Adds the ISA variants of a reduction body to its table.
-pub(crate) fn add_reduction<R: ReductionBody>(_impls: &mut KernelTable) {}
+/// Adds the ISA variants of a reduction body to its table, each with `split`.
+pub(crate) fn add_reduction<R: ReductionBody>(_impls: &mut KernelTable, _split: Split) {}
 
 /// Adds the ISA variants of a selection body to its table.
 pub(crate) fn add_selection<S: SelectionBody>(_impls: &mut KernelTable) {}
@@ -71,7 +71,10 @@ pub(crate) fn add_filter<T: Elem, const C: usize>(impls: &mut KernelTable) {
 /// rows of type `T`.
 pub(crate) fn add_extreme<T: Elem, const MAX: bool>(impls: &mut KernelTable) {
     if let Some(entry) = extreme::extreme_entry::<T, MAX>() {
-        impls.set(NEON_INTRINSICS, KernelImpl::Reduction(entry));
+        // A tile's vector fold keeps the bits of an input NaN when it is the first value of
+        // the accumulator, and the scalar rule makes later NaN results canonical, so a NaN
+        // result's sign and payload depend on how the rows split into updates.
+        impls.set(NEON_INTRINSICS, KernelImpl::Reduction(entry, Split::Bound));
     }
 }
 
@@ -79,6 +82,8 @@ pub(crate) fn add_extreme<T: Elem, const MAX: bool>(impls: &mut KernelTable) {
 /// type `T`.
 pub(crate) fn add_arg_extreme<T: Elem, const MAX: bool>(impls: &mut KernelTable) {
     if let Some(entry) = extreme::arg_extreme_entry::<T, MAX>() {
-        impls.set(NEON_INTRINSICS, KernelImpl::Reduction(entry));
+        // The result is an index, the first NaN's or the first extreme's, which counts rows
+        // over all updates.
+        impls.set(NEON_INTRINSICS, KernelImpl::Reduction(entry, Split::Free));
     }
 }
