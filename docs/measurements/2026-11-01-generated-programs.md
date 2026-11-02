@@ -1,7 +1,7 @@
 # Generated programs: Findings
 
 This document records what the random program generator of `tests/generated` found, and what it cannot tell.
-The generator builds typed programs from the kernel registry and checks each one against three oracles: every ISA variant against scalar, fused against unfused plans, and a reference evaluator written from the specs.
+The generator builds typed programs from the kernel registry and checks each one against four oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, and tiled against untiled runs.
 The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40, which errors as data has since resolved.
 No oracle reported a disagreement between kernels, but that result carries no correctness claim, because the coverage limits below are narrow.
 This is a findings record, not a benchmark, and the timings only size the CI run.
@@ -24,6 +24,11 @@ Oracle 3 compares the scalar outcome against a reference evaluator that calls no
 It shares the front end with the pipeline: the parser and `check::check`, including the lifted typing of lambda bodies through the kernel registry, and it prints values through the library's `Value` display.
 Floats compare by bits except that all NaNs are equal, per the base spec.
 A value that reaches no print or export is not computed, so errors in it are not raised, which is the ruling the evaluator follows.
+Oracle 4 runs the fused plan on the scalar interpreter with `Tiling::Rows(3)` and with `Tiling::Off`.
+It requires equal printed text and export bits, and equal errors including the kind, message, and span, which is stricter than oracle 2 because a tiled run falls back to whole evaluation on any error.
+Tiles of three rows make most chains over the short generated arrays span several tiles.
+The CI run gates on region runs that complete tiled: at least 54 must do so, a third of the 163 the fixed CI seed gives.
+The 5000-case release run at seed 2000000 had no oracle failure and 13160 region runs that completed tiled.
 
 ## Runs
 

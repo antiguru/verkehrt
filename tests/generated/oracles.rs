@@ -29,12 +29,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroUsize;
 
 use verkehrt::error::{ErrorKind, Span};
 use verkehrt::kernels::{Backend, Isa, Registry, Variant};
 use verkehrt::plan::SumRewrite;
 use verkehrt::value::{Scalar, Value, ValueType};
-use verkehrt::{Interpreter, Options, Prepared};
+use verkehrt::{Interpreter, Options, Prepared, Tiling};
 
 use crate::eval::{self, Reference};
 use crate::r#gen::Case;
@@ -194,10 +195,16 @@ pub struct Engine {
     fused: Interpreter,
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
+    /// The scalar interpreters of oracle 4, with tiles of three rows and without tiling.
+    tiled: Interpreter,
+    untiled: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
 }
+
+/// The tile row count of oracle 4.
+const TILE_ROWS: usize = 3;
 
 /// What a checked case did, for the statistics.
 pub struct Verdict {
@@ -210,6 +217,8 @@ pub struct Verdict {
     /// Whether the case has an unread binding that the generator made to fail and that fails
     /// when the reference evaluator forces it alone.
     pub failing_unread: bool,
+    /// The region runs of the fused plan that completed tiled in oracle 4.
+    pub tiled_regions: u64,
 }
 
 impl Engine {
@@ -235,8 +244,20 @@ impl Engine {
                 (v, interp)
             })
             .collect();
+        let scalar = |tiling| {
+            Interpreter::new(Options {
+                isa: Some(Isa::Scalar),
+                tiling,
+                ..Options::default()
+            })
+            .expect("scalar is always available")
+        };
         let reg = Registry::new();
         Engine {
+            tiled: scalar(Tiling::Rows(
+                NonZeroUsize::new(TILE_ROWS).expect("the tile has rows"),
+            )),
+            untiled: scalar(Tiling::Off),
             fused: planner(false),
             unfused: planner(true),
             runners,
@@ -291,6 +312,17 @@ impl Engine {
                 describe(case),
             ));
         }
+        let before = self.tiled.tiled_regions();
+        let tiled = run(&self.tiled, &fused, case);
+        let tiled_regions = self.tiled.tiled_regions() - before;
+        let untiled = run(&self.untiled, &fused, case);
+        if tiled != untiled {
+            return Err(format!(
+                "oracle 4: the run with {TILE_ROWS}-row tiles differs from the untiled run\n{}\n\
+                 fused plan:\n{fused_plan}tiled: {tiled}\nuntiled: {untiled}",
+                describe(case),
+            ));
+        }
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.
         let unsupported = |reason: String| {
@@ -321,6 +353,7 @@ impl Engine {
             fusion_changed_plan: fused_plan != unfused_plan,
             rewrites_fired: rewrites::fired(&fused_rewrites),
             failing_unread,
+            tiled_regions,
         })
     }
 }
