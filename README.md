@@ -82,7 +82,7 @@ NEON has no `auto` entries, because the baseline aarch64 build already targets N
 The `intrinsics` backend holds hand-written kernels and exists only where one was written: compress, `where`, and the fused filter on both architectures, float min, max, argmin, and argmax on NEON, `gather` on 64-bit rows on `x86-64-v3` and `x86-64-v4`, and `scan_by` with `add` on `x86-64-v4`.
 `--backend auto|intrinsics` picks the backend, and the default `intrinsics` falls back to `auto`, then to scalar, so every hand-written kernel is measured against the compiler's output for the same semantics.
 `--isa scalar|x86-64-v3|x86-64-v4|neon` forces an instruction set, otherwise the interpreter detects the best one at startup.
-`--no-fusion` plans without fused kernels, so every plan uses single-op kernels only.
+`--no-fusion` plans without fused kernels and without the integer sum rewrites, such as `sum(x + k)` to `sum(x) + length(x) * k`, so every plan uses single-op kernels only.
 `--disable FEATURE` treats a CPU feature such as `avx512vbmi2` as absent and can be repeated.
 Kernel entries that need a disabled feature are not selected, and `--isa` rejects a level that needs one.
 A feature this CPU does not report prints a note, because disabling it has no effect.
