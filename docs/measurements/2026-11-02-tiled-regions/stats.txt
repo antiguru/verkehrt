@@ -1,0 +1,152 @@
+== VERKEHRT_TILE_ROWS=off q40
+load at start: 2.32 2.79 3.67
+query q40 total kernel time 3982.1 us
+stats add_i64 calls=1 bytes=801792 time=15.5
+stats and_bool calls=5 bytes=15000000 time=246.9
+stats argsort_i64 calls=3 bytes=1981168 time=950.6
+stats cast_bool_i64 calls=1 bytes=451008 time=8.0
+stats compress_i64 calls=4 bytes=20081392 time=591.9
+stats count calls=1 bytes=50112 time=3.5
+stats eq_i64 calls=6 bytes=45451008 time=1306.9
+stats gather_i64 calls=7 bytes=5377608 time=145.8
+stats iota calls=1 bytes=400896 time=23.5
+stats le_i64 calls=2 bytes=18000000 time=451.0
+stats length_i64 calls=1 bytes=400896 time=0.8
+stats min_i64_s calls=2 bytes=0 time=2.5
+stats mul_i64 calls=1 bytes=801792 time=12.5
+stats ne_i64 calls=2 bytes=1703808 time=19.2
+stats or_bool calls=3 bytes=3300672 time=69.8
+stats prev_i64 calls=2 bytes=1603584 time=31.3
+stats reduce_into_add_i64 calls=1 bytes=990584 time=57.3
+stats scan_add_i64 calls=1 bytes=801792 time=23.0
+stats slice_i64 calls=1 bytes=188872 time=1.2
+stats sub_i64 calls=2 bytes=1179376 time=20.9
+load at end: 2.29 2.78 3.66
+== VERKEHRT_TILE_ROWS=off q41
+load at start: 2.29 2.78 3.66
+query q41 total kernel time 3468.6 us
+stats add_i64_s calls=1 bytes=0 time=1.2
+stats and_bool calls=5 bytes=15000000 time=296.3
+stats argsort_i64 calls=3 bytes=336288 time=124.9
+stats compress_i64 calls=2 bytes=18907792 time=618.8
+stats eq_i64 calls=4 bytes=36000000 time=1149.5
+stats gather_i64 calls=7 bytes=728624 time=17.6
+stats group_id2_i64_i64 calls=1 bytes=1361688 time=528.0
+stats histogram calls=1 bytes=509944 time=50.8
+stats le_i64 calls=2 bytes=18000000 time=444.2
+stats length_i64 calls=1 bytes=453896 time=0.8
+stats lt_i64_s calls=1 bytes=0 time=2.3
+stats min_i64_s calls=2 bytes=0 time=1.5
+stats reduce_into_min_i64 calls=2 bytes=1927680 time=221.8
+stats reduce_max_i64 calls=1 bytes=453896 time=7.2
+stats slice_i64 calls=1 bytes=56048 time=1.0
+stats sub_i64 calls=1 bytes=112096 time=2.7
+load at end: 2.29 2.78 3.66
+== VERKEHRT_TILE_ROWS=off q42
+load at start: 2.29 2.78 3.66
+query q42 total kernel time 2635.4 us
+stats add_i64 calls=1 bytes=160 time=3.1
+stats add_i64_s calls=1 bytes=0 time=0.9
+stats and_bool calls=4 bytes=12000000 time=196.4
+stats compress_i64 calls=1 bytes=12015240 time=369.4
+stats div_const_i64 calls=1 bytes=6030480 time=307.9
+stats eq_i64 calls=3 bytes=27000000 time=861.8
+stats gather_i64 calls=1 bytes=34560 time=3.0
+stats histogram calls=1 bytes=3026760 time=261.0
+stats le_i64 calls=2 bytes=18000000 time=445.3
+stats length_i64 calls=3 bytes=6042000 time=1.4
+stats lt_i64 calls=1 bytes=12960 time=2.2
+stats lt_i64_s calls=2 bytes=0 time=2.1
+stats min_i64_s calls=2 bytes=0 time=1.5
+stats mul_i64 calls=1 bytes=160 time=1.8
+stats reduce_max_i64 calls=1 bytes=3015240 time=35.2
+stats reduce_min_i64 calls=1 bytes=3015240 time=35.7
+stats slice_i64 calls=2 bytes=23200 time=0.9
+stats sub_i64 calls=1 bytes=6030480 time=102.0
+stats where calls=1 bytes=12960 time=3.8
+load at end: 2.35 2.78 3.66
+== VERKEHRT_TILE_ROWS=off tpch/q06
+load at start: 2.35 2.78 3.66
+query tpch/q06 total kernel time 2595.0 us
+stats and_bool calls=4 bytes=14399628 time=338.3
+stats compress_i64 calls=2 bytes=21968642 time=733.0
+stats dot_i64 calls=1 bytes=369200 time=21.6
+stats le_i64 calls=3 bytes=32399163 time=928.7
+stats lt_i64 calls=2 bytes=21599442 time=573.4
+load at end: 2.35 2.78 3.66
+== VERKEHRT_TILE_ROWS=16384 q40
+load at start: 2.35 2.78 3.66
+query q40 total kernel time 3849.7 us
+stats add_i64 calls=1 bytes=801792 time=16.6
+stats and_bool calls=5 bytes=15000000 time=264.3
+stats argsort_i64 calls=3 bytes=1981168 time=959.2
+stats cast_bool_i64 calls=1 bytes=451008 time=13.7
+stats compress_i64 calls=4 bytes=20081392 time=678.2
+stats count calls=1 bytes=50112 time=3.7
+stats eq_i64 calls=6 bytes=45451008 time=1166.4
+stats gather_i64 calls=7 bytes=5377608 time=149.8
+stats iota calls=1 bytes=400896 time=20.4
+stats le_i64 calls=2 bytes=18000000 time=333.1
+stats length_i64 calls=1 bytes=400896 time=0.8
+stats min_i64_s calls=2 bytes=0 time=2.1
+stats mul_i64 calls=1 bytes=801792 time=8.2
+stats ne_i64 calls=2 bytes=1703808 time=20.5
+stats or_bool calls=3 bytes=3300672 time=38.5
+stats prev_i64 calls=2 bytes=1603584 time=45.2
+stats reduce_into_add_i64 calls=1 bytes=990584 time=59.6
+stats scan_add_i64 calls=1 bytes=801792 time=30.1
+stats slice_i64 calls=1 bytes=188872 time=1.2
+stats sub_i64 calls=2 bytes=1179376 time=38.1
+load at end: 2.35 2.78 3.66
+== VERKEHRT_TILE_ROWS=16384 q41
+load at start: 2.35 2.78 3.66
+query q41 total kernel time 3214.1 us
+stats add_i64_s calls=1 bytes=0 time=1.1
+stats and_bool calls=5 bytes=15000000 time=253.1
+stats argsort_i64 calls=3 bytes=336288 time=122.5
+stats compress_i64 calls=2 bytes=18907792 time=647.2
+stats eq_i64 calls=4 bytes=36000000 time=1047.9
+stats gather_i64 calls=7 bytes=728624 time=16.3
+stats group_id2_i64_i64 calls=1 bytes=1361688 time=502.9
+stats histogram calls=1 bytes=509944 time=54.0
+stats le_i64 calls=2 bytes=18000000 time=336.9
+stats length_i64 calls=1 bytes=453896 time=0.6
+stats lt_i64_s calls=1 bytes=0 time=1.8
+stats min_i64_s calls=2 bytes=0 time=0.9
+stats reduce_into_min_i64 calls=2 bytes=1927680 time=215.0
+stats reduce_max_i64 calls=1 bytes=453896 time=9.9
+stats slice_i64 calls=1 bytes=56048 time=1.0
+stats sub_i64 calls=1 bytes=112096 time=3.0
+load at end: 2.32 2.77 3.65
+== VERKEHRT_TILE_ROWS=16384 q42
+load at start: 2.32 2.77 3.65
+query q42 total kernel time 2542.7 us
+stats add_i64 calls=1 bytes=160 time=0.7
+stats add_i64_s calls=1 bytes=0 time=0.9
+stats and_bool calls=4 bytes=12000000 time=231.1
+stats compress_i64 calls=1 bytes=12015240 time=430.4
+stats div_const_i64 calls=1 bytes=6030480 time=319.0
+stats eq_i64 calls=3 bytes=27000000 time=791.6
+stats gather_i64 calls=1 bytes=34560 time=3.0
+stats histogram calls=1 bytes=3026760 time=258.2
+stats le_i64 calls=2 bytes=18000000 time=319.8
+stats length_i64 calls=3 bytes=6042000 time=1.1
+stats lt_i64 calls=1 bytes=12960 time=2.0
+stats lt_i64_s calls=2 bytes=0 time=1.9
+stats min_i64_s calls=2 bytes=0 time=1.0
+stats mul_i64 calls=1 bytes=160 time=2.8
+stats reduce_max_i64 calls=1 bytes=3015240 time=34.4
+stats reduce_min_i64 calls=1 bytes=3015240 time=36.3
+stats slice_i64 calls=2 bytes=23200 time=1.5
+stats sub_i64 calls=1 bytes=6030480 time=102.8
+stats where calls=1 bytes=12960 time=4.2
+load at end: 2.32 2.77 3.65
+== VERKEHRT_TILE_ROWS=16384 tpch/q06
+load at start: 2.32 2.77 3.65
+query tpch/q06 total kernel time 1984.9 us
+stats and_bool calls=4 bytes=14399628 time=222.2
+stats compress_i64 calls=2 bytes=21968642 time=713.3
+stats dot_i64 calls=1 bytes=369200 time=23.6
+stats le_i64 calls=3 bytes=32399163 time=643.0
+stats lt_i64 calls=2 bytes=21599442 time=382.8
+load at end: 2.32 2.77 3.65

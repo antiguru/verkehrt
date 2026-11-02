@@ -22,6 +22,12 @@
 //!   within that output surfaces may differ. The prints before the failing output appear in
 //!   full, so the printed output must equal the evaluator's. Oracle 3 applies to the scalar
 //!   outcomes of both plans.
+//! * Oracle 4, tiled against untiled: on the scalar interpreter, each plan run with
+//!   `Tiling::Rows(3)` gives the output and exports of the run with `Tiling::Off`, and fails
+//!   with the same error, compared by kind, message, and span. That is stricter than oracle 2
+//!   on purpose, because a tiled run falls back to whole evaluation on any error and so must
+//!   raise the whole evaluation's error. Oracle 1 runs every variant with the same three-row
+//!   tiles, so the tiled kernels of every ISA are compared too.
 //!
 //! Exports compare by bits, except that every NaN equals every NaN, because the base spec
 //! lets the sign and payload of a NaN result differ between variants. Printed output is
@@ -29,12 +35,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroUsize;
 
 use verkehrt::error::{ErrorKind, Span};
 use verkehrt::kernels::{Backend, Isa, Registry, Variant};
 use verkehrt::plan::SumRewrite;
 use verkehrt::value::{Scalar, Value, ValueType};
-use verkehrt::{Interpreter, Options, Prepared};
+use verkehrt::{Interpreter, Options, Prepared, Tiling};
 
 use crate::eval::{self, Reference};
 use crate::r#gen::Case;
@@ -194,9 +201,19 @@ pub struct Engine {
     fused: Interpreter,
     unfused: Interpreter,
     runners: Vec<(Variant, Interpreter)>,
+    /// The scalar interpreters of oracle 4, with tiles of three rows and without tiling.
+    tiled: Interpreter,
+    untiled: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
+}
+
+/// The tile row count of oracle 4.
+const TILE_ROWS: usize = 3;
+
+fn tile_rows() -> NonZeroUsize {
+    NonZeroUsize::new(TILE_ROWS).expect("the tile has rows")
 }
 
 /// What a checked case did, for the statistics.
@@ -210,6 +227,8 @@ pub struct Verdict {
     /// Whether the case has an unread binding that the generator made to fail and that fails
     /// when the reference evaluator forces it alone.
     pub failing_unread: bool,
+    /// The region runs of the fused plan that completed tiled in oracle 4.
+    pub tiled_regions: u64,
 }
 
 impl Engine {
@@ -229,14 +248,26 @@ impl Engine {
                 let interp = Interpreter::new(Options {
                     isa: Some(v.isa),
                     backend: v.backend,
+                    // Every variant tiles, so oracle 1 compares the tiled kernels too.
+                    tiling: Tiling::Rows(tile_rows()),
                     ..Options::default()
                 })
                 .expect("the variant is available");
                 (v, interp)
             })
             .collect();
+        let scalar = |tiling| {
+            Interpreter::new(Options {
+                isa: Some(Isa::Scalar),
+                tiling,
+                ..Options::default()
+            })
+            .expect("scalar is always available")
+        };
         let reg = Registry::new();
         Engine {
+            tiled: scalar(Tiling::Rows(tile_rows())),
+            untiled: scalar(Tiling::Off),
             fused: planner(false),
             unfused: planner(true),
             runners,
@@ -291,6 +322,26 @@ impl Engine {
                 describe(case),
             ));
         }
+        let before = self.tiled.tiled_regions();
+        let mut tiled_regions = 0;
+        for (plan, text, label) in [
+            (&fused, &fused_plan, "fused"),
+            (&unfused, &unfused_plan, "unfused"),
+        ] {
+            let tiled = run(&self.tiled, plan, case);
+            if label == "fused" {
+                tiled_regions = self.tiled.tiled_regions() - before;
+            }
+            let untiled = run(&self.untiled, plan, case);
+            if tiled != untiled {
+                return Err(format!(
+                    "oracle 4: the run with {TILE_ROWS}-row tiles differs from the untiled run \
+                     of the {label} plan\n{}\n{label} plan:\n{text}tiled: {tiled}\n\
+                     untiled: {untiled}",
+                    describe(case),
+                ));
+            }
+        }
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.
         let unsupported = |reason: String| {
@@ -321,6 +372,7 @@ impl Engine {
             fusion_changed_plan: fused_plan != unfused_plan,
             rewrites_fired: rewrites::fired(&fused_rewrites),
             failing_unread,
+            tiled_regions,
         })
     }
 }

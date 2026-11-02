@@ -2,8 +2,10 @@
 //!
 //! Usage: `VERKEHRT_CLICKBENCH=DIR cargo run --release --example acceptance_stats -- QUERY [ISA]`
 //! where `QUERY` is a program name such as `q40` and `ISA` is an instruction set name as
-//! `verkehrt run --isa` takes it. The columns load as the acceptance bench loads them and are
-//! bound as interpreter globals, so `Interpreter::run` collects the statistics that
+//! `verkehrt run --isa` takes it. `QUERY` names a ClickBench program, or a TPC-H program as
+//! `tpch/q06`, which reads `VERKEHRT_TPCH` instead. `VERKEHRT_TILE_ROWS` is `off` or a tile row
+//! count and replaces the default tiling. The columns load as the acceptance bench loads them
+//! and are bound as interpreter globals, so `Interpreter::run` collects the statistics that
 //! `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
 //! with the least total kernel time prints. The times still differ from the criterion
 //! time of the same query, most for the short ones.
@@ -11,7 +13,7 @@
 use std::io::sink;
 use std::path::Path;
 
-use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs};
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, tiling_from_env};
 use verkehrt::kernels::Isa;
 use verkehrt::{Interpreter, Options};
 
@@ -21,18 +23,30 @@ fn main() {
     let isa = args
         .next()
         .map(|n| Isa::from_name(&n).unwrap_or_else(|| panic!("unknown instruction set {n}")));
-    let dir = std::env::var_os("VERKEHRT_CLICKBENCH").expect("set VERKEHRT_CLICKBENCH");
+    let (suite, program, var, signed) = match query.split_once('/') {
+        Some(("tpch", program)) => ("tpch", program, "VERKEHRT_TPCH", &[][..]),
+        Some((suite, _)) => panic!("unknown suite {suite}"),
+        None => (
+            "clickbench",
+            &*query,
+            "VERKEHRT_CLICKBENCH",
+            CLICKBENCH_SIGNED,
+        ),
+    };
+    let dir = std::env::var_os(var).unwrap_or_else(|| panic!("set {var}"));
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/acceptance/clickbench")
-        .join(format!("{query}.vk"));
+        .join("tests/acceptance")
+        .join(suite)
+        .join(format!("{program}.vk"));
     let src = std::fs::read_to_string(&path).unwrap();
     let options = || Options {
         isa,
         stats: true,
+        tiling: tiling_from_env(),
         ..Options::default()
     };
     let prepared = Interpreter::new(options()).unwrap().prepare(&src).unwrap();
-    let inputs = load_inputs(Path::new(&dir), &prepared, CLICKBENCH_SIGNED).unwrap();
+    let inputs = load_inputs(Path::new(&dir), &prepared, signed).unwrap();
     let mut best: Option<(f64, Vec<u8>)> = None;
     for _ in 0..5 {
         let mut interp = Interpreter::new(options()).unwrap();

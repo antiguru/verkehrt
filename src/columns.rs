@@ -1,10 +1,34 @@
-//! Loads the column files of the acceptance data into program inputs.
+//! Loads the column files of the acceptance data into program inputs, and reads the tiling the
+//! acceptance tools run with.
 
+use std::env::VarError;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
+use crate::exec::Tiling;
 use crate::interp::Prepared;
 use crate::value::{Array, ScalarType, Value, ValueType};
+
+/// The tiling the environment variable `VERKEHRT_TILE_ROWS` names, `off` or a tile row count, or
+/// `Tiling::default()` when it is unset. The acceptance bench and the stats example call it.
+///
+/// # Panics
+///
+/// When the variable is not valid Unicode, or is neither `off` nor a positive row count.
+pub fn tiling_from_env() -> Tiling {
+    match std::env::var("VERKEHRT_TILE_ROWS") {
+        Err(VarError::NotPresent) => Tiling::default(),
+        Err(VarError::NotUnicode(v)) => {
+            panic!("VERKEHRT_TILE_ROWS={v:?}: expected off or a positive row count")
+        }
+        Ok(v) if v == "off" => Tiling::Off,
+        Ok(v) => match v.parse::<NonZeroUsize>() {
+            Ok(n) => Tiling::Rows(n),
+            Err(_) => panic!("VERKEHRT_TILE_ROWS={v}: expected off or a positive row count"),
+        },
+    }
+}
 
 /// The columns of the ClickBench data that `prepare.py` stores with the sign bit flipped, so
 /// that the words' unsigned order is the signed order. Pass it to [`load_inputs`].

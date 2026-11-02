@@ -1,0 +1,25 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.06s
+     Running tests/acceptance/main.rs (target/release/deps/acceptance-506f9d8f432367ac)
+
+running 18 tests
+test acceptance_plans ... ignored, prints plans for the measurement report
+test harness_rejects_non_finite_g ... ok
+test harness_formats_like_prepare_py ... ok
+test harness_formats_g_like_prepare_py ... ok
+test harness_reads_ends_inputs ... ok
+test q19_finds_the_constant_user_id ... ok
+test harness_flips_signed_columns_back ... ok
+test harness_runs_a_synthetic_query ... ok
+test harness_empty_filter_gives_empty_output ... ok
+test q04_counts_distinct_ids ... ok
+test q41_pages_past_ten_thousand_groups ... ok
+test tpch_matches_duckdb ... ok
+test q15_breaks_count_ties_by_signed_id ... ok
+test q35_computes_offsets_without_overflow ... ok
+test q08_counts_distinct_users_per_region ... ok
+test q32_breaks_count_ties_by_signed_key ... ok
+test q09_aggregates_per_region ... ok
+test clickbench_matches_duckdb ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 11.80s
+

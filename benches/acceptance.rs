@@ -8,6 +8,8 @@
 //! `VERKEHRT_PROGRAMS=DIR` reads the programs of each suite from `DIR/SUITE` instead of
 //! `tests/acceptance/SUITE`. `VERKEHRT_BENCH_SAMPLES` and `VERKEHRT_BENCH_SECS` replace the
 //! sample size (10) and the measurement time in seconds (3) for longer runs.
+//! `VERKEHRT_TILE_ROWS` is `off` or a tile row count and replaces the default tiling of every
+//! variant.
 
 use std::fs;
 use std::io::sink;
@@ -15,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs};
+use verkehrt::columns::{CLICKBENCH_SIGNED, load_inputs, tiling_from_env};
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
 use verkehrt::{Interpreter, Options};
@@ -27,6 +29,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
         Interpreter::new(Options {
             isa: Some(isa),
             backend,
+            tiling: tiling_from_env(),
             ..Options::default()
         })
         .unwrap()
