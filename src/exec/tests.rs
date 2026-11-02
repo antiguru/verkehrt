@@ -37,21 +37,31 @@ pub(super) fn rows(v: &Value) -> Vec<String> {
 /// names asked for, or the error.
 pub(super) type Outcome = Result<(String, Vec<Vec<String>>), Error>;
 
-/// Runs `src` with `tiling` on the instruction set and backend of `variant`, keeping its
-/// `let`s bound. Returns the outcome with the rows of `names`, the trace and stats lines
-/// without their times, and the tiled region count.
-fn run(
+/// What `run` gave: the outcome with the rows of the names asked for, the trace and stats
+/// lines without their times, the tiled region count, and the narrowed tile count.
+pub(super) struct Ran {
+    pub(super) outcome: Outcome,
+    pub(super) lines: Vec<String>,
+    pub(super) regions: u64,
+    pub(super) narrowed: u64,
+}
+
+/// Runs `src` with `tiling`, with or without selective evaluation, on the instruction set
+/// and backend of `variant`, keeping its `let`s bound.
+pub(super) fn run(
     src: &str,
     names: &[&str],
     variant: (Isa, Backend),
     tiling: Tiling,
-) -> (Outcome, Vec<String>, u64) {
+    selective: bool,
+) -> Ran {
     let mut interp = Interpreter::new(Options {
         isa: Some(variant.0),
         backend: variant.1,
         trace: true,
         stats: true,
         tiling,
+        no_selective: !selective,
         ..Options::default()
     })
     .unwrap();
@@ -77,31 +87,89 @@ fn run(
         })
         .collect();
     lines.sort();
-    (outcome, lines, interp.tiled_regions())
+    Ran {
+        outcome,
+        lines,
+        regions: interp.tiled_regions(),
+        narrowed: interp.narrowed_tiles(),
+    }
 }
 
-/// Runs `src` under every tiling on every variant and checks that each gives the outcome
-/// of the untiled scalar run and the trace and stats lines of the untiled run of its
-/// variant. Returns the untiled outcome and the tiled region count of each tiled run.
-pub(super) fn compare(src: &str, names: &[&str]) -> (Outcome, Vec<u64>) {
-    let (want, _, _) = run(src, names, (Isa::Scalar, Backend::Auto), Tiling::Off);
+/// Trace and stats lines without the fields that count rows and bytes, which keeps the
+/// kernel, its variant, and its calls.
+pub(super) fn calls_only(lines: &[String]) -> Vec<String> {
+    lines
+        .iter()
+        .map(|l| {
+            l.split(' ')
+                .filter(|w| {
+                    !["n=", "read=", "write=", "bytes="]
+                        .iter()
+                        .any(|p| w.starts_with(p))
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+/// Runs `src` under every tiling on every variant, with and without selective evaluation,
+/// and checks that each gives the outcome of the untiled scalar run. Without selective
+/// evaluation each run gives the trace and stats lines of the untiled run of its variant,
+/// and with it the same kernel calls and tiled regions. Returns the untiled outcome, the
+/// tiled region count of each tiled run, and the narrowed tile count of each selective run.
+pub(super) fn compare_narrowed(src: &str, names: &[&str]) -> (Outcome, Vec<u64>, Vec<u64>) {
+    let scalar = (Isa::Scalar, Backend::Auto);
+    let want = run(src, names, scalar, Tiling::Off, false).outcome;
     let mut counts = Vec::new();
+    let mut narrowed = Vec::new();
     for variant in variants() {
-        let mut runs = tilings()
-            .into_iter()
-            .map(|t| (t, run(src, names, variant, t)));
-        let (_, (off, off_lines, off_regions)) = runs.next().unwrap();
-        assert_eq!(off, want, "{variant:?} untiled outcome of\n{src}");
-        assert_eq!(off_regions, 0, "untiled runs tile no region");
-        for (t, (got, lines, regions)) in runs {
-            assert_eq!(got, want, "{variant:?} {t:?} outcome of\n{src}");
+        let off = run(src, names, variant, Tiling::Off, false);
+        assert_eq!(off.outcome, want, "{variant:?} untiled outcome of\n{src}");
+        assert_eq!(off.regions, 0, "untiled runs tile no region");
+        // Selective evaluation needs tiles, so without them it changes nothing.
+        let untiled = run(src, names, variant, Tiling::Off, true);
+        assert_eq!(
+            untiled.outcome, want,
+            "{variant:?} untiled outcome of\n{src}"
+        );
+        assert_eq!(
+            untiled.lines, off.lines,
+            "{variant:?} untiled lines of\n{src}"
+        );
+        assert_eq!(untiled.narrowed, 0, "untiled runs narrow nothing");
+        for t in tilings().into_iter().skip(1) {
+            let got = run(src, names, variant, t, false);
+            assert_eq!(got.outcome, want, "{variant:?} {t:?} outcome of\n{src}");
             assert_eq!(
-                lines, off_lines,
+                got.lines, off.lines,
                 "{variant:?} {t:?} trace and stats of\n{src}"
             );
-            counts.push(regions);
+            assert_eq!(got.narrowed, 0, "{variant:?} {t:?} without selective");
+            let selective = run(src, names, variant, t, true);
+            assert_eq!(
+                selective.outcome, want,
+                "{variant:?} {t:?} selective outcome of\n{src}"
+            );
+            assert_eq!(
+                calls_only(&selective.lines),
+                calls_only(&off.lines),
+                "{variant:?} {t:?} selective calls of\n{src}"
+            );
+            assert_eq!(
+                selective.regions, got.regions,
+                "{variant:?} {t:?} selective regions of\n{src}"
+            );
+            counts.push(got.regions);
+            narrowed.push(selective.narrowed);
         }
     }
+    (want, counts, narrowed)
+}
+
+/// `compare_narrowed` without the narrowed tile counts.
+pub(super) fn compare(src: &str, names: &[&str]) -> (Outcome, Vec<u64>) {
+    let (want, counts, _) = compare_narrowed(src, names);
     (want, counts)
 }
 
@@ -154,9 +222,9 @@ impl Builder {
     }
 }
 
-/// Evaluates `node` over `leaves` with `tiling` on the instruction set and backend of
-/// `variant`, with its shared nodes evaluated once, and returns the result and the tiled
-/// region count.
+/// Evaluates `node` over `leaves` with `tiling` and selective evaluation on the instruction
+/// set and backend of `variant`, with its shared nodes evaluated once, and returns the result
+/// and the tiled region count.
 pub(super) fn eval_node(
     reg: &Registry,
     node: &Built,
@@ -164,8 +232,22 @@ pub(super) fn eval_node(
     variant: (Isa, Backend),
     tiling: Tiling,
 ) -> (Slot, u64) {
+    let (result, regions, _) = eval_selective(reg, node, leaves, variant, tiling, true);
+    (result, regions)
+}
+
+/// `eval_node` with or without selective evaluation, also returning the narrowed tile count.
+pub(super) fn eval_selective(
+    reg: &Registry,
+    node: &Built,
+    leaves: &[Leaf],
+    variant: (Isa, Backend),
+    tiling: Tiling,
+    selective: bool,
+) -> (Slot, u64, u64) {
     let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
     let tiled = AtomicU64::new(0);
+    let narrowed = AtomicU64::new(0);
     let hits = AtomicU64::new(0);
     let env = Env::new();
     let shared = shared_flags(reg, &node.graph, &[node.root]);
@@ -180,13 +262,19 @@ pub(super) fn eval_node(
         trace: None,
         stats: None,
         tiling,
+        selective,
         tiled_regions: &tiled,
+        narrowed_tiles: &narrowed,
         shared: &shared,
         memo: &mut memo,
         shared_hits: &hits,
     }
     .eval(node.root);
-    (result, tiled.load(Ordering::Relaxed))
+    (
+        result,
+        tiled.load(Ordering::Relaxed),
+        narrowed.load(Ordering::Relaxed),
+    )
 }
 
 /// What a run with statistics gave: the outcome with the rows of the names asked for, the

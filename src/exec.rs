@@ -72,20 +72,28 @@ impl Plan {
     }
 }
 
-/// How the executor runs a plan. Neither setting changes a value or an error.
+/// How the executor runs a plan. No setting changes a value or an error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Strategy {
     pub tiling: Tiling,
     /// Whether a shared plan node, see `Plan::shared`, is evaluated once per run and its
     /// value reused. When off, every path to it evaluates it.
     pub sharing: bool,
+    /// Whether a tiled region evaluates the right operand of an `and_bool` or `or_bool` only
+    /// over the rows of a tile from the first to the last row where the left operand leaves
+    /// the result open, true for `and` and false for `or`, when every region kernel of that
+    /// operand is total, see `KernelDef::total`. It has no effect without tiling.
+    pub selective: bool,
 }
 
 /// Totals of one kernel over a run.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KernelStat {
     pub calls: u64,
+    /// Bytes of array arguments and array results.
     pub bytes: u64,
+    /// Bytes of array arguments.
+    pub read: u64,
     pub time: Duration,
 }
 
@@ -100,8 +108,8 @@ impl Stats {
             // Statistics are best effort, a failing sink must not fail the program.
             let _ = writeln!(
                 w,
-                "stats {name} calls={} bytes={} time={micros:.1}",
-                s.calls, s.bytes
+                "stats {name} calls={} bytes={} read={} time={micros:.1}",
+                s.calls, s.bytes, s.read
             );
         }
     }
@@ -113,6 +121,10 @@ pub struct Observe<'a> {
     pub stats: Option<&'a mut Stats>,
     /// Incremented once per region run that completed tiled, not through the whole fallback.
     pub tiled_regions: &'a AtomicU64,
+    /// Incremented once per guard and tile in which the guard's right operand ran over fewer
+    /// rows than the guard's, see `Strategy::selective`, for the region runs that completed
+    /// tiled.
+    pub narrowed_tiles: &'a AtomicU64,
     /// Incremented once per evaluation of a shared node that reused its value.
     pub shared_hits: &'a AtomicU64,
 }
@@ -167,7 +179,9 @@ pub fn run_plan(
             trace: obs.trace.then_some(&mut *sinks.diag),
             stats: obs.stats.as_deref_mut(),
             tiling: how.tiling,
+            selective: how.selective,
             tiled_regions: obs.tiled_regions,
+            narrowed_tiles: obs.narrowed_tiles,
             shared,
             memo: &mut memo,
             shared_hits: obs.shared_hits,
@@ -215,7 +229,10 @@ struct Machine<'a> {
     trace: Option<&'a mut dyn Write>,
     stats: Option<&'a mut Stats>,
     tiling: Tiling,
+    /// See `Strategy::selective`.
+    selective: bool,
     tiled_regions: &'a AtomicU64,
+    narrowed_tiles: &'a AtomicU64,
     /// Per `PlanId`, whether the node is shared. Empty when nothing is shared.
     shared: &'a [bool],
     /// Per `PlanId`, the value of a shared node after its first successful evaluation in this
@@ -362,6 +379,7 @@ impl<'a> Machine<'a> {
             let s = stats.0.entry(name.clone()).or_default();
             s.calls += 1;
             s.bytes += u64::try_from(read + write).expect("byte count fits in u64");
+            s.read += u64::try_from(read).expect("byte count fits in u64");
             s.time += time;
         }
         if let Some(w) = self.trace.as_deref_mut() {

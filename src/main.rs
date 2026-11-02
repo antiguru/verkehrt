@@ -51,11 +51,16 @@ struct Flags {
     /// Compute a value that the program needs several times once per use instead of once
     #[arg(long)]
     no_sharing: bool,
+    /// Run the right operand of and and or in a tile over all rows, instead of only from the
+    /// first to the last row the left operand leaves open
+    #[arg(long)]
+    no_selective: bool,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
     /// Print one line per kernel over its whole arguments to stderr, which may have run as
-    /// several tile calls. A value computed once and read again prints one line
+    /// several tile calls, with n the rows it ran over. A value computed once and read again
+    /// prints one line
     #[arg(long)]
     trace: bool,
     /// Print per-kernel totals to stderr when done
@@ -79,6 +84,7 @@ impl Flags {
                 Tiling::default()
             },
             no_sharing: self.no_sharing,
+            no_selective: self.no_selective,
         }
     }
 

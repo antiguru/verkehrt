@@ -28,8 +28,8 @@ pub struct Options {
     /// Print one plan line per statement to the diagnostic stream before execution.
     pub show_plan: bool,
     /// Print one line per kernel over its whole arguments to the diagnostic stream. A kernel
-    /// of a tiled region runs as several tile calls and still prints one line. A shared value
-    /// computed once and read again prints one line.
+    /// of a tiled region runs as several tile calls and still prints one line, whose `n` is
+    /// the rows it ran over. A shared value computed once and read again prints one line.
     pub trace: bool,
     /// Collect per-kernel totals, written by `Interpreter::write_stats`.
     pub stats: bool,
@@ -44,6 +44,10 @@ pub struct Options {
     /// Evaluate a plan node that a run reaches several times once per path, instead of once
     /// per run, see `Strategy::sharing`. It changes no value and no error, only kernel calls.
     pub no_sharing: bool,
+    /// Run the right operand of `and` and `or` in a tile over all rows, instead of only over
+    /// the rows the left operand leaves open, see `Strategy::selective`. It changes no value
+    /// and no error, only the rows kernels run over.
+    pub no_selective: bool,
 }
 
 impl Options {
@@ -51,6 +55,7 @@ impl Options {
         Strategy {
             tiling: self.tiling,
             sharing: !self.no_sharing,
+            selective: !self.no_selective,
         }
     }
 }
@@ -65,6 +70,8 @@ pub struct Interpreter {
     stats: Stats,
     /// Region runs that completed tiled, see `tiled_regions`.
     tiled_regions: AtomicU64,
+    /// Guard evaluations that narrowed, see `narrowed_tiles`.
+    narrowed_tiles: AtomicU64,
     /// Evaluations of shared nodes that reused a value, see `shared_hits`.
     shared_hits: AtomicU64,
 }
@@ -119,6 +126,7 @@ impl Interpreter {
             env: Env::new(),
             stats: Stats::default(),
             tiled_regions: AtomicU64::new(0),
+            narrowed_tiles: AtomicU64::new(0),
             shared_hits: AtomicU64::new(0),
         })
     }
@@ -216,6 +224,7 @@ impl Interpreter {
             trace: self.opts.trace,
             stats: self.opts.stats.then_some(&mut self.stats),
             tiled_regions: &self.tiled_regions,
+            narrowed_tiles: &self.narrowed_tiles,
             shared_hits: &self.shared_hits,
         };
         let result = run_plan(
@@ -311,6 +320,15 @@ impl Interpreter {
     /// `Prepared::execute` with this interpreter, whether or not statistics are collected.
     pub fn tiled_regions(&self) -> u64 {
         self.tiled_regions.load(Ordering::Relaxed)
+    }
+
+    /// The number of guard evaluations, one per `and` or `or` and tile, in which the right
+    /// operand ran over fewer rows of the tile than the guard, see `Strategy::selective`,
+    /// summed over the region runs that completed tiled since the interpreter was created. It
+    /// counts runs of `run`, `eval_repl`, and `Prepared::execute` with this interpreter,
+    /// whether or not statistics are collected, and stays 0 under `Options::no_selective`.
+    pub fn narrowed_tiles(&self) -> u64 {
+        self.narrowed_tiles.load(Ordering::Relaxed)
     }
 
     /// The number of evaluations of shared plan nodes that reused the value of an earlier
@@ -443,6 +461,7 @@ impl Prepared {
             trace: interp.opts.trace,
             stats: None,
             tiled_regions: &interp.tiled_regions,
+            narrowed_tiles: &interp.narrowed_tiles,
             shared_hits: &interp.shared_hits,
         };
         run_plan(

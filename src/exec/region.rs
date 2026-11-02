@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use super::{Machine, Slot};
 use crate::error::Error;
-use crate::kernels::{KernelClass, KernelId};
+use crate::kernels::{Dispatch, KernelClass, KernelId, Registry};
+use crate::ops::Op;
 use crate::plan::{PlanGraph, PlanId, PlanNode};
 use crate::value::{Arg, Array, ScalarType, TileBuf, Value, ValueType};
 
@@ -48,10 +49,13 @@ struct Region {
 struct TiledRun {
     /// The inputs' values, in the order of `Region::inputs`.
     inputs: Vec<Value>,
-    /// The rows of every array input and every kernel output.
-    rows: usize,
+    /// Per region kernel, the rows of its tile calls summed over the tiles.
+    rows: Vec<usize>,
     /// Per region kernel, its time summed over the tiles. Empty unless observing.
     times: Vec<Duration>,
+    /// Guard evaluations, one per guard and tile, whose right operand ran over fewer rows
+    /// than the guard's range.
+    narrowed: u64,
     /// The root's value.
     value: Value,
 }
@@ -129,24 +133,27 @@ impl<'a> Machine<'a> {
             Err(inputs) => return self.eval_region_whole(node, &mut inputs.into_iter()),
         };
         self.tiled_regions.fetch_add(1, Ordering::Relaxed);
+        self.narrowed_tiles
+            .fetch_add(run.narrowed, Ordering::Relaxed);
         if self.observing() {
-            for (k, time) in region.kernels.iter().zip(&run.times) {
-                // Bytes and row count are those of the whole arguments and result, as
-                // `observe` reports them for a whole call.
-                let read = k
+            for ((k, time), &rows) in region.kernels.iter().zip(&run.times).zip(&run.rows) {
+                // Bytes and row count are those of the rows the kernel ran over. Without
+                // narrowing they are those of the whole arguments and result, as `observe`
+                // reports them for a whole call.
+                let width: usize = k
                     .args
                     .iter()
                     .map(|src| match *src {
                         Src::Input(i) => match &run.inputs[i] {
-                            Value::Array(a) => a.byte_len(),
+                            Value::Array(a) => a.elem().width(),
                             Value::Scalar(_) | Value::Str(_) => 0,
                         },
-                        Src::Kernel(j) => run.rows * region.kernels[j].elem.width(),
+                        Src::Kernel(j) => region.kernels[j].elem.width(),
                     })
                     .sum();
-                let write = run.rows * k.elem.width();
+                let write = rows * k.elem.width();
                 let used = self.dispatch.variant_used(k.id);
-                self.record(k.id, used, run.rows, read, write, *time)?;
+                self.record(k.id, used, rows, rows * width, write, *time)?;
             }
         }
         Ok(run.value)
@@ -210,76 +217,255 @@ impl<'a> Machine<'a> {
         };
         let (root, inner) = region.kernels.split_last().expect("a region has kernels");
         let observing = self.observing();
+        let guards = if self.selective {
+            self.guards(region, &inputs)
+        } else {
+            vec![None; region.kernels.len()]
+        };
         // A whole call times the allocation of its output, so the region's allocations are
         // charged to the root below, from this point to the end of the output's construction.
         let alloc_start = observing.then(Instant::now);
         // One tile buffer per inner kernel, allocated once per run and overwritten by each
         // tile. A tile never holds more than `t` rows, or `n` when that is fewer.
-        let Ok(mut bufs) = inner
+        let Ok(bufs) = inner
             .iter()
             .map(|k| TileBuf::new(k.elem, t.min(n)))
             .collect::<Result<Vec<_>, _>>()
         else {
             return fail(inputs);
         };
-        let mut times = if observing {
-            vec![Duration::ZERO; region.kernels.len()]
-        } else {
-            Vec::new()
+        let mut tiles = Tiles {
+            reg: self.reg,
+            dispatch: self.dispatch,
+            region,
+            inputs: &inputs,
+            guards: &guards,
+            bufs,
+            start: 0,
+            args: Vec::new(),
+            rows: vec![0; region.kernels.len()],
+            times: if observing {
+                vec![Duration::ZERO; region.kernels.len()]
+            } else {
+                Vec::new()
+            },
+            narrowed: 0,
         };
-        let mut args: Vec<Arg> = Vec::new();
-        let w = root.elem.width();
         let built = Array::build_bytes(n, root.elem, |out| {
-            let mut start = 0;
-            // An empty region still runs one empty tile, so that every kernel is called once
-            // as in the whole evaluation.
+            // An empty region still runs one empty tile, so that every kernel outside a
+            // narrowed operand is called once as in the whole evaluation.
             loop {
-                let len = t.min(n - start);
-                for (j, k) in region.kernels.iter().enumerate() {
-                    args.clear();
-                    args.extend(k.args.iter().map(|src| match *src {
-                        Src::Input(i) => match &inputs[i] {
-                            Value::Array(a) => Arg::Rows(a.slice(start, len)),
-                            Value::Scalar(s) => Arg::Splat(s.clone()),
-                            Value::Str(_) => unreachable!("string inputs fall back above"),
-                        },
-                        Src::Kernel(i) => Arg::Rows(bufs[i].view(len)),
-                    }));
-                    let dst = match bufs.get_mut(j) {
-                        Some(buf) => buf.rows_mut(len),
-                        None => &mut out[start * w..(start + len) * w],
-                    };
-                    let begin = observing.then(Instant::now);
-                    self.dispatch.elementwise_tile(self.reg, k.id, &args, dst)?;
-                    if let Some(begin) = begin {
-                        times[j] += begin.elapsed();
-                    }
-                }
-                // The views of this tile's buffers go before the next tile overwrites them.
-                args.clear();
-                start += len;
-                if start >= n {
+                let len = t.min(n - tiles.start);
+                tiles.run(inner.len(), 0, len, out)?;
+                tiles.start += len;
+                if tiles.start >= n {
                     return Ok(());
                 }
             }
         });
+        let Tiles {
+            rows: kernel_rows,
+            mut times,
+            narrowed,
+            ..
+        } = tiles;
         // What the region took beyond its tile calls is the allocation of the tile buffers and
         // of the output, and it goes to the root, whose whole call would have allocated.
         if let Some(start) = alloc_start {
-            let tiles: Duration = times.iter().sum();
+            let called: Duration = times.iter().sum();
             if let Some(last) = times.last_mut() {
-                *last += start.elapsed().saturating_sub(tiles);
+                *last += start.elapsed().saturating_sub(called);
             }
         }
         match built {
             Ok(value) => Ok(TiledRun {
                 inputs,
-                rows: n,
+                rows: kernel_rows,
                 times,
+                narrowed,
                 value: Value::Array(value),
             }),
             Err(_) => fail(inputs),
         }
+    }
+
+    /// Per kernel of `region` over the values `inputs`, whether it is a guard, and if so the
+    /// value of its left operand's rows that leaves its result open, true for `and_bool` and
+    /// false for `or_bool`. A guard is an `and_bool` or `or_bool` whose left operand is an
+    /// array and whose right operand is a region kernel whose subtree holds only total
+    /// region kernels.
+    fn guards(&self, region: &Region, inputs: &[Value]) -> Vec<Option<bool>> {
+        // Post-order puts every kernel after the kernels it reads, so one pass finds the
+        // totality of every subtree.
+        let mut total: Vec<bool> = Vec::with_capacity(region.kernels.len());
+        let mut guards = Vec::with_capacity(region.kernels.len());
+        for k in &region.kernels {
+            let def = self.reg.get(k.id);
+            total.push(
+                def.total
+                    && k.args.iter().all(|src| match *src {
+                        Src::Input(_) => true,
+                        Src::Kernel(j) => total[j],
+                    }),
+            );
+            let open = match def.op {
+                Some(Op::And) => true,
+                Some(Op::Or) => false,
+                _ => {
+                    guards.push(None);
+                    continue;
+                }
+            };
+            let left_array = |src: Src| match src {
+                Src::Input(i) => matches!(inputs[i], Value::Array(_)),
+                Src::Kernel(_) => true,
+            };
+            let guard = k.elem == ScalarType::Bool
+                && matches!(k.args[..], [left, Src::Kernel(right)]
+                    if left_array(left) && total[right]);
+            guards.push(guard.then_some(open));
+        }
+        guards
+    }
+}
+
+/// The state of a tiled region run while it runs the region's kernels over one tile.
+struct Tiles<'r> {
+    reg: &'r Registry,
+    dispatch: &'r Dispatch,
+    region: &'r Region,
+    /// The inputs' values, in the order of `Region::inputs`.
+    inputs: &'r [Value],
+    /// Per region kernel, see `Machine::guards`.
+    guards: &'r [Option<bool>],
+    /// One tile buffer per inner kernel, where a kernel writes the rows of the tile it runs
+    /// over at their positions in the tile.
+    bufs: Vec<TileBuf>,
+    /// The first row of the tile in the region's arrays.
+    start: usize,
+    /// The arguments of a tile call, kept to reuse their allocation.
+    args: Vec<Arg>,
+    /// Per region kernel, the rows of its tile calls so far.
+    rows: Vec<usize>,
+    /// Per region kernel, its time so far. Empty unless observing.
+    times: Vec<Duration>,
+    /// See `TiledRun::narrowed`.
+    narrowed: u64,
+}
+
+impl Tiles<'_> {
+    /// Runs the subtree of region kernel `j` over the rows `lo..hi` of the tile, writing the
+    /// root's rows into `out`, the region's output. A guard runs its right operand and itself
+    /// only over the rows from the first to the last row of `lo..hi` where its left operand
+    /// leaves the result open, and fills its other rows with the result they have whatever
+    /// the right operand.
+    fn run(&mut self, j: usize, lo: usize, hi: usize, out: &mut [u8]) -> Result<(), String> {
+        let k = &self.region.kernels[j];
+        let Some(open) = self.guards[j] else {
+            for src in &k.args {
+                if let Src::Kernel(i) = *src {
+                    self.run(i, lo, hi, out)?;
+                }
+            }
+            return self.call(j, lo, hi, out);
+        };
+        let [left, Src::Kernel(right)] = k.args[..] else {
+            unreachable!("a guard's right operand is a region kernel");
+        };
+        if let Src::Kernel(l) = left {
+            self.run(l, lo, hi, out)?;
+        }
+        // The scan and the fill go to the guard's time.
+        let scan = (!self.times.is_empty()).then(Instant::now);
+        let (a, b) = self.open_rows(left, lo, hi, open);
+        self.charge(j, scan);
+        if b - a < hi - lo {
+            self.narrowed += 1;
+        }
+        // An empty range calls no kernel of the right operand.
+        if a < b {
+            self.run(right, a, b, out)?;
+            self.call(j, a, b, out)?;
+        }
+        let filling = (!self.times.is_empty()).then(Instant::now);
+        // Bool storage is 0 or 1, so `false & x` is 0 and `true | x` is 1 for every right row
+        // `x`, and the filled rows equal what the guard computes from them.
+        let fill = u8::from(!open);
+        dst(&mut self.bufs, self.region, self.start, j, lo, a, out).fill(fill);
+        dst(&mut self.bufs, self.region, self.start, j, b, hi, out).fill(fill);
+        self.charge(j, filling);
+        Ok(())
+    }
+
+    /// Calls region kernel `j` over the rows `lo..hi` of the tile.
+    fn call(&mut self, j: usize, lo: usize, hi: usize, out: &mut [u8]) -> Result<(), String> {
+        let k = &self.region.kernels[j];
+        let mut args = std::mem::take(&mut self.args);
+        args.clear();
+        args.extend(k.args.iter().map(|src| self.rows_of(*src, lo, hi)));
+        let dst = dst(&mut self.bufs, self.region, self.start, j, lo, hi, out);
+        let begin = (!self.times.is_empty()).then(Instant::now);
+        self.dispatch.elementwise_tile(self.reg, k.id, &args, dst)?;
+        self.charge(j, begin);
+        self.rows[j] += hi - lo;
+        // The views of this tile's buffers go before the next tile overwrites them.
+        args.clear();
+        self.args = args;
+        Ok(())
+    }
+
+    /// The rows `lo..hi` of the tile of `src`, or its scalar.
+    fn rows_of(&self, src: Src, lo: usize, hi: usize) -> Arg {
+        match src {
+            Src::Input(i) => match &self.inputs[i] {
+                Value::Array(a) => Arg::Rows(a.slice(self.start + lo, hi - lo)),
+                Value::Scalar(s) => Arg::Splat(s.clone()),
+                Value::Str(_) => unreachable!("string inputs fall back above"),
+            },
+            Src::Kernel(i) => Arg::Rows(self.bufs[i].view(hi).slice(lo, hi - lo)),
+        }
+    }
+
+    /// The rows from the first to the last row of `lo..hi` where the bool array `left` is
+    /// `open`, or an empty range when there is none.
+    fn open_rows(&self, left: Src, lo: usize, hi: usize, open: bool) -> (usize, usize) {
+        let Arg::Rows(rows) = self.rows_of(left, lo, hi) else {
+            unreachable!("a guard's left operand is an array");
+        };
+        let bytes = rows.as_bool_bytes();
+        let is_open = |b: &u8| (*b != 0) == open;
+        match bytes.iter().position(is_open) {
+            Some(first) => {
+                let last = bytes.iter().rposition(is_open).expect("a row is open");
+                (lo + first, lo + last + 1)
+            }
+            None => (lo, lo),
+        }
+    }
+
+    /// Adds the time since `begin` to region kernel `j`.
+    fn charge(&mut self, j: usize, begin: Option<Instant>) {
+        if let Some(begin) = begin {
+            self.times[j] += begin.elapsed();
+        }
+    }
+}
+
+/// The bytes of the rows `lo..hi` of the tile that starts at row `start`, in the tile buffer
+/// of region kernel `j`, or in the region's output `out` when `j` is the root.
+fn dst<'b>(
+    bufs: &'b mut [TileBuf],
+    region: &Region,
+    start: usize,
+    j: usize,
+    lo: usize,
+    hi: usize,
+    out: &'b mut [u8],
+) -> &'b mut [u8] {
+    let w = region.kernels[j].elem.width();
+    match bufs.get_mut(j) {
+        Some(buf) => &mut buf.rows_mut(hi)[lo * w..],
+        None => &mut out[(start + lo) * w..(start + hi) * w],
     }
 }
 
