@@ -168,7 +168,7 @@ The fix is demand-driven semantics through errors as data plus a checker rule fo
 Until it landed, oracle 3 skipped a case when evaluating the pipeline's failing top-level let at its statement reproduced the failure, and a first, simpler stopgap failed 4 workers of a 6000-case run at seed 1100000.
 With errors as data, a failing binding holds its error and only an output that reads it raises, so the stopgap and its skip path are gone.
 
-Errors as data moved the line an error reports, which the strict line comparison then rejected in about 2 of 1000 cases.
+Errors as data moved the line an error reports, and the strict line comparison rejected some generated cases because of it.
 A let with several readers is computed as its own statement, so the pipeline reported the let's line, while the evaluator reported the line of the reading output.
 Both lines are correct under the span rule of the errors-as-data spec, which gives an error the line of the statement that computed it.
 The evaluator therefore records the chain of statements from the demanding output to the failing expression, and oracle 3 accepts any line on it, as described below.
