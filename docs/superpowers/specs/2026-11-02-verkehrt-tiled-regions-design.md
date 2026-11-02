@@ -30,20 +30,25 @@ A region is a maximal subtree of a statement's plan made of `PlanNode::Kernel` n
 Its inputs are the subtrees just below it: leaves, broadcasts, and kernels of other classes, which the executor evaluates whole as it does today.
 A `Cond` is never part of a region, so a region never spans a conditional's boundary and lazy branches stay lazy.
 A single elementwise kernel is not a region and runs whole, because tiling it saves nothing.
+An input is trivial when evaluating it can neither block nor do unbounded work: a leaf, or a broadcast of a leaf.
+A region tiles only when every input that is not trivial comes before the region's first kernel in the post-order of the whole evaluation, which visits the subtree left to right.
+Otherwise the executor evaluates the region whole, because tiling would evaluate such an input before a kernel whose error the whole evaluation raises first, and the input may block, for example on a load of a FIFO.
 The executor finds regions while evaluating, so the planner, the plan, and `--plan` output stay unchanged.
 
 ## Semantics
 
 A region's value is the value that evaluating its subtree whole would produce, byte for byte.
 Its inputs are evaluated first, left to right in the order the whole evaluation reaches them, and then the region runs tile by tile over rows `[k * T, min((k + 1) * T, n))`, where `T` is the tile row count.
+By the rule of the previous section the whole evaluation also reaches every input that is not trivial before any region kernel, so tiling evaluates no such input that the whole evaluation does not.
+Trivial inputs after a kernel can at most return a stored error, which the fallback below raises in the order of the whole evaluation.
 Before tiling, the executor checks that every array input of the region has the same length, as `Dispatch::call` would for each kernel.
 Results must not depend on `T`, and the tests run with small tile row counts to cover many tiles, tile tails, and empty arrays.
 
 Errors must be the same as without tiling, kind, message, and span.
 When an input fails, the length check fails, or any tile fails, the executor discards the tiled attempt and evaluates the region whole, which raises the error the whole evaluation raises.
-Kernels are pure, so evaluating again yields the same values and the same error.
+The fallback reuses the inputs the attempt evaluated and evaluates the rest when it reaches them, and kernels are pure, so it yields the same values and the same error.
 The cost falls only on failing programs.
-On that fallback path trace lines of the discarded attempt may appear, and the record states this.
+The discarded attempt writes no trace lines, because a region's lines print only when its tiled run completes.
 
 ## Options and flags
 
@@ -55,7 +60,7 @@ The default tile row count is a constant that the measurement task picks from at
 
 Statistics count a region's kernels as if they had run whole: one call per kernel per region run, the bytes of the whole arguments and result, and the time summed over the tiles, with the allocation of the region's output and tile buffers added to the root.
 Trace lines keep their format, one per kernel per region run, with the time summed over the tiles.
-The region's inputs print first, then the region's kernels in post-order, so the order can differ from the whole evaluation, which interleaves them.
+The region's inputs print first, then the region's kernels in post-order, which is the order of the whole evaluation, because every input that can call a kernel comes before the region's first kernel.
 A trace line therefore no longer means one entry call, and the `--trace` help text says so.
 
 ## Tests

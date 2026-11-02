@@ -167,5 +167,5 @@ Total kernel time falls from 2632.5 to 2512.7 us in q03, 5710.3 to 4586.3 us in 
 On the mask-chain queries the chain is no longer the largest cost, but it is still 46% to 63% of kernel time, and `eq_i64`, `le_i64` and `lt_i64` still read their columns once per use.
 In q40 `EventDate` and `TraficSourceID` are each read twice, and a shared read (issue #39) or a fused predicate over the tile (issue #30) would remove that traffic, but neither was measured here.
 The sort and the `compress_i64` calls of q40 and q41 stay outside any region and dominate what is left, 950.6 us of `argsort_i64` and 591.9 us of `compress_i64` in q40 untiled.
-When a region fails, the executor discards the tiled attempt and evaluates the region whole, so `--trace` and `--stats` can show lines of region inputs that the whole evaluation does not reach.
+When a region fails, the executor discards the tiled attempt and evaluates the region whole.
 None of the measured queries fails, so no number here includes that path.

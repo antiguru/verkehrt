@@ -194,6 +194,9 @@ struct RegionKernel {
 struct Region<'p> {
     inputs: Vec<&'p PlanNode>,
     kernels: Vec<RegionKernel>,
+    /// Whether every input that is not trivial comes before the first kernel in post-order,
+    /// so that the whole evaluation reaches all of them before it calls any region kernel.
+    ordered: bool,
 }
 
 /// A region run that completed tiled.
@@ -291,10 +294,13 @@ impl Machine<'_> {
     }
 
     /// Adds the region kernels of the subtree `node` to `region` in post-order, and the
-    /// subtrees just below them to its inputs, left to right. Returns where `node`'s value
-    /// comes from.
+    /// subtrees just below them to its inputs, left to right. Clears `region.ordered` when an
+    /// input that is not trivial follows a kernel. Returns where `node`'s value comes from.
     fn collect<'p>(&self, node: &'p PlanNode, region: &mut Region<'p>) -> Src {
         let Some((id, args)) = self.region_kernel(node) else {
+            if !trivial(node) && !region.kernels.is_empty() {
+                region.ordered = false;
+            }
             region.inputs.push(node);
             return Src::Input(region.inputs.len() - 1);
         };
@@ -307,13 +313,22 @@ impl Machine<'_> {
     }
 
     /// Evaluates the region rooted at `node` in tiles of `t` rows. When the tiled run fails
-    /// anywhere, it evaluates the region whole instead.
+    /// anywhere, or tiling would evaluate an input that is not trivial before a region kernel
+    /// that the whole evaluation calls first, it evaluates the region whole instead.
     fn eval_region(&mut self, node: &PlanNode, t: usize) -> Result<Value, Error> {
         let mut region = Region {
             inputs: Vec::new(),
             kernels: Vec::new(),
+            ordered: true,
         };
         self.collect(node, &mut region);
+        // A tiled run evaluates every input before any kernel. Such an input after a kernel
+        // may block or run long where the whole evaluation raises that kernel's error first.
+        // Trivial inputs after a kernel can at most hold a stored error, which the fallback
+        // raises in whole-evaluation order.
+        if !region.ordered {
+            return self.eval_region_whole(node, &mut Vec::new().into_iter());
+        }
         let run = match self.run_tiled(&region, t) {
             Ok(run) => run,
             // The whole evaluation raises the error that the program raises without tiling.
@@ -347,7 +362,8 @@ impl Machine<'_> {
 
     /// Evaluates the region kernels of the subtree `node` whole, each with one call, in the
     /// order of a whole evaluation. The region's inputs come from `inputs` in their order,
-    /// which must hold every input up to the first that failed.
+    /// which holds the slots of a prefix of the inputs, of which only the last may have
+    /// failed. The inputs after that prefix are evaluated when reached.
     fn eval_region_whole(
         &mut self,
         node: &PlanNode,
@@ -356,9 +372,10 @@ impl Machine<'_> {
         let Some((id, args)) = self.region_kernel(node) else {
             // The whole evaluation stops at the first failed input, so it never asks for an
             // input after it.
-            return inputs
-                .next()
-                .expect("the tiled attempt evaluated this input");
+            return match inputs.next() {
+                Some(slot) => slot,
+                None => self.eval(node),
+            };
         };
         let args = args
             .iter()
@@ -525,5 +542,15 @@ impl Machine<'_> {
             .map_err(|e| Error::io(&e))?;
         }
         Ok(())
+    }
+}
+
+/// Whether evaluating `node` can neither block nor do unbounded work: a leaf, or a broadcast
+/// of a leaf. Such a node can still return a stored error.
+fn trivial(node: &PlanNode) -> bool {
+    match node {
+        PlanNode::Leaf(_) => true,
+        PlanNode::Bcast(inner) => matches!(**inner, PlanNode::Leaf(_)),
+        PlanNode::Cond(..) | PlanNode::Kernel(..) => false,
     }
 }
