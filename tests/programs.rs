@@ -514,3 +514,183 @@ fn no_fusion_matches_fused_output() {
     assert!(diag.contains("reduce_add_f64"), "{diag}");
     assert!(!diag.contains("dot_f64"), "{diag}");
 }
+
+/// An export is an output at its own statement. The program fails at the first failing
+/// output in statement order, so the prints before it reach `diag` and the ones after do not.
+/// The repeated reduction of the failing export is hoisted into a bind before it.
+#[test]
+fn failing_export_stops_execute_at_its_statement() {
+    let interp = Interpreter::new(Options::default()).unwrap();
+    let p = interp
+        .prepare(
+            "input x: f64[];\nexport a = sum(x);\nprint(2.0);\n\
+             export b = reduce(x, min) + reduce(x, min);\nprint(3.0);\n",
+        )
+        .unwrap();
+    let mut diag = Vec::new();
+    let e = p
+        .execute(&interp, &[("x", f64s(&[]))], &mut diag)
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert_eq!(e.span.map(|s| s.line), Some(4), "{e}");
+    assert_eq!(String::from_utf8(diag).unwrap(), "2.0\n");
+    let got = p
+        .execute(&interp, &[("x", f64s(&[2.0, 1.0]))], &mut Vec::new())
+        .unwrap();
+    assert_eq!(got[1].1.to_string(), "2.0");
+}
+
+#[test]
+fn failing_export_stops_run_at_its_statement() {
+    let (r, out, _) = run_with(
+        Options::default(),
+        "print(1.0);\nexport m = reduce(fill(0, 1.0), min);\nprint(2.0);\n",
+    );
+    let e = r.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert_eq!(e.span.map(|s| s.line), Some(2), "{e}");
+    assert_eq!(out, "1.0\n");
+}
+
+/// A file that cannot be loaded is an I/O error, never a value, so even an unread binding
+/// fails the program at its statement before anything is printed.
+#[test]
+fn failed_load_is_an_io_error_at_once() {
+    let (r, out, _) = run_with(
+        Options::default(),
+        "let _x = load_f64(\"/nonexistent/verkehrt-missing.bin\");\nprint(1);\n",
+    );
+    let e = r.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Io, "{e}");
+    assert_eq!(e.span.map(|s| s.line), Some(1), "{e}");
+    assert!(e.message.contains("verkehrt-missing.bin"), "{e}");
+    assert_eq!(out, "");
+}
+
+/// A top-level let stays bound in the REPL, so it is an output and fails at its statement,
+/// and the failed input binds nothing.
+#[test]
+fn failing_repl_let_raises_at_its_line() {
+    let mut interp = Interpreter::new(Options::default()).unwrap();
+    let (mut out, mut diag) = (Vec::new(), Vec::new());
+    let e = interp
+        .eval_repl(
+            "let a = [1.0];\nlet v = reduce(fill(0, 1.0), min);\nlet c = [2.0];\n",
+            &mut out,
+            &mut diag,
+        )
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert_eq!(e.span.map(|s| s.line), Some(2), "{e}");
+    assert!(interp.get("a").is_none());
+    // The failed input is rolled back, so `v` is an unknown name and not a held error.
+    let unknown = interp
+        .eval_repl("print(v);", &mut out, &mut diag)
+        .unwrap_err();
+    assert_eq!(unknown.kind, ErrorKind::Type, "{unknown}");
+    assert!(unknown.message.contains("'v'"), "{unknown}");
+}
+
+/// Runs a program whose unread binding `_v` fails, which leaves `_v` holding the error.
+fn interp_with_failed_binding() -> Interpreter {
+    let mut interp = Interpreter::new(Options::default()).unwrap();
+    let (mut out, mut diag) = (Vec::new(), Vec::new());
+    interp
+        .run(
+            "let _ok = [1.0];\nlet _v = reduce(fill(0, 1.0), min);\nprint(1);\n",
+            &mut out,
+            &mut diag,
+        )
+        .unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "1\n");
+    interp
+}
+
+/// A failed binding of a successful run holds its error, which `get` does not return.
+#[test]
+fn get_of_failed_binding_is_none() {
+    let interp = interp_with_failed_binding();
+    assert_eq!(interp.get("_ok").unwrap().to_string(), "[1.0]");
+    assert!(interp.get("_v").is_none());
+}
+
+/// An `input` of a binding that holds an error fails before anything runs, even when
+/// nothing reads the input.
+#[test]
+fn input_of_failed_binding_is_a_usage_error() {
+    let mut interp = interp_with_failed_binding();
+    let mut out = Vec::new();
+    let e = interp
+        .run(
+            "print(2);\ninput _v: f64;\nlet _w = _v;\n",
+            &mut out,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert_eq!(
+        e.message,
+        "input '_v' is bound to a value that failed: reduce_min of an empty array"
+    );
+    assert!(out.is_empty());
+}
+
+/// A later program that reads a binding holding an error, in a run or in the REPL, fails
+/// before anything runs, like an `input` of it.
+#[test]
+fn read_of_failed_binding_is_a_usage_error() {
+    let mut interp = interp_with_failed_binding();
+    let want = "'_v' is bound to a value that failed: reduce_min of an empty array";
+    let mut out = Vec::new();
+    let e = interp
+        .run("print(2);\nprint(_v);\n", &mut out, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!((e.kind, e.message.as_str()), (ErrorKind::Usage, want));
+    assert!(out.is_empty());
+    let repl_err = interp
+        .eval_repl("_v;", &mut out, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!(
+        (repl_err.kind, repl_err.message.as_str()),
+        (ErrorKind::Usage, want)
+    );
+    // A program that does not read it runs.
+    interp
+        .run("print(3);\n", &mut out, &mut Vec::new())
+        .unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "3\n");
+}
+
+/// A sink whose every write fails.
+struct FailingSink;
+
+impl std::io::Write for FailingSink {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("sink is closed"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Only runtime errors are held by a binding. A failed trace write in a binding nothing reads
+/// fails the program at once.
+#[test]
+fn io_error_in_unread_binding_fails_at_once() {
+    let mut interp = Interpreter::new(Options {
+        trace: true,
+        ..scalar_opts()
+    })
+    .unwrap();
+    let mut out = Vec::new();
+    let e = interp
+        .run(
+            "let _v = sum([1.0, 2.0]);\nprint(1);\n",
+            &mut out,
+            &mut FailingSink,
+        )
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Io);
+    assert!(out.is_empty());
+}

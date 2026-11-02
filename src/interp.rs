@@ -4,11 +4,11 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 
-use crate::check::{Globals, TStmt, VarId, check};
+use crate::check::{Globals, TStmt, VarId, check, check_unread};
 use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
-use crate::lower::{LStmt, Mode, lower};
+use crate::lower::{LStmt, Leaf, Mode, lower};
 use crate::plan::{Planner, SumRewrite, render};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
@@ -95,7 +95,9 @@ impl Interpreter {
     }
 
     /// Runs a whole program. Every statement is checked and planned before any executes.
-    /// `print` writes to `out`, plan and trace lines go to `diag`.
+    /// `print` writes to `out`, plan and trace lines go to `diag`. Expression statements are no
+    /// outputs: they are evaluated and dropped with their runtime errors. An `input`, or a read,
+    /// of a name whose binding holds an error is a usage error.
     pub fn run(
         &mut self,
         src: &str,
@@ -129,20 +131,40 @@ impl Interpreter {
         let c = self.compile(&mut globals, src, mode)?;
         let mut aliases = Vec::new();
         for decl in &c.inputs {
-            let value = before
+            let slot = before
                 .lookup(&decl.name)
-                .and_then(|(var, _)| self.env.get(&var).map(|v| (var, v)));
-            match value {
+                .and_then(|(var, _)| self.env.get(&var));
+            let v = match slot {
                 None => return Err(Error::usage(format!("input '{}' is not bound", decl.name))),
-                Some((_, v)) if v.ty() != decl.ty => {
+                Some(Err(e)) => {
                     return Err(Error::usage(format!(
-                        "input '{}' is declared {} but bound as {}",
-                        decl.name,
-                        decl.ty,
-                        v.ty()
+                        "input '{}' is bound to a value that failed: {}",
+                        decl.name, e.message
                     )));
                 }
-                Some((_, v)) => aliases.push((decl.var, v.clone())),
+                Some(Ok(v)) => v,
+            };
+            if v.ty() != decl.ty {
+                return Err(Error::usage(format!(
+                    "input '{}' is declared {} but bound as {}",
+                    decl.name,
+                    decl.ty,
+                    v.ty()
+                )));
+            }
+            aliases.push((decl.var, Ok(v.clone())));
+        }
+        // A binding of an earlier program that holds an error is not handed on as data, so
+        // a read of it fails here like an input of it, before anything runs.
+        for leaf in &c.plan.lowered.leaves {
+            if let Leaf::Var(var) = leaf
+                && let Some(Err(e)) = self.env.get(var)
+            {
+                return Err(Error::usage(format!(
+                    "'{}' is bound to a value that failed: {}",
+                    before.name(*var),
+                    e.message
+                )));
             }
         }
         // Plan lines go out before anything is committed, so a failing sink changes nothing.
@@ -184,6 +206,7 @@ impl Interpreter {
     fn compile(&self, globals: &mut Globals, src: &str, mode: Mode) -> Result<Compiled, Error> {
         let ast = parse(src)?;
         let typed = check(&ast, &self.reg, globals)?;
+        check_unread(&ast, mode == Mode::Repl)?;
         let inputs = typed
             .stmts
             .iter()
@@ -223,12 +246,14 @@ impl Interpreter {
     /// Binds `name` to `value` at the value's type. A later `input` of the name refers to it.
     pub fn bind(&mut self, name: &str, value: Value) {
         let var = self.globals.declare(name, value.ty());
-        self.env.insert(var, value);
+        self.env.insert(var, Ok(value));
     }
 
+    /// The value bound to `name`. `None` when nothing is bound to it, or when its binding
+    /// holds the runtime error that computing it raised.
     pub fn get(&self, name: &str) -> Option<Value> {
         let (var, _) = self.globals.lookup(name)?;
-        self.env.get(&var).cloned()
+        self.env.get(&var)?.as_ref().ok().cloned()
     }
 
     /// Writes the per-kernel totals collected under `Options::stats`.
@@ -276,7 +301,9 @@ impl Prepared {
 
     /// Runs the program on `inputs` and returns its exports in source order. Every declared
     /// input must be supplied with its declared type. `print` writes to `diag`, as do trace
-    /// lines when the interpreter traces. Statistics are not collected.
+    /// lines when the interpreter traces. Statistics are not collected. An export is an output
+    /// at its statement, so a runtime error in it fails the program there, and no later
+    /// `print` runs.
     pub fn execute(
         &self,
         interp: &Interpreter,
@@ -309,7 +336,7 @@ impl Prepared {
                     v.ty()
                 )));
             }
-            env.insert(decl.var, v.clone());
+            env.insert(decl.var, Ok(v.clone()));
         }
         let mut sink = std::io::sink();
         let mut sinks = Sinks {
@@ -335,9 +362,10 @@ impl Prepared {
             .exports
             .iter()
             .map(|(name, var)| {
-                let v = env
-                    .remove(var)
-                    .ok_or_else(|| Error::runtime(format!("export '{name}' has no value"), None))?;
+                // `run_plan` raised the error of a failed export at its statement already.
+                let v = env.remove(var).ok_or_else(|| {
+                    Error::runtime(format!("export '{name}' has no value"), None)
+                })??;
                 Ok((name.clone(), v))
             })
             .collect()

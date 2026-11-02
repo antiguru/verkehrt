@@ -1,0 +1,68 @@
+# Errors as data. A binding whose computation fails holds the error, which is raised only when an output reads it. The error keeps the line of the statement that computed it.
+
+# unread_failing_binding_does_not_fail
+run
+let _v = reduce(fill(0, 1.0), min);
+print(1);
+----
+1
+
+# failing_binding_read_only_in_untaken_branches_does_not_fail
+run
+let e = fill(0, 1.0);
+let v = reduce(e, min);
+print(if length(e) > 0 { v } else { 0.0 });
+print(if length(e) > 1 { v } else { 1.0 });
+----
+0.0
+1.0
+
+# failing_binding_read_in_taken_branch_raises_with_its_line
+error
+let e = fill(0, 1.0);
+let v = reduce(e, min);
+print(1.0);
+print(if length(e) == 0 { v } else { 0.0 });
+print(v);
+----
+1.0
+Runtime error at 2:1: reduce_min of an empty array
+
+# failing_binding_read_through_another_binding_keeps_its_line
+error
+let e = fill(0, 1.0);
+let a = reduce(e, min);
+let b = a + a;
+print(length(e));
+print(b);
+print(b);
+----
+0
+Runtime error at 2:1: reduce_min of an empty array
+
+# single_use_binding_inlined_into_its_reader_raises_with_the_readers_line
+error
+let v = reduce(fill(0, 1.0), min);
+print(1);
+print(v);
+----
+1
+Runtime error at 3:1: reduce_min of an empty array
+
+# prints_before_a_failing_print_appear_in_full
+error
+print(1);
+print([2.0, 3.0]);
+print(reduce(fill(0, 1.0), min));
+print(4);
+----
+1
+[2.0, 3.0]
+Runtime error at 3:1: reduce_min of an empty array
+
+# failing_expression_statement_is_no_output_outside_the_repl
+run
+reduce(fill(0, 1.0), min);
+print(1);
+----
+1

@@ -46,18 +46,26 @@ impl Dispatch {
         self.slot(id).0
     }
 
-    /// Runs a kernel over whole arguments. It checks the arity and argument kinds against
-    /// the kernel's inputs and unifies array lengths first. Then an elementwise kernel gets
-    /// its output allocated and is called once, a reduction is updated once with all rows
-    /// (never when there are none), a scan is updated once with all rows into its output array
-    /// (never when there are none), a selection is called once with base 0, and a whole
-    /// kernel is called as is. Fails when `reg` is not the registry this dispatch was resolved
-    /// from, or when kernels were added to it since.
+    /// Runs a kernel over whole arguments, which must be arguments the kernel accepts
+    /// (`KernelDef::accepts`). Other arguments panic. It unifies array lengths first. Then an
+    /// elementwise kernel gets its output allocated and is called once, a reduction is updated
+    /// once with all rows (never when there are none), a scan is updated once with all rows
+    /// into its output array (never when there are none), a selection is called once with
+    /// base 0, and a whole kernel is called as is. Fails when `reg` is not the registry this
+    /// dispatch was resolved from, or when kernels were added to it since.
     pub fn call(&self, reg: &Registry, id: KernelId, args: &[Value]) -> Result<Value, String> {
         self.check_registry(reg)?;
         let def = reg.get(id);
+        // Lowering picks every kernel by the checked argument types, so a mismatch is a typing
+        // or lowering bug, never a value of the program.
+        let types: Vec<ValueType> = args.iter().map(Value::ty).collect();
+        assert!(
+            def.accepts(&types),
+            "kernel {} does not accept arguments {types:?}",
+            def.name
+        );
         match self.entry(id) {
-            // Whole kernels check their own arguments.
+            // Whole kernels check argument values, such as counts and paths, themselves.
             // SAFETY: resolve installs an entry only when `select` found `features::runnable` true
             // for it on this CPU.
             KernelImpl::Whole(f) => unsafe { f(args) },

@@ -65,7 +65,7 @@ pub(super) fn walk(
 }
 
 /// The variables `e` reads, syntactically.
-fn reads(e: &E) -> BTreeMap<String, usize> {
+pub(super) fn reads(e: &E) -> BTreeMap<String, usize> {
     let mut uses = BTreeMap::new();
     walk(e, false, &mut BTreeSet::new(), &mut uses);
     uses
@@ -225,9 +225,11 @@ impl<'f> Walk<'f> {
 impl Gen<'_, '_> {
     /// The features of the code that runs: the statements and, through their calls, the
     /// function bodies. Also returns the number of reads of each variable in that code.
+    /// `unread` names the top-level lets that stay unread instead of being exported.
     pub(super) fn features(
         &self,
         stmts: &[(&'static str, String, E)],
+        unread: &BTreeSet<String>,
     ) -> (BTreeSet<&'static str>, BTreeMap<String, usize>) {
         let mut w = Walk::new(Some(&self.fns));
         for (_, _, e) in stmts {
@@ -245,6 +247,7 @@ impl Gen<'_, '_> {
         for (kind, name, _) in stmts {
             if *kind == "let" {
                 w.out.insert(match w.uses.get(name).copied().unwrap_or(0) {
+                    0 if unread.contains(name) => "let kept unread",
                     0 => "let exported at the end",
                     1 => "let used once",
                     _ => "let used more than once",

@@ -1,8 +1,11 @@
 //! Source text for generated expressions and functions.
 
+use std::collections::BTreeMap;
+
 use verkehrt::ops::{Op, ReduceOp};
 use verkehrt::value::ValueType;
 
+use super::features::reads;
 use super::{E, FnDef, Gen, Higher, K, Lam};
 
 pub(super) fn reduce_name(r: ReduceOp) -> &'static str {
@@ -73,16 +76,27 @@ pub(super) fn call_name(op: Op) -> String {
     }
 }
 
+/// A binder as written in the source. Names are unique per program, so a name that no read
+/// mentions gets the `_` prefix that the unread-binding rule requires.
+fn binder(name: &str, uses: &BTreeMap<String, usize>) -> String {
+    if uses.contains_key(name) {
+        name.to_string()
+    } else {
+        format!("_{name}")
+    }
+}
+
 pub(super) fn type_name(t: ValueType) -> String {
     t.to_string()
 }
 
 impl Gen<'_, '_> {
     pub(super) fn render_fn(&self, f: &FnDef) -> String {
+        let uses = reads(&f.body);
         let params: Vec<String> = f
             .params
             .iter()
-            .map(|(n, t)| format!("{n}: {}", type_name(*t)))
+            .map(|(n, t)| format!("{}: {}", binder(n, &uses), type_name(*t)))
             .collect();
         format!(
             "fn {}({}) -> {} {{ {} }}\n",
@@ -97,9 +111,15 @@ impl Gen<'_, '_> {
     pub(super) fn render_inner(&self, e: &E) -> String {
         match &e.k {
             K::Block(lets, r) => {
+                let mut uses = reads(r);
+                for (_, v) in lets {
+                    for (n, k) in reads(v) {
+                        *uses.entry(n).or_default() += k;
+                    }
+                }
                 let mut s = String::new();
                 for (n, v) in lets {
-                    s.push_str(&format!("let {n} = {}; ", self.render(v)));
+                    s.push_str(&format!("let {} = {}; ", binder(n, &uses), self.render(v)));
                 }
                 s.push_str(&self.render(r));
                 s
@@ -151,6 +171,8 @@ impl Gen<'_, '_> {
                 };
                 let f = match lam {
                     Lam::Lambda(params, body) => {
+                        let uses = reads(body);
+                        let params: Vec<String> = params.iter().map(|p| binder(p, &uses)).collect();
                         format!("|{}| {}", params.join(", "), self.render(body))
                     }
                     Lam::Fn(i) => self.fns[*i].name.clone(),

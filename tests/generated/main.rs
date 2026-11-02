@@ -34,6 +34,9 @@ use oracles::Engine;
 /// Cases of the CI run, measured to stay well under 30 s in a debug build.
 const CI_CASES: u64 = 64;
 const CI_SEED: u64 = 0x5eed_0001;
+/// The fewest programs of a run of `CI_CASES` or more that must have an unread binding that
+/// fails when forced alone.
+const MIN_FAILING_UNREAD: usize = 8;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -61,6 +64,8 @@ struct Stats {
     features: BTreeMap<&'static str, usize>,
     outcomes: BTreeMap<String, usize>,
     fusion_changed_plan: usize,
+    /// Cases with an unread binding that fails when forced alone, see `Verdict`.
+    failing_unread: usize,
     /// Per integer sum rewrite, the statements in which it fired.
     rewrites_fired: BTreeMap<verkehrt::plan::SumRewrite, usize>,
     source_bytes: usize,
@@ -77,6 +82,7 @@ impl Stats {
             *self.outcomes.entry(o).or_default() += n;
         }
         self.fusion_changed_plan += other.fusion_changed_plan;
+        self.failing_unread += other.failing_unread;
         for (r, n) in other.rewrites_fired {
             *self.rewrites_fired.entry(r).or_default() += n;
         }
@@ -157,12 +163,7 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
             }
         };
         *stats.outcomes.entry(outcome).or_default() += 1;
-        if let Some(reason) = verdict.reference_skipped {
-            *stats
-                .outcomes
-                .entry(format!("oracle 3 skipped: {reason}"))
-                .or_default() += 1;
-        }
+        stats.failing_unread += usize::from(verdict.failing_unread);
         stats.fusion_changed_plan += usize::from(verdict.fusion_changed_plan);
         for (r, n) in verdict.rewrites_fired {
             *stats.rewrites_fired.entry(r).or_default() += n;
@@ -246,12 +247,13 @@ fn generated_programs() {
     let engine = Engine::new();
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
-         plan of {}",
+         plan of {}, {} have a failing unread binding",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
         stats.source_bytes / stats.cases.max(1),
         stats.fusion_changed_plan,
+        stats.failing_unread,
     );
     eprintln!(
         "slowest case, {:.0?} for planning twice and running:\n{}",
@@ -274,6 +276,15 @@ fn generated_programs() {
     assert!(
         stats.cases < 20 || stats.fusion_changed_plan > 0,
         "fusion changed no plan in {} programs",
+        stats.cases
+    );
+    // Oracle 3 checks that errors follow demand only in programs with failing bindings that
+    // no output reads.
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || stats.failing_unread >= MIN_FAILING_UNREAD,
+        "only {} of {} programs have a failing unread binding, want {MIN_FAILING_UNREAD}",
+        stats.failing_unread,
         stats.cases
     );
     // Oracle 2 checks an integer sum rewrite only in a plan that uses it, which needs the
