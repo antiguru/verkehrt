@@ -1039,10 +1039,11 @@ impl<'a> Gen<'a, '_> {
 
     /// A chain of `and` and `or`, some of them nested, over comparisons of arrays of one
     /// length with scalars, demanded as the mask itself, as `compress` by it, or as the sum of
-    /// its rows. The first comparison is against a literal near an end of the type's range, so
-    /// it holds in few or in most rows, and a tile of it often has open rows only in the middle
-    /// or none, which a guard over the later comparisons narrows to. `None` when no array of
-    /// a numeric type is in scope. Outside lambdas only.
+    /// its rows. The first comparison is against a literal near an end of the type's range,
+    /// and it holds in few rows when the first guard is an `and` and in most when it is an
+    /// `or`. A tile of it often has open rows only in the middle or none, which a guard over
+    /// the later comparisons narrows to. `None` when no array of a numeric type is in scope.
+    /// Outside lambdas only.
     fn mask_chain(&mut self, cx: &mut Ctx) -> Option<E> {
         let xs: Vec<Var> = cx
             .vars
@@ -1072,11 +1073,16 @@ impl<'a> Gen<'a, '_> {
             ScalarType::U64 => (&["18446744073709551615u64", "100u64"], &["0u64", "1u64"]),
             other => unreachable!("{other:?} is not generated"),
         };
-        let selective = |g: &mut Self, scope: &Ctx, base: E| {
-            let (cmp, text) = match g.c.below(3) {
-                0 => (*g.c.pick(&[Op::Gt, Op::Ge, Op::Eq]), *g.c.pick(high)),
-                1 => (*g.c.pick(&[Op::Lt, Op::Le, Op::Eq]), *g.c.pick(low)),
-                _ => (Op::Eq, *g.c.pick(literals(t))),
+        // For an `and` the first comparison holds in few rows, so most rows are closed. For an
+        // `or` it holds in most rows, so the rows where the right operand matters are few.
+        let selective = |g: &mut Self, scope: &Ctx, base: E, or: bool| {
+            let (cmp, text) = match (g.c.below(3), or) {
+                (0, false) => (*g.c.pick(&[Op::Gt, Op::Ge, Op::Eq]), *g.c.pick(high)),
+                (1, false) => (*g.c.pick(&[Op::Lt, Op::Le, Op::Eq]), *g.c.pick(low)),
+                (_, false) => (Op::Eq, *g.c.pick(literals(t))),
+                (0, true) => (*g.c.pick(&[Op::Lt, Op::Le, Op::Ne]), *g.c.pick(high)),
+                (1, true) => (*g.c.pick(&[Op::Gt, Op::Ge, Op::Ne]), *g.c.pick(low)),
+                (_, true) => (Op::Ne, *g.c.pick(literals(t))),
             };
             let c = E {
                 k: K::Lit(text.to_string()),
@@ -1109,9 +1115,12 @@ impl<'a> Gen<'a, '_> {
             let c = g.leaf(scope, ValueType::Scalar(elem(y.ty)), None);
             g.op(scope, cmp, vec![y, c], None)
         };
-        let mut acc = selective(self, cx, x.clone())?;
-        for _ in 0..1 + self.c.below(3) {
-            let outer = *self.c.pick(&[Op::And, Op::Or]);
+        let steps = 1 + self.c.below(3);
+        let mut outers: Vec<Op> = (0..steps)
+            .map(|_| *self.c.pick(&[Op::And, Op::Or]))
+            .collect();
+        let mut acc = selective(self, cx, x.clone(), outers[0] == Op::Or)?;
+        for outer in outers.drain(..) {
             let right = if self.c.flip(40) {
                 let inner = *self.c.pick(&[Op::And, Op::Or]);
                 let (a, b) = (leaf(self, cx)?, leaf(self, cx)?);

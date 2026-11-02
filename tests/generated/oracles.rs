@@ -222,6 +222,8 @@ pub struct Engine {
     untiled: Interpreter,
     /// The scalar interpreter of oracle 5, with tiles of three rows and without sharing.
     unshared: Interpreter,
+    /// The scalar interpreter of oracle 6, with tiles of three rows and without selective
+    /// evaluation.
     unselective: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
@@ -251,7 +253,7 @@ pub struct Verdict {
     /// The evaluations of shared nodes that reused a value in the shared runs of both plans
     /// in oracle 5.
     pub shared_hits: u64,
-    /// The tiles in which a guard narrowed its right operand, in the selective runs of both
+    /// The guard evaluations that narrowed their right operand, in the selective runs of both
     /// plans in oracle 6.
     pub narrowed_tiles: u64,
 }

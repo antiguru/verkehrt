@@ -45,9 +45,9 @@ const MIN_DEEP_SHARE: usize = 6;
 /// The fewest evaluations of shared nodes of a run of `CI_CASES` or more that must reuse a
 /// value in oracle 5, a third of what `CI_SEED` gives.
 const MIN_SHARED_HITS: u64 = 111;
-/// The fewest tiles of a run of `CI_CASES` or more in which a guard must narrow its right
+/// The fewest guard evaluations of a run of `CI_CASES` or more that must narrow their right
 /// operand in oracle 6, a third of what `CI_SEED` gives.
-const MIN_NARROWED_TILES: u64 = 32;
+const MIN_NARROWED_TILES: u64 = 78;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -81,7 +81,7 @@ struct Stats {
     tiled_regions: u64,
     /// Evaluations of shared nodes that reused a value in oracle 5.
     shared_hits: u64,
-    /// Tiles in which a guard narrowed its right operand in oracle 6.
+    /// Guard evaluations that narrowed their right operand in oracle 6.
     narrowed_tiles: u64,
     /// Per integer sum rewrite, the statements in which it fired.
     rewrites_fired: BTreeMap<verkehrt::plan::SumRewrite, usize>,
@@ -271,7 +271,7 @@ fn generated_programs() {
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
          plan of {}, {} have a failing unread binding, {} region runs completed tiled, {} \
-         shared evaluations reused a value, {} tiles narrowed a guard's right operand",
+         shared evaluations reused a value, {} guard evaluations narrowed their right operand",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
@@ -330,11 +330,11 @@ fn generated_programs() {
         stats.shared_hits,
         stats.cases
     );
-    // Oracle 6 compares nothing if no guard narrows its right operand.
+    // Oracle 6 exercises no narrowing if no guard evaluation narrows its right operand.
     assert!(
         u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
             || stats.narrowed_tiles >= MIN_NARROWED_TILES,
-        "only {} tiles of {} programs narrowed a guard's right operand, want {MIN_NARROWED_TILES}",
+        "only {} guard evaluations of {} programs narrowed their right operand, want {MIN_NARROWED_TILES}",
         stats.narrowed_tiles,
         stats.cases
     );
