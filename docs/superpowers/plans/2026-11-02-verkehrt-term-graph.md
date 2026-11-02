@@ -13,7 +13,7 @@
 ## Global Constraints
 
 * Values, errors (kind, message, span), output order, demand, and lazy branches are exactly those of today, on every ISA, backend, plan, and tiling.
-* Tasks 1 to 3 leave `src/*/testdata/*.dd`, `tests/programs/*.dd`, `tests/cli.rs`, and the `acceptance_plans` output byte for byte unchanged. Any diff stops the task and is reported with the mechanism, not accepted.
+* Tasks 1 to 3 leave `src/*/testdata/*.dd`, `tests/programs/*.dd`, `tests/cli.rs`, and the `acceptance_plans` output byte for byte unchanged. Any diff stops the task and is reported with the mechanism, not accepted. Plans of other programs may change in one way only: a conditional repeated inside one emitted term is one hole, planned once, so a fused pattern may match across the repeats. A planner test pins that case.
 * Task 4 may change only kernel-call counts in statistics and trace expectations.
 * Hoisting stays per statement and never moves a node out of a lazy branch. Temporary numbering and bind order stay as today.
 * A failed evaluation is never memoized. Subgraphs with a `load_*` kernel are never shared. The memo lives for one `run_plan` call.

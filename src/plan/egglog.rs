@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::kernels::{InputSpec, KernelDef, Registry};
-use crate::lower::{TermGraph, TermId, TermKind};
+use crate::lower::{TermGraph, TermId, TermKind, step};
 use crate::ops::{Op, ReduceOp};
 use crate::value::{ScalarType, ValueType};
 
@@ -286,6 +286,7 @@ impl Emitter<'_> {
         if let Some(name) = self.names.get(&t) {
             return Ok(name.clone());
         }
+        step();
         let graph = self.graph;
         let kind = graph.kind(t);
         let expr = match kind {

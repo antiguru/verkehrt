@@ -31,7 +31,7 @@ This is a side effect of the design and not a goal the measurement tracks.
 * **One egglog fact per distinct node**, also inside the branches of lazy conditionals, and one planning run per distinct conditional.
 * **Cross-statement sharing.** A pure plan subtree that occurs more than once in a program is computed at most once per execution.
 * **Unchanged semantics.** Values, errors (kind, message, span), output order, demand, and lazy branches are exactly those of the unshared execution, on every ISA, backend, plan, and tiling.
-* **Unchanged plans.** Every statement plans to the kernels it plans to today, and `--plan` prints the same text.
+* **Unchanged plans.** Every statement plans to the kernels it plans to today, and `--plan` prints the same text, except where a conditional repeats inside one emitted term (see "Planning over the graph").
 
 ## Pipeline
 
@@ -96,7 +96,11 @@ The graph itself is shared by all statements of a program, which costs nothing a
 
 `Planner::plan` takes the term graph, a root id, the statement span, and a per-program planning context that holds the plan graph and a memo.
 `egglog::emit` writes one `let` and its `Arr` and `Plain` facts per distinct node reachable from the root, with a memo from `TermId` to the emitted name, and it collects each distinct conditional once as a hole.
-Repeated nodes already land in one e-class today, because egglog hash-conses equal constructor applications, so deduplicating the facts leaves the e-graph and the extraction as they are and only drops redundant commands.
+Repeated op, leaf, and broadcast nodes already land in one e-class today, because egglog hash-conses equal constructor applications, so deduplicating their facts only drops redundant commands.
+Conditionals differ: today each occurrence is its own hole, a distinct e-class, and now a conditional repeated inside an emitted term is one hole, planned once.
+Hoisting already merges such repeats outside branches, so this happens only inside the branch of another conditional.
+Fused patterns that read a variable twice, such as `sumsq` and `filter_<cmp>`, may then match across the repeats, so such a plan can change, for example from `dot_f64` to `sumsq_f64`, while its value stays the same.
+The planner test `repeated_conditional_in_a_branch_is_one_hole` pins two such plans, and no expectation file or acceptance plan contains the shape.
 Each hole is planned once, and the memo maps a planned `TermId` to its `PlanId` and the sum rewrites that fired while planning it.
 
 Designer's call: the planning memo spans the whole program, not one statement.
@@ -181,6 +185,7 @@ If removing the cap pushes it past about 20 s, the task stops and reports rather
 
 Term spans are not observable today (see "The term graph"), runtime errors carry statement spans, and hoisting and inlining keep their rules and order, so no span in any expectation file is expected to change.
 The tasks up to the plan graph must leave `src/*/testdata/*.dd`, `tests/programs/*.dd`, `tests/cli.rs`, and the `acceptance_plans` output byte for byte unchanged.
+The one accepted plan change, a conditional repeated inside an emitted term planning once (see "Planning over the graph"), touches none of them.
 A diff there is a finding: the task stops, and its report names each changed expectation and the mechanism that changed it, for the user to accept or reject.
 Shared evaluation may change only kernel-call counts in statistics and trace expectations, such as `stats_total_per_kernel` in `tests/programs.rs`, whose two `print(sum(x))` statements become one call. That test runs with `no_sharing` to keep testing totals, and a sibling asserts one call with sharing.
 

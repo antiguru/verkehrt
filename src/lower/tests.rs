@@ -154,54 +154,67 @@ fn equal_terms_intern_to_one_node() {
     assert_eq!(graph.len(), 3);
 }
 
-/// The number of term graph nodes that `src` lowers to in `Mode::Run`.
-fn graph_len(src: &str) -> usize {
-    lowered(src, Mode::Run).0.graph.len()
+/// Lowers `src` in `Mode::Run` within `limit` steps of the passes over the term graph, and
+/// returns the program with the steps taken. A pass that lost its memo panics on the budget.
+fn lowered_within(src: &str, limit: usize) -> (Lowered, usize) {
+    let ((l, _), taken) = budget::run(limit, || lowered(src, Mode::Run));
+    (l, taken)
 }
 
 #[test]
-fn block_let_chain_lowers_to_a_linear_graph() {
-    // Each let reads the previous one twice, so the term as a tree has 2^64 leaves.
+fn block_let_chain_lowers_in_linear_steps() {
+    // Each let reads the previous one twice, so the term as a tree has 2^64 leaves. The
+    // single-use `s` is substituted into the statement, which walks the whole chain, and
+    // hoisting binds every level, so substitution, hoisting, and their counts each take
+    // 2^64 steps without their memos.
     let depth = 64;
-    let mut src = String::from(
-        "input a0: i64[];
-print(sum({ ",
-    );
+    let mut src = String::from("input a0: i64[];\nlet s = sum(a0);\nprint(s + sum({ ");
     for i in 1..=depth {
         let p = i - 1;
         src.push_str(&format!("let a{i} = a{p} + a{p}; "));
     }
-    src.push_str(&format!(
-        "a{depth} }}));
-"
-    ));
-    // A level is its addition, and hoisting adds a temporary leaf for it.
-    let c = 4;
-    let n = graph_len(&src);
-    assert!(n <= c * depth, "{n} nodes for depth {depth}");
+    src.push_str(&format!("a{depth} }}));\n"));
+    let c = 16;
+    let (l, steps) = lowered_within(&src, c * depth);
+    // Every level but the last is hoisted, and the statement remains.
+    assert_eq!(l.stmts.len(), depth, "{steps} steps");
 }
 
 #[test]
-fn nested_calls_lower_to_a_linear_graph() {
+fn nested_calls_lower_in_linear_steps() {
     // The parameter is read four times, as in the generated-program record, so the term as
-    // a tree has 4^32 copies of the innermost argument.
+    // a tree has 4^32 copies of the innermost argument. The single-use `s` is substituted
+    // into the statement.
     let depth = 32;
     let mut src = String::from(
-        "fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }
-         input a: i64[];
-print(sum(",
+        "fn f(q: i64[]) -> i64[] { let b = filter(q, |p| (p > 3)); ((b + b) + (b + b)) }\n\
+         input a: i64[];\nlet s = sum(a);\nprint(s + sum(",
     );
     src.push_str(&"f(".repeat(depth));
     src.push('a');
     src.push_str(&")".repeat(depth));
-    src.push_str(
-        "));
-",
-    );
-    // A level is the filter with its comparison, broadcast, and constant, the three
-    // additions, and the hoisted temporaries with their rebuilt nodes.
-    let c = 16;
-    let n = graph_len(&src);
+    src.push_str("));\n");
+    let c = 32;
+    let (l, steps) = lowered_within(&src, c * depth);
+    assert!(l.graph.len() <= c * depth, "{steps} steps");
+}
+
+#[test]
+fn repeated_calls_intern_to_a_linear_graph() {
+    // `f{i}` calls `f{i-1}` twice on the same argument, so lowering builds the body of `f1`
+    // 2^depth times. Interning merges the copies into one node per level, and without it
+    // the graph has 2^depth nodes.
+    let depth = 12;
+    let mut src = String::from("fn f1(q: i64[]) -> i64[] { q + q }\n");
+    for i in 2..=depth {
+        let p = i - 1;
+        src.push_str(&format!(
+            "fn f{i}(q: i64[]) -> i64[] {{ f{p}(q) + f{p}(q) }}\n"
+        ));
+    }
+    src.push_str(&format!("input a: i64[];\nprint(sum(f{depth}(a)));\n"));
+    let c = 8;
+    let n = lowered(&src, Mode::Run).0.graph.len();
     assert!(n <= c * depth, "{n} nodes for depth {depth}");
 }
 

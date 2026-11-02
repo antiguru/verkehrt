@@ -1,7 +1,7 @@
 use super::*;
 use crate::check::{Globals, check};
 use crate::kernels::{InputSpec, Registry};
-use crate::lower::{LStmt, Mode, lower};
+use crate::lower::{LStmt, Lowered, Mode, budget, lower};
 use crate::syntax::parse;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -215,16 +215,11 @@ fn fusion_off_plans_use_single_op_kernels_only() {
     );
 }
 
-/// The lazy-branch form of #39: a block let bound to a lazy conditional, compressed through
-/// a comparison with its own reduction, then nested lazy conditionals that each read the
-/// previous value four times in a branch. As a tree the term repeats the innermost value
-/// `4^depth` times. Emitting every term the planner emits, each distinct conditional part
-/// and hole once as `plan_into` memoizes them, writes a number of `let` commands and holes
-/// linear in the depth, and each emission has at most one hole. The test stops at emission
-/// because a `PlanNode` is a tree, which repeats the innermost value as the term tree does.
-#[test]
-fn lazy_branch_nesting_emits_linearly() {
-    let depth = 16;
+/// The lazy-branch form of #39 at `depth`: a block let bound to a lazy conditional,
+/// compressed through a comparison with its own reduction, then nested lazy conditionals
+/// whose taken branch reads the previous value three times and whose other branch reads it
+/// once. As a tree the term repeats the innermost value `4^depth` times.
+fn lazy_branch_program(depth: usize) -> (Registry, Lowered) {
     let mut src = String::from(
         "input a: i64[]; input s: i64;\nprint({ let b7 = if false { a } else { a }; \
          let c0 = compress(b7, (b7 >= reduce(b7, and))); ",
@@ -242,27 +237,81 @@ fn lazy_branch_nesting_emits_linearly() {
     let mut g = Globals::new();
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
     let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
+    (reg, lowered)
+}
+
+/// Emitting every term the planner emits for the lazy-branch form, each distinct
+/// conditional part and hole once, writes a number of `let` commands and holes linear in
+/// the depth, and each emission has one hole at most. Without the emission memo the
+/// repeated holes are emitted again.
+#[test]
+fn lazy_branch_nesting_emits_linearly() {
+    let depth = 16;
+    let (reg, lowered) = lazy_branch_program(depth);
     let graph = &lowered.graph;
     let (mut lets, mut holes) = (0, 0);
     let mut seen = BTreeSet::new();
     let mut todo: Vec<_> = lowered.stmts.iter().map(LStmt::term).collect();
-    while let Some(t) = todo.pop() {
-        if !seen.insert(t) {
-            continue;
-        }
-        if let TermKind::Cond(c, a, b) = *graph.kind(t) {
-            todo.extend([c, a, b]);
-            continue;
-        }
-        let (commands, _, hs) = egglog::emit(&reg, graph, t).unwrap();
-        lets += commands.matches("(let ").count();
-        assert!(hs.len() <= 1, "{} holes in one emission", hs.len());
-        holes += hs.len();
-        todo.extend(hs);
-    }
-    // A level emits its comparison, reduction, broadcast, compress, and condition, with the
-    // leaves they read.
     let c = 16;
+    let ((), steps) = budget::run(c * depth, || {
+        while let Some(t) = todo.pop() {
+            if !seen.insert(t) {
+                continue;
+            }
+            if let TermKind::Cond(k, a, b) = *graph.kind(t) {
+                todo.extend([k, a, b]);
+                continue;
+            }
+            let (commands, _, hs) = egglog::emit(&reg, graph, t).unwrap();
+            lets += commands.matches("(let ").count();
+            assert!(hs.len() <= 1, "{} holes in one emission", hs.len());
+            holes += hs.len();
+            todo.extend(hs);
+        }
+    });
     assert!(lets <= c * depth, "{lets} lets for depth {depth}");
     assert!(holes <= depth + 1, "{holes} holes for depth {depth}");
+    assert!(steps <= lets, "{steps} emission steps for {lets} lets");
+}
+
+/// Planning the lazy-branch form plans each distinct conditional part and hole once, so
+/// the planner takes a number of steps linear in the depth. Without the planning memo it
+/// plans a hole once per occurrence, `3^depth` times. The depth is small because a
+/// `PlanNode` is a tree, which repeats the innermost value as the term tree does.
+#[test]
+fn lazy_branch_nesting_plans_in_linear_steps() {
+    let depth = 8;
+    let (reg, lowered) = lazy_branch_program(depth);
+    let planner = Planner::new(&reg, true);
+    let c = 32;
+    for s in &lowered.stmts {
+        let (plan, steps) = budget::run(c * depth, || {
+            planner.plan(&reg, &lowered.graph, s.term(), s.span())
+        });
+        plan.unwrap_or_else(|e| panic!("{e} after {steps} steps"));
+    }
+}
+
+/// A conditional repeated inside one emitted term is one hole, planned once, so a fused
+/// pattern that reads a variable twice matches across the repeats. Each conditional
+/// branch here reads the inner conditional `y` twice.
+#[test]
+fn repeated_conditional_in_a_branch_is_one_hole() {
+    let plans = plan_prints(
+        "let n = length(x);\n\
+         print(if n > 1 { let y = if n > 2 { x } else { x + 1.0 }; sum(y * y) } else { 0.0 });\n\
+         print(if n > 1 { let y = if n > 2 { x } else { x + 1.0 }; filter(y, |v| v > 1.5) } \
+         else { [0.0] });\n",
+        true,
+    );
+    let rendered: Vec<&str> = plans.iter().map(|(_, r)| r.as_str()).collect();
+    assert_eq!(
+        rendered,
+        [
+            "(if (lt_i64_s 1 n) then (sumsq_f64 (if (lt_i64_s 2 n) then x else (add_f64 x 1.0))) \
+             else 0.0)",
+            "(if (lt_i64_s 1 n) then (filter_gt_f64 (if (lt_i64_s 2 n) then x else \
+             (add_f64 x 1.0)) 1.5) else <f64[1]>)",
+        ]
+    );
 }

@@ -16,7 +16,8 @@ pub(super) struct Leaves {
     consts: HashMap<ConstKey, LeafId>,
 }
 
-/// The key of a scalar or string constant, equal exactly when `same_const` holds.
+/// The key of a scalar or string constant: the type and display text of a scalar, the string
+/// of a string.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum ConstKey {
     Scalar(ScalarType, String),

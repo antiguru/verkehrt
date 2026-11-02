@@ -4,7 +4,7 @@ use crate::check::{Globals, VarId};
 use crate::error::Span;
 
 use super::leaves::Leaves;
-use super::{LStmt, Leaf, TermGraph, TermId, TermKind};
+use super::{LStmt, Leaf, TermGraph, TermId, TermKind, step};
 
 /// The nodes reachable from `root` along the edges that `children` lists, parents before
 /// children. Interning gives every child a smaller id than its parents, so descending ids
@@ -19,6 +19,7 @@ fn reachable(
     let mut out = Vec::new();
     let mut kids = Vec::new();
     while let Some(t) = stack.pop() {
+        step();
         out.push(t);
         kids.clear();
         children(graph.kind(t), &mut kids);
@@ -80,6 +81,7 @@ impl Substitution<'_> {
         if let Some(&n) = self.memo.get(&t) {
             return n;
         }
+        step();
         let kind = match self.graph.kind(t).clone() {
             TermKind::Leaf(id) => {
                 let n = match self.leaves.get(id) {
@@ -201,6 +203,7 @@ struct Hoister<'a> {
 
 impl Hoister<'_> {
     fn go(&mut self, t: TermId) -> TermId {
+        step();
         let ty = self.graph.ty(t);
         match self.graph.kind(t).clone() {
             TermKind::Leaf(_) => t,

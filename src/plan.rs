@@ -11,7 +11,7 @@ use std::fmt;
 use crate::check::Globals;
 use crate::error::{Error, Span};
 use crate::kernels::{KernelId, Registry};
-use crate::lower::{Leaf, LeafId, TermGraph, TermId, TermKind};
+use crate::lower::{Leaf, LeafId, TermGraph, TermId, TermKind, step};
 use crate::value::{ScalarType, Value};
 
 use sexpr::Sexp;
@@ -149,6 +149,7 @@ impl Planner {
         if let Some(node) = st.planned.get(&term) {
             return Ok(node.clone());
         }
+        step();
         let graph = st.graph;
         let node = if let TermKind::Cond(c, t, e) = *graph.kind(term) {
             let mut part = |x: TermId| self.plan_into(reg, st, x).map(Box::new);

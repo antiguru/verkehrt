@@ -28,6 +28,9 @@ use higher::{Build, Higher};
 use leaves::{Leaves, array_of};
 use passes::{hoist_repeated, inline_single_use};
 
+#[cfg(test)]
+pub(crate) use graph::budget;
+pub(crate) use graph::step;
 pub use graph::{TermGraph, TermId};
 
 /// How top-level lets are treated.
