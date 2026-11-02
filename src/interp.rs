@@ -129,21 +129,27 @@ impl Interpreter {
         let c = self.compile(&mut globals, src, mode)?;
         let mut aliases = Vec::new();
         for decl in &c.inputs {
-            let value = before
+            let slot = before
                 .lookup(&decl.name)
-                .and_then(|(var, _)| self.env.get(&var).map(|v| (var, v)));
-            match value {
-                None => return Err(Error::usage(format!("input '{}' is not bound", decl.name))),
-                Some((_, v)) if v.ty() != decl.ty => {
-                    return Err(Error::usage(format!(
-                        "input '{}' is declared {} but bound as {}",
-                        decl.name,
-                        decl.ty,
-                        v.ty()
-                    )));
-                }
-                Some((_, v)) => aliases.push((decl.var, v.clone())),
+                .and_then(|(var, ty)| self.env.get(&var).map(|slot| (ty, slot)));
+            let Some((ty, slot)) = slot else {
+                return Err(Error::usage(format!("input '{}' is not bound", decl.name)));
+            };
+            // A binding that holds an error has no value to take the type from, so its
+            // declared type stands in.
+            let bound_ty = match slot {
+                Ok(v) => v.ty(),
+                Err(_) => ty,
+            };
+            if bound_ty != decl.ty {
+                return Err(Error::usage(format!(
+                    "input '{}' is declared {} but bound as {bound_ty}",
+                    decl.name, decl.ty,
+                )));
             }
+            // An input of a failed binding holds its error, which an output reading the
+            // input raises.
+            aliases.push((decl.var, slot.clone()));
         }
         // Plan lines go out before anything is committed, so a failing sink changes nothing.
         for line in &c.plan_lines {
@@ -224,12 +230,14 @@ impl Interpreter {
     /// Binds `name` to `value` at the value's type. A later `input` of the name refers to it.
     pub fn bind(&mut self, name: &str, value: Value) {
         let var = self.globals.declare(name, value.ty());
-        self.env.insert(var, value);
+        self.env.insert(var, Ok(value));
     }
 
+    /// The value bound to `name`. `None` when nothing is bound to it, or when its binding
+    /// holds the runtime error that computing it raised.
     pub fn get(&self, name: &str) -> Option<Value> {
         let (var, _) = self.globals.lookup(name)?;
-        self.env.get(&var).cloned()
+        self.env.get(&var)?.as_ref().ok().cloned()
     }
 
     /// Writes the per-kernel totals collected under `Options::stats`.
@@ -277,7 +285,9 @@ impl Prepared {
 
     /// Runs the program on `inputs` and returns its exports in source order. Every declared
     /// input must be supplied with its declared type. `print` writes to `diag`, as do trace
-    /// lines when the interpreter traces. Statistics are not collected.
+    /// lines when the interpreter traces. Statistics are not collected. An export is an output
+    /// at its statement, so a runtime error in it fails the program there, and no later
+    /// `print` runs.
     pub fn execute(
         &self,
         interp: &Interpreter,
@@ -310,7 +320,7 @@ impl Prepared {
                     v.ty()
                 )));
             }
-            env.insert(decl.var, v.clone());
+            env.insert(decl.var, Ok(v.clone()));
         }
         let mut sink = std::io::sink();
         let mut sinks = Sinks {
@@ -336,9 +346,10 @@ impl Prepared {
             .exports
             .iter()
             .map(|(name, var)| {
-                let v = env
-                    .remove(var)
-                    .ok_or_else(|| Error::runtime(format!("export '{name}' has no value"), None))?;
+                // `run_plan` raised the error of a failed export at its statement already.
+                let v = env.remove(var).ok_or_else(|| {
+                    Error::runtime(format!("export '{name}' has no value"), None)
+                })??;
                 Ok((name.clone(), v))
             })
             .collect()
