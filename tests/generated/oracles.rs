@@ -505,10 +505,7 @@ impl Engine {
             .then(|| prepare(&self.expanded, case))
             .transpose()?
             .map(|(plan, _)| plan);
-        // Only a program with the shape can contain a top-k kernel, so the others skip the
-        // rendering of the plan.
-        let topk_in_plan = case.features.contains("shape slice(argsort(..), s, e)")
-            && plan_text(false, case).contains("(topk");
+        let topk_in_plan = fused.plans_kernel(&self.fused, "topk");
         let composite_changed_plan = expanded.as_ref().is_some_and(|e| !fused.same_plans(e));
         if let (true, Some(expanded)) = (composite_changed_plan, &expanded) {
             let composite = run(&self.tiled, &fused, case);

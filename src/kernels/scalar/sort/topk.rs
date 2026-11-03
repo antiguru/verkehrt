@@ -12,11 +12,12 @@ use crate::kernels::scalar::sort::radix::RadixKey;
 use crate::kernels::scalar::sort::{ArgSort, ArgSort2};
 use crate::value::{Array, ScalarType, Value};
 
-/// The largest `e` that the selection handles, above it the kernel sorts every row.
-// The `tier2/topk-*` groups of `benches/tier1.rs` compare the selection with `argsort` and
-// `slice` on uniform and descending keys, where every row enters the buffer. The selection won
-// on descending keys at 80,000 and 1M rows for `e` up to 128, and tied at 256 for one column
-// at 80,000 rows, so 64 stays inside the measured range.
+/// The largest `e` that the selection handles, above it the kernel sorts every row. The
+/// bench `docs/measurements/2026-11-03-topk-bench.md` measures the selection against the full
+/// sort up to this value.
+// The selection beat the full sort on descending keys, where every row enters the buffer, at
+// 80,000 and 1M rows for `e` up to 128, and tied at 256 for one column at 80,000 rows, so 64
+// stays inside the measured range.
 pub(crate) const TOPK_MAX: usize = 64;
 
 /// The rows that the selection buffers beyond the kept ones, at least, before it trims.
@@ -30,9 +31,9 @@ fn select<K: Ord + Copy>(keys: impl Iterator<Item = K>, e: usize) -> Vec<(K, i64
     }
     // Rows collect unsorted in a buffer that a partial selection trims to the `e` best
     // whenever it fills. The buffer holds at least `BATCH` rows beyond the `e` kept, so that a
-    // trim is amortized over many rows when `e` is small. That costs a constant number of steps per row even when every
-    // row enters, as in a descending input, where inserting into a sorted buffer shifts up
-    // to `e` rows per row.
+    // trim is amortized over many rows when `e` is small. That costs a constant number of
+    // steps per row even when every row enters, as in a descending input, where inserting
+    // into a sorted buffer shifts up to `e` rows per row.
     let cap = e + e.max(BATCH);
     let mut buf: Vec<(K, i64)> = Vec::with_capacity(cap);
     // The key of the worst kept row once a trim has run.
