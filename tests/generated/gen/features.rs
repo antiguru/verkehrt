@@ -118,7 +118,11 @@ impl<'f> Walk<'f> {
                 items.iter().for_each(|x| self.visit(x, lambda));
             }
             K::Op(op, args, _) => {
-                self.out.insert(feature(*op));
+                self.out.insert(if *op == Op::ArgSort && args.len() == 2 {
+                    "argsort2"
+                } else {
+                    feature(*op)
+                });
                 if is_elementwise(*op)
                     && args.iter().any(|x| !is_array(x.ty))
                     && args.iter().any(|x| is_array(x.ty))

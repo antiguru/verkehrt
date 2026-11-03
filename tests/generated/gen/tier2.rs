@@ -3,7 +3,7 @@
 use verkehrt::ops::Op;
 use verkehrt::value::{ScalarType, ValueType};
 
-use super::{Ctx, E, Gen, INTS, Len, Sig, spec_elem};
+use super::{Ctx, E, Gen, INDICES_TWO_KEYS, INTS, Len, Sig, spec_elem};
 
 /// Keys for `histogram` and `reduce_into`, see `Gen::keys`.
 pub(super) struct Keys {
@@ -119,11 +119,21 @@ impl Gen<'_, '_> {
     pub(super) fn indices(&mut self, cx: &mut Ctx, of: Len, len: Option<Len>) -> Option<E> {
         let i64a = ValueType::Array(ScalarType::I64);
         let fixed = len.is_some();
-        match self.c.weighted(&[3, 2, usize::from(!fixed) * 2, 1]) {
+        match self
+            .c
+            .weighted(&[3, 2, usize::from(!fixed) * 2, 1, INDICES_TWO_KEYS])
+        {
             0 => {
                 let k = *self.c.pick(&INTS);
                 let y = self.expr(cx, ValueType::Array(k), Some(of));
                 self.op(cx, Op::ArgSort, vec![y], None)
+            }
+            4 => {
+                // A sort permutation by two key columns of the class.
+                let (ka, kb) = (*self.c.pick(&INTS), *self.c.pick(&INTS));
+                let a = self.expr(cx, ValueType::Array(ka), Some(of));
+                let b = self.expr(cx, ValueType::Array(kb), Some(of));
+                self.op(cx, Op::ArgSort, vec![a, b], None)
             }
             1 => {
                 let n = self.length_of(cx, of)?;

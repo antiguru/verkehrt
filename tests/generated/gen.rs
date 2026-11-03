@@ -82,6 +82,13 @@ const INTS: [ScalarType; 4] = [
     ScalarType::U64,
 ];
 
+/// The weight of the two-key sort permutation among the `indices` options, whose other
+/// weights sum to 3 + 2 + 2 + 1.
+const INDICES_TWO_KEYS: usize = 8;
+
+/// The percentage of generic `argsort` draws that take two key columns.
+const ARGSORT_TWO_KEYS: usize = 60;
+
 const CMPS: [Op; 6] = [Op::Lt, Op::Gt, Op::Le, Op::Ge, Op::Eq, Op::Ne];
 
 /// The nesting of bindings read more than once, see `Gen::share_depth`, beyond which a
@@ -268,7 +275,7 @@ struct Gen<'a, 'r> {
 }
 
 /// The kernel signatures the generator draws from: single-op kernels on generated types,
-/// without `load_*`, the internal `SameLen`, and two-key `argsort`.
+/// without `load_*` and the internal `SameLen`.
 pub struct Catalog {
     reg: Registry,
     sigs: Vec<Sig>,
@@ -282,11 +289,6 @@ impl Catalog {
             .filter_map(|(_, d)| {
                 let op = d.op?;
                 if d.pattern.is_some() || matches!(op, Op::Load(_) | Op::SameLen) {
-                    return None;
-                }
-                // Two-key `argsort` is not generated yet. Task 4 of the composite-key plan
-                // enables it together with the oracle that checks it.
-                if op == Op::ArgSort && d.inputs.len() == 2 {
                     return None;
                 }
                 let types_ok = d
@@ -941,6 +943,16 @@ impl<'a> Gen<'a, '_> {
         if sigs.is_empty() {
             return None;
         }
+        // `argsort` has 4 one-key and 16 two-key signatures, so the arity is picked first to
+        // keep one-key sorts common.
+        let sigs = if sigs.iter().any(|s| s.op == Op::ArgSort) {
+            let keys = if self.c.flip(ARGSORT_TWO_KEYS) { 2 } else { 1 };
+            sigs.into_iter()
+                .filter(|s| s.op != Op::ArgSort || s.inputs.len() == keys)
+                .collect()
+        } else {
+            sigs
+        };
         let sig = (*self.c.pick(&sigs)).clone();
         // Elementwise kernels with an array result take an array or a scalar at each `Either`
         // position, at least one an array.

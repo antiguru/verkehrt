@@ -1,7 +1,7 @@
 # Generated programs: Findings
 
 This document records what the random program generator of `tests/generated` found, and what it cannot tell.
-The generator builds typed programs from the kernel registry and checks each one against seven oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, tiled against untiled runs, shared against unshared runs, selective against non-selective runs, and fused against unfused reductions.
+The generator builds typed programs from the kernel registry and checks each one against eight oracles: every ISA variant against scalar, fused against unfused plans, a reference evaluator written from the specs, tiled against untiled runs, shared against unshared runs, selective against non-selective runs, fused against unfused reductions, and the two-column sort against its expansion.
 The runs found five issues: two pipeline bugs fixed in this layer (hoisted bind spans and the lambda `if`), two lowering and planning costs recorded as #39, and one semantic divergence recorded as #40, which errors as data has since resolved.
 No oracle reported a disagreement between kernels, but that result carries no correctness claim, because the coverage limits below are narrow.
 This is a findings record, not a benchmark, and the timings only size the CI run.
@@ -13,7 +13,7 @@ This is a findings record, not a benchmark, and the timings only size the CI run
 | Host | 32 cores, release builds for the searches |
 | Workers | independent proptest runners, worker `i` uses seed `SEED + i` |
 | Reproduction | `VERKEHRT_GEN_THREADS=1 VERKEHRT_GEN_SEED=<worker seed> VERKEHRT_GEN_CASES=<worker cases>` |
-| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 14.6 to 14.9 s in debug with oracle 7 and the generated reductions over chains, which is below the 16.1 to 16.5 s measured before them although they add work, a drop whose cause was not investigated, 16.1 to 16.5 s with selective evaluation, oracle 6, and the mask chains, 16.4 s with `or` guards narrowed, 16.3 to 16.4 s with shared evaluation and oracle 5, 16.1 to 16.4 s with the generated deep-sharing chains before them, and 15.2 to 15.6 s before the sharing cap was removed, measured on the 32-core host |
+| CI run | fixed seed `0x5eed0001`, 64 cases on 4 workers, 18.9 s in debug with oracle 8 and the generated two-column sorts, measured twice, 14.6 to 14.9 s with oracle 7 and the generated reductions over chains, which is below the 16.1 to 16.5 s measured before them although they add work, a drop whose cause was not investigated, 16.1 to 16.5 s with selective evaluation, oracle 6, and the mask chains, 16.4 s with `or` guards narrowed, 16.3 to 16.4 s with shared evaluation and oracle 5, 16.1 to 16.4 s with the generated deep-sharing chains before them, and 15.2 to 15.6 s before the sharing cap was removed, measured on the 32-core host |
 | Variants | scalar, plus x86-64-v3 and v4, each with auto and intrinsics (5 on this host) |
 
 Oracle 1 requires every variant to match scalar exactly, including the error kind, message, and span.
@@ -52,6 +52,15 @@ Over 72 other seeds of 64 cases in release, the total of fused runs ranged from 
 Skipping the last `update` of a fused region fails the debug CI run at oracles 2 and 4, which run first on the same fused execution. Oracle 7 isolates fusion from tiling only when oracles 2 and 4 pass, so it catches a bug that changes a fused run against an unfused run of the same tiling and nothing else.
 The 5000-case release run at seed 2928588994 had no oracle failure, with 8854 fused runs: 6679 integer sum and product, 434 float sum and product, 413 `min` and `max`, 204 `argmin` and `argmax`, 521 bool reduction, 345 bitwise fold, and 258 fused kernel.
 Oracle 5 is weak on failures: a run that kept failed evaluations, and so reported an earlier statement's span, passed 1000 cases at seed 5400000, because generated programs rarely share a failing subtree between a statement whose error is dropped and a later output. The unit test `statements_sharing_a_failing_subtree_report_their_own_spans` in `src/exec/tests.rs` catches that change.
+Oracle 8 compares the fused plan made with the two-column `argsort` kernel against the plan made with `Options::no_composite_sort`, which expands `argsort(a, b)` into two single-key sorts.
+Both plans run on the scalar interpreter with three-row tiles, and the oracle requires equal printed text and export bits and the same error kind.
+It does not compare the message or span, as in oracle 2, because the expansion evaluates the keys in another order and words a length mismatch its own way.
+Programs without a two-column sort have equal plans by `Prepared::same_plans`, so the second run is skipped for them, and the planner skips the third planning for a program without the feature `argsort2`. Planning the expansion for every program raised the debug CI run from 18.9 s to 23.1 to 24.3 s, and skipping it where the feature is absent restored 18.9 s.
+The generator gained two-column sorts in two places: the `argsort` signatures of the registry, where the arity is picked first and takes two keys in 60% of draws, and the sort permutation of `indices`, where a two-key option has weight 8 against 8 for the others together.
+At the first weights, 34% and 1 against 8, the fixed CI seed gave 5 programs in which oracle 8 compared different plans, at 50% and 4 it gave 12, and at 60% and 8 it gives 18. The other counts of the CI seed at the final weights are 221 region runs that completed tiled, 293 shared reuses, 274 narrowed guard evaluations, 137 fused reduction runs, and 20 programs with a failing unread binding, all above their gates.
+The CI run gates on programs in which oracle 8 compared different plans: at least 6 must do so, a third of the 18 the fixed CI seed gives.
+The 5000-case release run at seed 7800000 had no oracle failure.
+Oracle 8 is weak at the CI seed: swapping the key order of the expansion passed the 64-case CI run, because generated programs mostly consume a sort permutation through order-insensitive reductions. The unit test `oracle_8_compares_programs_with_a_two_column_sort` and a 1500-case release run at seed 7700000 caught the same swap, in 8 of 32 workers.
 Whether fusion changed a plan is decided by `Prepared::same_plans`, which numbers the plan graphs by the tree that the plan text prints, in linear time. Rendering the plan text expands shared nodes, so the oracles render it only for failure messages. On 664 programs, the CI seed and 600 cases at seed 5400000, `same_plans` agreed with comparing the rendered text in every case.
 
 ## Runs

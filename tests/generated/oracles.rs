@@ -46,6 +46,14 @@
 //!   evaluation, so the error is that of the unfused run. Fused tiles round up to 16 rows,
 //!   so the tile counts of the two runs legitimately differ and only the outcome is
 //!   compared. Oracles 1 to 6 run with fusion on.
+//! * Oracle 8, composite against expanded sort: on the scalar interpreter with three-row
+//!   tiles, the fused plan run with the two-column `argsort` kernel gives the output and
+//!   exports of the plan made with `Options::no_composite_sort`, which expands `argsort(a, b)`
+//!   into two single-key sorts, and fails at the same output with the same error kind. Which
+//!   error surfaces may differ, as in oracle 2, because the expansion evaluates the keys in
+//!   another order and words a length mismatch its own way, so only the kind is compared.
+//!   The second run is skipped when the two plans are equal, which holds for every program
+//!   without a two-key sort. Oracles 1 to 7 run with the composite kernel.
 //!
 //! Whether fusion changed a plan compares the plans by `Prepared::same_plans`, in time linear
 //! in the plan graphs, and the plan text, exponential in the nesting of shared nodes, is
@@ -235,6 +243,8 @@ pub struct Engine {
     /// The scalar interpreter of oracle 7, with tiles of three rows and without reduction
     /// fusion.
     unreduced: Interpreter,
+    /// The scalar planner of oracle 8, which expands the two-column `argsort`.
+    expanded: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
@@ -269,6 +279,9 @@ pub struct Verdict {
     /// The fused region runs of the fused plan that completed tiled in oracle 7, per shape
     /// class of the root, see `shape_class`.
     pub fused_runs: BTreeMap<&'static str, u64>,
+    /// Whether the plan with the composite sort differs from the plan without it, the
+    /// programs in which oracle 8 compared two runs.
+    pub composite_changed_plan: bool,
 }
 
 /// The shape classes of fused reductions, the classes that `FUSED_CLASSES` gates.
@@ -345,8 +358,15 @@ impl Engine {
             ..Options::default()
         })
         .expect("scalar is always available");
+        let expanded = Interpreter::new(Options {
+            isa: Some(Isa::Scalar),
+            no_composite_sort: true,
+            ..Options::default()
+        })
+        .expect("scalar is always available");
         Engine {
             unreduced,
+            expanded,
             tiled: scalar(Tiling::Rows(tile_rows()), false, false),
             untiled: scalar(Tiling::Off, false, false),
             unshared: scalar(Tiling::Rows(tile_rows()), true, false),
@@ -369,7 +389,7 @@ impl Engine {
     }
 
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
-    /// with the reference evaluator, and applies the seven oracles. A program that does not
+    /// with the reference evaluator, and applies the eight oracles. A program that does not
     /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
         let (fused, fused_rewrites) = prepare(&self.fused, case)?;
@@ -470,6 +490,31 @@ impl Engine {
         }
         let narrowed_tiles = self.tiled.narrowed_tiles() - narrowed_before;
         let shared_hits = self.tiled.shared_hits() - hits_before;
+        // Oracle 8. The planner is the only difference, so both plans run on the same
+        // interpreter, and the second run is skipped when the plans are equal.
+        // Planning is a large share of a case's cost, so a program that cannot contain the
+        // two-column sort, by its features, is not planned a third time.
+        let expanded = case
+            .features
+            .contains("argsort2")
+            .then(|| prepare(&self.expanded, case))
+            .transpose()?
+            .map(|(plan, _)| plan);
+        let composite_changed_plan = expanded.as_ref().is_some_and(|e| !fused.same_plans(e));
+        if let (true, Some(expanded)) = (composite_changed_plan, &expanded) {
+            let composite = run(&self.tiled, &fused, case);
+            let expanded_out = run(&self.tiled, expanded, case);
+            if composite.fusion_view() != expanded_out.fusion_view() {
+                return Err(format!(
+                    "oracle 8: the plan without the composite sort differs from the plan \
+                     with it\n{}\ncomposite plan:\n{}composite: {composite}\n\
+                     expanded: {expanded_out}\nexpanded plan:\n{}",
+                    describe(case),
+                    plan_text(false, case),
+                    plan_text_with(false, true, case),
+                ));
+            }
+        }
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.
         let unsupported = |reason: String| {
@@ -505,6 +550,7 @@ impl Engine {
             shared_hits,
             narrowed_tiles,
             fused_runs,
+            composite_changed_plan,
         })
     }
 }
@@ -594,10 +640,16 @@ fn prepare(
 /// Rendering expands shared nodes, so it is exponential in their nesting, and only failure
 /// messages call it.
 fn plan_text(no_fusion: bool, case: &Case) -> String {
+    plan_text_with(no_fusion, false, case)
+}
+
+/// `plan_text` with the two-column `argsort` expanded when `no_composite_sort`.
+fn plan_text_with(no_fusion: bool, no_composite_sort: bool, case: &Case) -> String {
     let interp = Interpreter::new(Options {
         isa: Some(Isa::Scalar),
         show_plan: true,
         no_fusion,
+        no_composite_sort,
         ..Options::default()
     })
     .expect("scalar is always available");
@@ -803,4 +855,35 @@ fn unread_failing_bindings_fail_alone() {
     assert_eq!(fails("_b"), Some(true));
     assert_eq!(fails("x"), Some(false));
     assert_eq!(fails("_c"), None);
+}
+
+/// A program with a two-column sort has a different plan with the expansion, so oracle 8
+/// compares two runs, and a program without one compares none.
+#[test]
+fn oracle_8_compares_programs_with_a_two_column_sort() {
+    let case = |source: &str, features: &[&'static str]| Case {
+        source: source.to_string(),
+        inputs: Vec::new(),
+        repro: String::new(),
+        features: features.iter().copied().collect(),
+        failing_unread: Vec::new(),
+    };
+    let engine = Engine::new();
+    let two = case(
+        "print(argsort([2, 1, 2, 1], [4, 3, 2, 1]));\n",
+        &["argsort2"],
+    );
+    assert!(
+        engine
+            .check(&two)
+            .expect("the oracles agree")
+            .composite_changed_plan
+    );
+    let one = case("print(argsort([2, 1, 2, 1]));\n", &["argsort"]);
+    assert!(
+        !engine
+            .check(&one)
+            .expect("the oracles agree")
+            .composite_changed_plan
+    );
 }
