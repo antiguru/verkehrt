@@ -57,7 +57,7 @@ const MIN_FUSED_REDUCTIONS: u64 = 45;
 const FUSED_CLASSES: [&str; 2] = ["int sum and product", "float sum and product"];
 /// The fewest programs of a run of `CI_CASES` or more in which oracle 8 compared the composite
 /// and the expanded two-column sort, a third of what `CI_SEED` gives.
-const MIN_COMPOSITE_PLANS: usize = 6;
+const MIN_COMPOSITE_PLANS: usize = 8;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.

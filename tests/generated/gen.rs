@@ -86,6 +86,10 @@ const INTS: [ScalarType; 4] = [
 /// weights sum to 3 + 2 + 2 + 1.
 const INDICES_TWO_KEYS: usize = 8;
 
+/// The percentage of statements that `Gen::sorted_column` replaces by a column in the order of
+/// a two-key sort, printed or exported.
+const SORTED_COLUMN_PERCENT: usize = 8;
+
 /// The percentage of generic `argsort` draws that take two key columns.
 const ARGSORT_TWO_KEYS: usize = 60;
 
@@ -459,6 +463,17 @@ impl<'a> Gen<'a, '_> {
                 e = chain;
                 reduce_chain = true;
             }
+            // A sort permutation that a reduction consumes hides the order of ties, so some
+            // statements print or export a column in the order of a two-key sort. A let could
+            // stay unread, so such a statement is never one.
+            let kind = if self.c.flip(SORTED_COLUMN_PERCENT)
+                && let Some(sorted) = self.sorted_column(&mut cx)
+            {
+                e = sorted;
+                if kind == "let" { "export" } else { kind }
+            } else {
+                kind
+            };
             // Bindings read more than once that nest deeply grow the term as a tree
             // exponentially. Lowering and planning share them in graphs (#39), and the
             // histogram counts the programs that exercise this.

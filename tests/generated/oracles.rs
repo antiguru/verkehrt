@@ -243,7 +243,9 @@ pub struct Engine {
     /// The scalar interpreter of oracle 7, with tiles of three rows and without reduction
     /// fusion.
     unreduced: Interpreter,
-    /// The scalar planner of oracle 8, which expands the two-column `argsort`.
+    /// The scalar planner of oracle 8, which expands the two-column `argsort`. Only its
+    /// planning is used, so tiling is irrelevant. Its options equal those of
+    /// `planner(false)` apart from `no_composite_sort`.
     expanded: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
@@ -885,5 +887,53 @@ fn oracle_8_compares_programs_with_a_two_column_sort() {
             .check(&one)
             .expect("the oracles agree")
             .composite_changed_plan
+    );
+}
+
+/// Oracle 8 plans the expansion only for programs with the feature `argsort2`, so a program
+/// whose plan changes with the expansion must have it, whichever path generated the sort:
+/// a registry signature in `generic`, the permutation in `indices`, or `sorted_column`.
+/// Programs generated from pseudo-random choices must also reach the feature.
+#[test]
+fn the_feature_argsort2_covers_every_plan_the_expansion_changes() {
+    let catalog = crate::r#gen::Catalog::new();
+    let params = crate::r#gen::Params {
+        max_depth: 3,
+        max_stmts: 3,
+        max_fns: 3,
+        max_len: 300,
+    };
+    let engine = Engine::new();
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        u32::try_from(state >> 32).expect("32 bits")
+    };
+    let mut choices = |n: usize| (0..n).map(|_| next()).collect::<Vec<u32>>();
+    let (mut with_feature, mut changed) = (0, 0);
+    for _ in 0..12 {
+        let plan = crate::r#gen::Plan {
+            inputs: choices(32),
+            fns: (0..2).map(|_| choices(128)).collect(),
+            stmts: (0..3).map(|_| choices(128)).collect(),
+        };
+        let case = crate::r#gen::generate(&catalog, &plan, params);
+        let (composite, _) = prepare(&engine.fused, &case).expect("compiles");
+        let (expanded, _) = prepare(&engine.expanded, &case).expect("compiles");
+        let differs = !composite.same_plans(&expanded);
+        let tagged = case.features.contains("argsort2");
+        assert!(
+            tagged || !differs,
+            "the plan changes with the expansion but the program lacks the feature\n{}",
+            describe(&case)
+        );
+        with_feature += usize::from(tagged);
+        changed += usize::from(differs);
+    }
+    assert!(
+        with_feature > 0 && changed > 0,
+        "{with_feature} tagged, {changed} changed"
     );
 }

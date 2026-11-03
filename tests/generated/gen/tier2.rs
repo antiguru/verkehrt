@@ -162,6 +162,27 @@ impl Gen<'_, '_> {
         self.finish(cx, binding, r)
     }
 
+    /// `gather(x, argsort(a, b))` with keys of the class of `x`: a column in the order of a
+    /// two-key sort, which a statement prints or exports so that the order of ties is
+    /// observable, unlike a permutation that a reduction consumes. Outside lambdas only.
+    pub(super) fn sorted_column(&mut self, cx: &mut Ctx) -> Option<E> {
+        if cx.lambda {
+            return None;
+        }
+        let t = self.ty();
+        let x = self.expr(cx, ValueType::Array(t), None);
+        let (x, binding) = self.anchor(cx, x);
+        let of = x.len.expect("an array has a length");
+        let (ka, kb) = (*self.c.pick(&INTS), *self.c.pick(&INTS));
+        let a = self.expr(cx, ValueType::Array(ka), Some(of));
+        let b = self.expr(cx, ValueType::Array(kb), Some(of));
+        let r = self.op(cx, Op::ArgSort, vec![a, b], None).and_then(|idx| {
+            let l = idx.len;
+            self.op(cx, Op::Gather, vec![x, idx], l)
+        });
+        self.finish(cx, binding, r)
+    }
+
     pub(super) fn slice(&mut self, cx: &mut Ctx, t: ScalarType) -> Option<E> {
         let x = self.expr(cx, ValueType::Array(t), None);
         let (x, binding) = self.bind(cx, x);
