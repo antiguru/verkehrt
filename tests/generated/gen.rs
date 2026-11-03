@@ -101,6 +101,13 @@ const MASK_CHAIN_PERCENT: usize = 6;
 /// The feature of a program with a statement that `Gen::mask_chain` built.
 pub const MASK_CHAIN_FEATURE: &str = "selective mask chain";
 
+/// The percentage of statements that `Gen::reduce_chain` replaces by a reduction of an
+/// elementwise chain.
+const REDUCE_CHAIN_PERCENT: usize = 6;
+
+/// The feature of a program with a statement that `Gen::reduce_chain` built.
+pub const REDUCE_CHAIN_FEATURE: &str = "reduction over a chain";
+
 /// The length of an array, as far as generation knows it. Arrays of one class have equal
 /// lengths at run time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -390,6 +397,7 @@ impl<'a> Gen<'a, '_> {
         let mut failing_lets = Vec::new();
         let mut deep_share = false;
         let mut mask_chain = false;
+        let mut reduce_chain = false;
         let n_stmts = plan.stmts.len().clamp(1, self.p.max_stmts);
         for i in 0..n_stmts {
             self.c = Choices::new(plan.stmts.get(i).map_or(&[], Vec::as_slice));
@@ -434,6 +442,15 @@ impl<'a> Gen<'a, '_> {
             {
                 e = chain;
                 mask_chain = true;
+            }
+            // Random programs rarely reduce a chain of elementwise kernels over arrays and
+            // literals, the shape that tiled regions fuse into the reduction, so some
+            // statements get one on purpose.
+            if self.c.flip(REDUCE_CHAIN_PERCENT)
+                && let Some(chain) = self.reduce_chain(&cx)
+            {
+                e = chain;
+                reduce_chain = true;
             }
             // Bindings read more than once that nest deeply grow the term as a tree
             // exponentially. Lowering and planning share them in graphs (#39), and the
@@ -485,6 +502,9 @@ impl<'a> Gen<'a, '_> {
         }
         if mask_chain {
             features.insert(MASK_CHAIN_FEATURE);
+        }
+        if reduce_chain {
+            features.insert(REDUCE_CHAIN_FEATURE);
         }
         let mut body = String::new();
         for (kind, name, e) in &stmts {
@@ -1141,6 +1161,72 @@ impl<'a> Gen<'a, '_> {
                 self.op(cx, Op::Reduce(ReduceOp::Add), vec![ones], None)?
             }
         })
+    }
+
+    /// A reduction of a chain of one to three elementwise kernels over an array of a numeric
+    /// type, with scalars that are variables and literals and with other arrays of the same
+    /// length. The reduction is a sum or product, `min` or `max`, `argmin` or `argmax`, a
+    /// bitwise fold of an integer chain, or the `count`, `any`, or `all` of a comparison of
+    /// the chain. The scalars are never computed, because a scalar that needs a computation
+    /// after the first kernel keeps the region from running tiled. `None` when no array of a
+    /// numeric type is in scope. Outside lambdas only.
+    fn reduce_chain(&mut self, cx: &Ctx) -> Option<E> {
+        let xs: Vec<Var> = cx
+            .vars
+            .iter()
+            .filter(|v| is_array(v.ty) && elem(v.ty) != ScalarType::Bool)
+            .cloned()
+            .collect();
+        if xs.is_empty() || cx.lambda {
+            return None;
+        }
+        let v = self.c.pick(&xs).clone();
+        let mut acc = self.var(cx, &v);
+        let t = elem(acc.ty);
+        let ys: Vec<Var> = xs
+            .iter()
+            .filter(|y| acc.len.is_some() && y.len == acc.len && y.ty == acc.ty)
+            .cloned()
+            .collect();
+        for _ in 0..1 + self.c.below(3) {
+            acc = match self.c.below(6) {
+                0 => self.op(cx, Op::Neg, vec![acc], None)?,
+                1 => self.op(cx, Op::Abs, vec![acc], None)?,
+                step => {
+                    let op = [Op::Add, Op::Sub, Op::Mul, Op::Min, Op::Max][step - 1];
+                    let other = if !ys.is_empty() && self.c.flip(35) {
+                        let y = self.c.pick(&ys).clone();
+                        self.var(cx, &y)
+                    } else {
+                        self.leaf(cx, ValueType::Scalar(t), None)
+                    };
+                    self.op(cx, op, vec![acc, other], None)?
+                }
+            };
+        }
+        let float = matches!(t, ScalarType::F64 | ScalarType::F32);
+        let reduction = self
+            .c
+            .weighted(&[6, 2, 2, 2, 1, 1, if float { 0 } else { 2 }, 3]);
+        match reduction {
+            0 => self.op(cx, Op::Reduce(ReduceOp::Add), vec![acc], None),
+            1 => self.op(cx, Op::Reduce(ReduceOp::Mul), vec![acc], None),
+            2 => self.op(cx, Op::Reduce(ReduceOp::Min), vec![acc], None),
+            3 => self.op(cx, Op::Reduce(ReduceOp::Max), vec![acc], None),
+            4 => self.op(cx, Op::ArgMin, vec![acc], None),
+            5 => self.op(cx, Op::ArgMax, vec![acc], None),
+            6 => {
+                let fold = *self.c.pick(&[ReduceOp::And, ReduceOp::Or, ReduceOp::Xor]);
+                self.op(cx, Op::Reduce(fold), vec![acc], None)
+            }
+            _ => {
+                let c = self.leaf(cx, ValueType::Scalar(t), None);
+                let cmp = *self.c.pick(&CMPS);
+                let mask = self.op(cx, cmp, vec![acc, c], None)?;
+                let fold = *self.c.pick(&[Op::Count, Op::Count, Op::Any, Op::All]);
+                self.op(cx, fold, vec![mask], None)
+            }
+        }
     }
 
     /// A conditional on a scalar `bool`. Inside a lambda it lifts to a select.
