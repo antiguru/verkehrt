@@ -54,7 +54,7 @@ const MIN_FUSED_REDUCTIONS: u64 = 45;
 /// The shape classes of the roots of fused runs that a run of `CI_CASES` or more must each
 /// have a run of. The other classes, see `oracles::SHAPE_CLASSES`, are printed only, because
 /// some of 72 other seeds of `CI_CASES` programs have no run of them.
-const FUSED_CLASSES: [&str; 2] = ["int sum and product", "min and max"];
+const FUSED_CLASSES: [&str; 2] = ["int sum and product", "float sum and product"];
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.

@@ -1180,7 +1180,18 @@ impl<'a> Gen<'a, '_> {
         if xs.is_empty() || cx.lambda {
             return None;
         }
-        let v = self.c.pick(&xs).clone();
+        // Float sums and products fuse only through the canonical accumulation, so the choice
+        // leans toward float arrays to keep that shape in every run.
+        let floats: Vec<Var> = xs
+            .iter()
+            .filter(|v| matches!(elem(v.ty), ScalarType::F64 | ScalarType::F32))
+            .cloned()
+            .collect();
+        let v = if !floats.is_empty() && self.c.flip(80) {
+            self.c.pick(&floats).clone()
+        } else {
+            self.c.pick(&xs).clone()
+        };
         let mut acc = self.var(cx, &v);
         let t = elem(acc.ty);
         let ys: Vec<Var> = xs
@@ -1205,9 +1216,13 @@ impl<'a> Gen<'a, '_> {
             };
         }
         let float = matches!(t, ScalarType::F64 | ScalarType::F32);
-        let reduction = self
-            .c
-            .weighted(&[6, 2, 2, 2, 1, 1, if float { 0 } else { 2 }, 3]);
+        // A float chain mostly takes a sum or product, the classes that need the canonical
+        // accumulation.
+        let reduction = if float {
+            self.c.weighted(&[10, 5, 1, 1, 1, 1, 0, 2])
+        } else {
+            self.c.weighted(&[6, 2, 2, 2, 1, 1, 2, 3])
+        };
         match reduction {
             0 => self.op(cx, Op::Reduce(ReduceOp::Add), vec![acc], None),
             1 => self.op(cx, Op::Reduce(ReduceOp::Mul), vec![acc], None),
