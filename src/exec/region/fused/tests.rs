@@ -97,7 +97,9 @@ fn run(
 /// it, fused runs give the kernel calls of unfused runs, and when the fused tiles have the
 /// rows of the unfused ones, also their trace and stats lines and narrowed tile count. Fused
 /// runs count `fused` per root and `regions_on` tiled regions, unfused tiled runs
-/// `regions_off`, and untiled runs none. Returns the untiled outcome.
+/// `regions_off`, and untiled runs none. A root whose entry on a variant is `Split::Bound`
+/// does not fuse there, so on that variant fused runs count nothing for it and the tiled
+/// regions of unfused runs. Returns the untiled outcome.
 fn check(
     src: &str,
     names: &[&str],
@@ -105,11 +107,32 @@ fn check(
     regions_off: u64,
     regions_on: u64,
 ) -> Outcome {
-    let want_fused: BTreeMap<String, u64> =
-        fused.iter().map(|(n, c)| (n.to_string(), *c)).collect();
+    let reg = Registry::new();
     let scalar = (Isa::Scalar, Backend::Auto);
     let want = run(src, names, scalar, Tiling::Off, false, true).outcome;
     for variant in variants() {
+        // NEON's float `reduce_min` and `reduce_max` are `Split::Bound`, so which roots fuse
+        // depends on the variant.
+        let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
+        let free = |name: &str| {
+            let id = reg
+                .by_name(name)
+                .unwrap_or_else(|| panic!("no kernel {name}"));
+            dispatch.reducer_split(id) == Some(Split::Free)
+        };
+        let want_fused: BTreeMap<String, u64> = fused
+            .iter()
+            .filter(|(n, _)| free(n))
+            .map(|(n, c)| (n.to_string(), *c))
+            .collect();
+        let all_free = fused.iter().all(|(n, _)| free(n));
+        // The fused region count of a program with a bound root follows from `regions_off`
+        // only when no other root fuses.
+        assert!(
+            all_free || want_fused.is_empty(),
+            "{variant:?} mixes bound and free roots in\n{src}"
+        );
+        let regions_on = if all_free { regions_on } else { regions_off };
         let untiled = run(src, names, variant, Tiling::Off, false, true);
         assert_eq!(
             untiled.outcome, want,
