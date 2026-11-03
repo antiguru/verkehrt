@@ -48,6 +48,13 @@ const MIN_SHARED_HITS: u64 = 111;
 /// The fewest guard evaluations of a run of `CI_CASES` or more that must narrow their right
 /// operand in oracle 6, a third of what `CI_SEED` gives.
 const MIN_NARROWED_TILES: u64 = 78;
+/// The fewest fused region runs of a run of `CI_CASES` or more that must complete tiled in
+/// oracle 7, a third of what `CI_SEED` gives.
+const MIN_FUSED_REDUCTIONS: u64 = 45;
+/// The shape classes of the roots of fused runs that a run of `CI_CASES` or more must each
+/// have a run of. The other classes, see `oracles::SHAPE_CLASSES`, are printed only, because
+/// some of 72 other seeds of `CI_CASES` programs have no run of them.
+const FUSED_CLASSES: [&str; 2] = ["int sum and product", "min and max"];
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -83,6 +90,8 @@ struct Stats {
     shared_hits: u64,
     /// Guard evaluations that narrowed their right operand in oracle 6.
     narrowed_tiles: u64,
+    /// Fused region runs that completed tiled in oracle 7, per shape class of the root.
+    fused_runs: BTreeMap<&'static str, u64>,
     /// Per integer sum rewrite, the statements in which it fired.
     rewrites_fired: BTreeMap<verkehrt::plan::SumRewrite, usize>,
     source_bytes: usize,
@@ -103,6 +112,9 @@ impl Stats {
         self.tiled_regions += other.tiled_regions;
         self.shared_hits += other.shared_hits;
         self.narrowed_tiles += other.narrowed_tiles;
+        for (c, n) in other.fused_runs {
+            *self.fused_runs.entry(c).or_default() += n;
+        }
         for (r, n) in other.rewrites_fired {
             *self.rewrites_fired.entry(r).or_default() += n;
         }
@@ -188,6 +200,9 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
         stats.tiled_regions += verdict.tiled_regions;
         stats.shared_hits += verdict.shared_hits;
         stats.narrowed_tiles += verdict.narrowed_tiles;
+        for (c, n) in verdict.fused_runs {
+            *stats.fused_runs.entry(c).or_default() += n;
+        }
         for (r, n) in verdict.rewrites_fired {
             *stats.rewrites_fired.entry(r).or_default() += n;
         }
@@ -271,7 +286,7 @@ fn generated_programs() {
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
          plan of {}, {} have a failing unread binding, {} region runs completed tiled, {} \
-         shared evaluations reused a value, {} guard evaluations narrowed their right operand",
+         shared evaluations reused a value, {} guard evaluations narrowed their right operand, {} fused reduction runs",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
@@ -281,6 +296,7 @@ fn generated_programs() {
         stats.tiled_regions,
         stats.shared_hits,
         stats.narrowed_tiles,
+        stats.fused_runs.values().sum::<u64>(),
     );
     eprintln!(
         "slowest case, {:.0?} for planning twice and running:\n{}",
@@ -288,6 +304,10 @@ fn generated_programs() {
     );
     for (outcome, n) in &stats.outcomes {
         eprintln!("  outcome {n:>7} {outcome}");
+    }
+    for c in oracles::SHAPE_CLASSES {
+        let n = stats.fused_runs.get(c).copied().unwrap_or(0);
+        eprintln!("  fused   {c:<32} {n:>7}");
     }
     for (feature, n) in &stats.features {
         eprintln!("  feature {feature:<32} {n:>7}");
@@ -336,6 +356,25 @@ fn generated_programs() {
             || stats.narrowed_tiles >= MIN_NARROWED_TILES,
         "only {} guard evaluations of {} programs narrowed their right operand, want {MIN_NARROWED_TILES}",
         stats.narrowed_tiles,
+        stats.cases
+    );
+    // Oracle 7 compares nothing if no reduction fuses, and nothing of a class without a fused
+    // run.
+    let fused: u64 = stats.fused_runs.values().sum();
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || fused >= MIN_FUSED_REDUCTIONS,
+        "only {fused} fused reduction runs of {} programs completed tiled, want \
+         {MIN_FUSED_REDUCTIONS}",
+        stats.cases
+    );
+    let unfused_classes: Vec<&str> = FUSED_CLASSES
+        .into_iter()
+        .filter(|c| !stats.fused_runs.contains_key(c))
+        .collect();
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES || unfused_classes.is_empty(),
+        "the shape classes {unfused_classes:?} have no fused run in {} programs",
         stats.cases
     );
     // The run must contain programs whose shared bindings nest deeper than 3, so the graphs

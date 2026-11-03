@@ -39,6 +39,13 @@
 //!   and span. Narrowing skips only kernels that cannot fail, and a failing tile falls back
 //!   to whole evaluation, so the error is that of the run without narrowing. Oracles 1 to 5
 //!   run with selective evaluation on.
+//! * Oracle 7, fused against unfused reductions: on the scalar interpreter with three-row
+//!   tiles, each plan run with reductions fused into tiled regions gives the output and
+//!   exports of the run with `Options::no_reduction_fusion`, and fails with the same error,
+//!   compared by kind, message, and span. A fused attempt that fails falls back to whole
+//!   evaluation, so the error is that of the unfused run. Fused tiles round up to 16 rows,
+//!   so the tile counts of the two runs legitimately differ and only the outcome is
+//!   compared. Oracles 1 to 6 run with fusion on.
 //!
 //! Whether fusion changed a plan compares the plans by `Prepared::same_plans`, in time linear
 //! in the plan graphs, and the plan text, exponential in the nesting of shared nodes, is
@@ -225,6 +232,9 @@ pub struct Engine {
     /// The scalar interpreter of oracle 6, with tiles of three rows and without selective
     /// evaluation.
     unselective: Interpreter,
+    /// The scalar interpreter of oracle 7, with tiles of three rows and without reduction
+    /// fusion.
+    unreduced: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
@@ -256,6 +266,39 @@ pub struct Verdict {
     /// The guard evaluations that narrowed their right operand, in the selective runs of both
     /// plans in oracle 6.
     pub narrowed_tiles: u64,
+    /// The fused region runs of the fused plan that completed tiled in oracle 7, per shape
+    /// class of the root, see `shape_class`.
+    pub fused_runs: BTreeMap<&'static str, u64>,
+}
+
+/// The shape classes of fused reductions, the classes that `FUSED_CLASSES` gates.
+pub const SHAPE_CLASSES: [&str; 7] = [
+    "int sum and product",
+    "float sum and product",
+    "min and max",
+    "argmin and argmax",
+    "bool reduction",
+    "bitwise fold",
+    "fused kernel",
+];
+
+/// The shape class of a reduction root, by its kernel name.
+fn shape_class(name: &str) -> &'static str {
+    let float = name.ends_with("_f64") || name.ends_with("_f32");
+    if name.starts_with("reduce_add_") || name.starts_with("reduce_mul_") {
+        SHAPE_CLASSES[usize::from(float)]
+    } else if name.starts_with("reduce_min_") || name.starts_with("reduce_max_") {
+        SHAPE_CLASSES[2]
+    } else if name.starts_with("argmin_") || name.starts_with("argmax_") {
+        SHAPE_CLASSES[3]
+    } else if matches!(name, "count" | "any" | "all") || name.ends_with("_bool") {
+        SHAPE_CLASSES[4]
+    } else if name.starts_with("reduce_") {
+        SHAPE_CLASSES[5]
+    } else {
+        // `count_<cmp>`, `condsum_<cmp>`, `dot`, and `sumsq`.
+        SHAPE_CLASSES[6]
+    }
 }
 
 impl Engine {
@@ -293,7 +336,15 @@ impl Engine {
             .expect("scalar is always available")
         };
         let reg = Registry::new();
+        let unreduced = Interpreter::new(Options {
+            isa: Some(Isa::Scalar),
+            tiling: Tiling::Rows(tile_rows()),
+            no_reduction_fusion: true,
+            ..Options::default()
+        })
+        .expect("scalar is always available");
         Engine {
+            unreduced,
             tiled: scalar(Tiling::Rows(tile_rows()), false, false),
             untiled: scalar(Tiling::Off, false, false),
             unshared: scalar(Tiling::Rows(tile_rows()), true, false),
@@ -316,7 +367,7 @@ impl Engine {
     }
 
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
-    /// with the reference evaluator, and applies the six oracles. A program that does not
+    /// with the reference evaluator, and applies the seven oracles. A program that does not
     /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
         let (fused, fused_rewrites) = prepare(&self.fused, case)?;
@@ -361,11 +412,19 @@ impl Engine {
         let before = self.tiled.tiled_regions();
         let hits_before = self.tiled.shared_hits();
         let narrowed_before = self.tiled.narrowed_tiles();
+        let fused_before = self.tiled.fused_reductions();
         let mut tiled_regions = 0;
+        let mut fused_runs = BTreeMap::new();
         for (plan, label, no_fusion) in [(&fused, "fused", false), (&unfused, "unfused", true)] {
             let tiled = run(&self.tiled, plan, case);
             if label == "fused" {
                 tiled_regions = self.tiled.tiled_regions() - before;
+                for (name, n) in self.tiled.fused_reductions() {
+                    let n = n - fused_before.get(&name).copied().unwrap_or(0);
+                    if n > 0 {
+                        *fused_runs.entry(shape_class(&name)).or_default() += n;
+                    }
+                }
             }
             let untiled = run(&self.untiled, plan, case);
             if tiled != untiled {
@@ -392,6 +451,16 @@ impl Engine {
                     "oracle 6: the selective run differs from the non-selective run of the \
                      {label} plan\n{}\n{label} plan:\n{}selective: {tiled}\n\
                      non-selective: {unselective}",
+                    describe(case),
+                    plan_text(no_fusion, case),
+                ));
+            }
+            let unreduced = run(&self.unreduced, plan, case);
+            if tiled != unreduced {
+                return Err(format!(
+                    "oracle 7: the run with fused reductions differs from the run without \
+                     of the {label} plan\n{}\n{label} plan:\n{}fused: {tiled}\n\
+                     unfused: {unreduced}",
                     describe(case),
                     plan_text(no_fusion, case),
                 ));
@@ -433,6 +502,7 @@ impl Engine {
             tiled_regions,
             shared_hits,
             narrowed_tiles,
+            fused_runs,
         })
     }
 }
