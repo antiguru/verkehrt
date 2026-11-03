@@ -43,6 +43,10 @@ impl<A: RadixKey, B: RadixKey> WholeBody for ArgSort2<A, B> {
         };
         let xs = array_arg(xs, A::TYPE)?.as_slice::<A>();
         let ys = array_arg(ys, B::TYPE)?.as_slice::<B>();
+        // Checked before the output is allocated, with the message of `argsort2_into`.
+        if xs.len() != ys.len() {
+            return Err(format!("length mismatch: {} vs {}", xs.len(), ys.len()));
+        }
         Array::build_bytes(xs.len(), ScalarType::I64, |out| {
             composite::argsort2_into(xs, ys, bytemuck::cast_slice_mut(out))
         })
