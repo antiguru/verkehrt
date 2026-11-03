@@ -45,7 +45,8 @@ fn plan_nodes(src: &str, fusion: bool) -> (Registry, PlanGraph, Vec<(PlanId, Str
     let reg = Registry::new();
     let mut g = Globals::new();
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
-    let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let lowered =
+        lower(&typed, &mut g, &reg, Mode::Run, true).unwrap_or_else(|e| panic!("{src}: {e}"));
     let planner = Planner::new(&reg, fusion);
     let mut cx = PlanContext::default();
     let plans = lowered
@@ -237,7 +238,8 @@ fn lazy_branch_program(depth: usize) -> (Registry, Lowered) {
     let reg = Registry::new();
     let mut g = Globals::new();
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
-    let lowered = lower(&typed, &mut g, &reg, Mode::Run).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let lowered =
+        lower(&typed, &mut g, &reg, Mode::Run, true).unwrap_or_else(|e| panic!("{src}: {e}"));
     (reg, lowered)
 }
 

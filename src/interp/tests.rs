@@ -197,3 +197,26 @@ fn same_plans_agrees_with_the_plan_lines() {
     let (other, _) = prepared(&fused, "input a: i64[];\n\nprint(a + 1);\n");
     assert!(!one.same_plans(&other));
 }
+
+/// With `no_composite_sort`, `argsort(a, b)` plans as two single-key sorts, two gathers and
+/// one length check. The sort of `b` is one node of the plan graph, so it has no copy for
+/// the second gather: two `argsort_i64` nodes are the sorts of `b` and of the gathered `a`.
+#[test]
+fn expanded_composite_sort_shares_the_sort_of_the_minor_key() {
+    let off = Interpreter::new(Options {
+        no_composite_sort: true,
+        ..Options::default()
+    })
+    .unwrap();
+    let src = "input a: i64[];\ninput b: i64[];\nprint(argsort(a, b));\n";
+    let expanded = off.prepare(src).unwrap();
+    assert_eq!(kernel_nodes(&off, &expanded, "argsort_i64").len(), 2);
+    assert_eq!(kernel_nodes(&off, &expanded, "gather_i64").len(), 2);
+    assert_eq!(kernel_nodes(&off, &expanded, "same_len_i64").len(), 1);
+    assert!(kernel_nodes(&off, &expanded, "argsort2_i64_i64").is_empty());
+    // The default plans the composite kernel and no expansion.
+    let on = Interpreter::new(Options::default()).unwrap();
+    let composite = on.prepare(src).unwrap();
+    assert_eq!(kernel_nodes(&on, &composite, "argsort2_i64_i64").len(), 1);
+    assert!(kernel_nodes(&on, &composite, "argsort_i64").is_empty());
+}

@@ -10,7 +10,9 @@
 //! sample size (10) and the measurement time in seconds (3) for longer runs.
 //! `VERKEHRT_TILE_ROWS` is `off` or a tile row count and replaces the default tiling of every
 //! variant. `VERKEHRT_SHARING=off` turns shared evaluation off in every variant, and
-//! `VERKEHRT_SELECTIVE=off` turns selective evaluation off in every variant.
+//! `VERKEHRT_SELECTIVE=off` turns selective evaluation off in every variant, and
+//! `VERKEHRT_COMPOSITE_SORT=off` lowers two-column `argsort` into two single-key sorts in every
+//! variant.
 
 use std::fs;
 use std::io::sink;
@@ -19,8 +21,8 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use verkehrt::columns::{
-    CLICKBENCH_SIGNED, load_inputs, reduction_fusion_from_env, selective_from_env,
-    sharing_from_env, tiling_from_env,
+    CLICKBENCH_SIGNED, composite_sort_from_env, load_inputs, reduction_fusion_from_env,
+    selective_from_env, sharing_from_env, tiling_from_env,
 };
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
@@ -37,6 +39,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
             no_sharing: !sharing_from_env(),
             no_selective: !selective_from_env(),
             no_reduction_fusion: !reduction_fusion_from_env(),
+            no_composite_sort: !composite_sort_from_env(),
             ..Options::default()
         })
         .unwrap()

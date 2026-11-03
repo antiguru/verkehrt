@@ -52,6 +52,10 @@ pub struct Options {
     /// instead of updating it with each tile of the chain, see `Strategy::fuse_reductions`.
     /// It changes no value and no error.
     pub no_reduction_fusion: bool,
+    /// Lower `argsort(a, b)` into two single-key sorts and gathers instead of one composite
+    /// kernel. It changes no value, and no error except which operand's error surfaces when
+    /// both fail.
+    pub no_composite_sort: bool,
 }
 
 impl Options {
@@ -277,7 +281,13 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
-        let lowered = lower(&typed, globals, &self.reg, mode)?;
+        let lowered = lower(
+            &typed,
+            globals,
+            &self.reg,
+            mode,
+            !self.opts.no_composite_sort,
+        )?;
         // One context for the whole program, so a term repeated across statements is planned
         // once and its plan is one node of the plan graph.
         let mut cx = PlanContext::default();

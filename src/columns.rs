@@ -80,6 +80,24 @@ pub fn reduction_fusion_from_env() -> bool {
     }
 }
 
+/// Whether the composite sort is on, as the environment variable `VERKEHRT_COMPOSITE_SORT`
+/// says: `off` lowers `argsort(a, b)` into two single-key sorts, and the composite sort is on
+/// when the variable is unset. The acceptance bench and the stats example call it.
+///
+/// # Panics
+///
+/// When the variable is set to anything but `off`.
+pub fn composite_sort_from_env() -> bool {
+    match std::env::var("VERKEHRT_COMPOSITE_SORT") {
+        Err(VarError::NotPresent) => true,
+        Ok(v) if v == "off" => false,
+        Ok(v) => panic!("VERKEHRT_COMPOSITE_SORT={v}: expected off or unset"),
+        Err(VarError::NotUnicode(v)) => {
+            panic!("VERKEHRT_COMPOSITE_SORT={v:?}: expected off or unset")
+        }
+    }
+}
+
 /// The columns of the ClickBench data that `prepare.py` stores with the sign bit flipped, so
 /// that the words' unsigned order is the signed order. Pass it to [`load_inputs`].
 pub const CLICKBENCH_SIGNED: &[&str] = &[

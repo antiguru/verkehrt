@@ -8,7 +8,7 @@ fn lowered_with(src: &str, mode: Mode) -> Result<(Lowered, Globals), Error> {
     let reg = Registry::new();
     let mut g = Globals::new();
     let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
-    lower(&typed, &mut g, &reg, mode).map(|l| (l, g))
+    lower(&typed, &mut g, &reg, mode, true).map(|l| (l, g))
 }
 
 fn lowered(src: &str, mode: Mode) -> (Lowered, Globals) {
@@ -326,7 +326,7 @@ fn checked_lambdas_lower() {
                     continue;
                 };
                 *accepted.entry((ty, *name, *second)).or_default() += 1;
-                if let Err(e) = lower(&typed, &mut g, &reg, Mode::Run) {
+                if let Err(e) = lower(&typed, &mut g, &reg, Mode::Run, true) {
                     panic!("checked but failed to lower: {src}: {e}");
                 }
             }
@@ -354,6 +354,7 @@ fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
     let mut lw = Lowerer {
         g: &g,
         reg: &reg,
+        composite_sort: true,
         leaves: Leaves::default(),
         graph: TermGraph::default(),
         env: HashMap::new(),
@@ -364,4 +365,30 @@ fn no_kernel_error_for_a_scalar_input_names_the_operands_as_given() {
     let d = lw.leaf(Leaf::Var(VarId(1)), ValueType::Scalar(ScalarType::F64));
     let e = lw.op(Op::DivConst, vec![xs, d], span).unwrap_err();
     assert_eq!(e.message, "no kernel for 'div_const' on i64[], f64");
+}
+
+/// `lower` with the composite sort off, as `lowered` does with it on.
+fn lowered_expanded(src: &str) -> (Lowered, Globals) {
+    let prog = parse(src).unwrap();
+    let reg = Registry::new();
+    let mut g = Globals::new();
+    let typed = check(&prog, &reg, &mut g).unwrap_or_else(|e| panic!("{src}: {e}"));
+    let l = lower(&typed, &mut g, &reg, Mode::Run, false).unwrap_or_else(|e| panic!("{src}: {e}"));
+    (l, g)
+}
+
+#[test]
+fn two_column_argsort_expands_to_two_sorts_sharing_one() {
+    let src = "input a: i64[]; input b: i64[]; print(argsort(a, b));";
+    let (on, on_g) = lowered(src, Mode::Run);
+    assert_eq!(dump(&on, &on_g), ["print argsort(L_a, L_b)"]);
+    // The sort of `b` is one term, hoisted to a temporary because both gathers read it.
+    let (off, off_g) = lowered_expanded(src);
+    assert_eq!(
+        dump(&off, &off_g),
+        [
+            "bind _t0 = argsort(L_b)",
+            "print gather(L_t0, argsort(gather(samelen(L_a, length(L_b)), L_t0)))",
+        ]
+    );
 }

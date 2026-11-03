@@ -142,15 +142,19 @@ fn is_array(ty: ValueType) -> bool {
 }
 
 /// Lowers a checked program. Hoisted temporaries are declared in `globals` as `_t0`, `_t1`, ...
+/// With `composite_sort` unset, every two-argument `argsort` expands into two single-key sorts
+/// and gathers, see `Lowerer::argsort2_expanded`. The result of either form is the same.
 pub fn lower(
     prog: &TProgram,
     globals: &mut Globals,
     reg: &Registry,
     mode: Mode,
+    composite_sort: bool,
 ) -> Result<Lowered, Error> {
     let mut lw = Lowerer {
         g: globals,
         reg,
+        composite_sort,
         leaves: Leaves::default(),
         graph: TermGraph::default(),
         env: HashMap::new(),
@@ -222,6 +226,8 @@ pub fn lower(
 struct Lowerer<'a> {
     g: &'a Globals,
     reg: &'a Registry,
+    /// Whether a two-argument `argsort` stays one op, instead of expanding into two sorts.
+    composite_sort: bool,
     leaves: Leaves,
     graph: TermGraph,
     /// Terms substituted for parameters and block locals. Other variables are top-level
@@ -239,6 +245,20 @@ impl Lowerer<'_> {
             Leaf::Var(v) => self.leaves.var(v),
         };
         self.graph.intern(TermKind::Leaf(id), ty)
+    }
+
+    /// `argsort(a, b)` as two single-key sorts: `o1 = argsort(b)` and
+    /// `gather(o1, argsort(gather(same_len(a, length(b)), o1)))`. The sort is stable, so the
+    /// second sort keeps ties of `a` in the order of `b`, and the result equals the composite
+    /// kernel's. `same_len` raises the composite kernel's length mismatch message. The term
+    /// graph interns `o1` once, so each single-key sort runs once.
+    fn argsort2_expanded(&mut self, a: TermId, b: TermId, span: Span) -> Result<TermId, Error> {
+        let o1 = self.op(Op::ArgSort, vec![b], span)?;
+        let lb = self.op(Op::Length, vec![b], span)?;
+        let checked = self.op_exact(Op::SameLen, vec![a, lb], span)?;
+        let by_b = self.op(Op::Gather, vec![checked, o1], span)?;
+        let o2 = self.op(Op::ArgSort, vec![by_b], span)?;
+        self.op(Op::Gather, vec![o1, o2], span)
     }
 
     /// Builds an operation over lowered operands. The kernel lookup on the operands as given
@@ -294,7 +314,11 @@ impl Lowerer<'_> {
             }),
             TExprKind::Prim(op, args) => {
                 let args = self.exprs(args)?;
-                self.op(*op, args, span)
+                if *op == Op::ArgSort && args.len() == 2 && !self.composite_sort {
+                    self.argsort2_expanded(args[0], args[1], span)
+                } else {
+                    self.op(*op, args, span)
+                }
             }
             TExprKind::Call(id, args) => {
                 let g = self.g;
