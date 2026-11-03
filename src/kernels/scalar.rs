@@ -8,3 +8,4 @@ pub mod index;
 pub mod reduce;
 pub mod scan;
 pub mod select;
+pub mod sort;

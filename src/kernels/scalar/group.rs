@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 
 use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::arity_error;
-use crate::kernels::scalar::index::radix::Pos;
 use crate::kernels::scalar::reduce::array_arg;
+use crate::kernels::scalar::sort::radix::Pos;
 use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, WholeBody};
 use crate::ops::Op;
 use crate::value::{Array, Elem, ScalarType, Value, ValueType};
