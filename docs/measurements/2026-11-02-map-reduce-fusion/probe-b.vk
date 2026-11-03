@@ -1,0 +1,3 @@
+// A whole division under a sum.
+input UserID: i64[];
+export a = sum(div_const(UserID, 4294967296));

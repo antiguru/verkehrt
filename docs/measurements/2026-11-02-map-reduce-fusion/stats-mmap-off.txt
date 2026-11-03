@@ -1,0 +1,40 @@
+reduction fusion: off, MALLOC_MMAP_THRESHOLD_=65536 (every large array a fresh mapping), default tiling
+load start: 2.01 6.42 10.13
+== q03 x86-64-v3
+query q03 total kernel time 2478.6 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats add_f64_s calls=1 bytes=0 read=0 time=0.9
+stats add_i64_s calls=1 bytes=0 read=0 time=4.4
+stats cast_i64_f64_s calls=3 bytes=0 read=0 time=2.7
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=1170.2
+stats div_const_i64_s calls=1 bytes=0 read=0 time=6.3
+stats div_f64_s calls=1 bytes=0 read=0 time=0.6
+stats length_i64 calls=1 bytes=8000000 read=8000000 time=0.7
+stats mul_f64_s calls=1 bytes=0 read=0 time=1.0
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=209.3
+stats mul_i64_s calls=1 bytes=0 read=0 time=0.9
+stats reduce_add_i64 calls=2 bytes=16000000 read=16000000 time=178.4
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=902.4
+stats sub_i64_s calls=1 bytes=0 read=0 time=0.8
+== q03 x86-64-v4
+query q03 total kernel time 2813.4 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats add_f64_s calls=1 bytes=0 read=0 time=0.8
+stats add_i64_s calls=1 bytes=0 read=0 time=4.3
+stats cast_i64_f64_s calls=3 bytes=0 read=0 time=3.5
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=1470.7
+stats div_const_i64_s calls=1 bytes=0 read=0 time=6.5
+stats div_f64_s calls=1 bytes=0 read=0 time=0.6
+stats length_i64 calls=1 bytes=8000000 read=8000000 time=1.0
+stats mul_f64_s calls=1 bytes=0 read=0 time=3.8
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=218.6
+stats mul_i64_s calls=1 bytes=0 read=0 time=1.1
+stats reduce_add_i64 calls=2 bytes=16000000 read=16000000 time=186.3
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=915.5
+stats sub_i64_s calls=1 bytes=0 read=0 time=0.7
+
+load end: 2.01 6.42 10.13

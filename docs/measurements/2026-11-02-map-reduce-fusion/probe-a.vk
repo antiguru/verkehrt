@@ -1,0 +1,3 @@
+// The sum of lo of q03 with the division as an inner region kernel.
+input UserID: i64[];
+export a = sum(UserID - (div_const(UserID, 4294967296) * 4294967296));

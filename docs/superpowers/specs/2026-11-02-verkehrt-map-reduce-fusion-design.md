@@ -30,6 +30,13 @@ Its plan is `dot_i64 (compress_i64 l_extendedprice m) (compress_i64 l_discount m
 Reaching q06 needs a rewrite from the sum of compressed products to a masked sum, which is exact only for integers, and that is a planner change outside this layer.
 Among the other acceptance plans, only reductions of class `Reduction` qualify, and every other reduction in them reads a leaf or a bound variable (`reduce_max_i64 g`, `count start`) or is a grouped `reduce_into_*` kernel of class `Whole` (`src/kernels/scalar/group.rs`), so q03 is the only acceptance query whose plan changes how it runs.
 
+**Outcome.** The measurement (`docs/measurements/2026-11-02-map-reduce-fusion.md`) confirms the estimate for the root: with fusion on, q03's `sub_i64` falls from 928.6 to 320.0 us on `x86-64-v4` and from 934.1 to 334.8 us on `x86-64-v3`, about 600 us against the estimated 700 us, and the total kernel time falls from 2334.0 to 1517.7 us (0.65 times) on v4.
+The probes reproduce the designer's single runs to within 7% with fusion off, and with fusion on their full-output roots fall from 441.5 to 478.6 us to 133.8 to 149.3 us.
+The division change in the first stats pair of q03 (`div_const_i64` from 1008.6 to 829.6 us) is not an effect of fusion, because that kernel's time ranges from 803.7 to 1470.7 us over twelve runs of both modes, so its cause stays unknown.
+Criterion means of q03 are lower with fusion in all 30 variant pairs of six runs, 26 of them beyond the 10% band, but the size is unresolved, between 0.49 and 0.93 times, because q03's off runs fall into a 2.5 ms and a 1.4 ms mode while the on runs stay at 1.25 ms on the best variants.
+The controls TPC-H q01 and q06 stay inside the band (0.94 to 1.09), and q03 is the only query of the 22 beyond it in the full suites.
+After fusion the division by 2^32 takes 54.7% of q03's kernel time on v4 (53% to 63% across runs) and `mul_i64` and `sub_i64` 525 us, so a `rem` kernel costing one division would not beat them and a cheaper power-of-two division is the lead, which the record states as inference.
+
 ## Scope and order
 
 Designer's call: this layer builds fused reductions in the executor and defers `rem`.

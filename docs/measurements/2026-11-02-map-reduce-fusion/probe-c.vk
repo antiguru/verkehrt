@@ -1,0 +1,3 @@
+// A multiply and a subtract, with no division.
+input UserID: i64[];
+export a = sum((UserID * 3) - UserID);
