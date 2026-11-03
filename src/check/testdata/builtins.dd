@@ -76,6 +76,37 @@ let x = [1.0]; let y = argsort(x);
 ----
 error: no kernel for 'argsort' on f64[] at 1:24
 
+# argsort_takes_one_or_two_key_columns
+type
+let a = [1, 2]; let b = [2u8, 1u8]; let o = argsort(a, b);
+----
+i64[]
+
+type
+let a = [1i32]; let b = [2u64]; let o = argsort(a, b);
+----
+i64[]
+
+type
+let o = argsort();
+----
+error: 'argsort' takes 1 to 2 arguments, got 0 at 1:9
+
+type
+let x = [1]; let o = argsort(x, x, x);
+----
+error: 'argsort' takes 1 to 2 arguments, got 3 at 1:22
+
+type
+let x = [1]; let o = argsort(x, [1.0]);
+----
+error: no kernel for 'argsort' on i64[], f64[] at 1:22
+
+type
+let x = [1]; let o = argsort([1.0], x);
+----
+error: no kernel for 'argsort' on f64[], i64[] at 1:22
+
 # group_id_takes_one_or_two_key_columns
 type
 let x = [3, 1, 3]; let g = group_id(x);

@@ -8,14 +8,14 @@ use crate::value::Elem;
 /// Digit width in bits, which `Digits::digit` fixes at a byte.
 // Byte digits beat 11-bit digits at 10M rows on every key type, and were within noise of
 // them at 1M rows.
-const RADIX_BITS: u32 = 8;
+pub(super) const RADIX_BITS: u32 = 8;
 /// Buckets per digit.
-const RADIX: usize = 1 << RADIX_BITS;
+pub(super) const RADIX: usize = 1 << RADIX_BITS;
 /// The most digits of any key type, those of a 64-bit key.
 const MAX_PASSES: usize = 8;
 
-/// The unsigned image of a key, split into byte digits.
-pub(crate) trait Digits: Copy + Default {
+/// The unsigned image of a key, split into byte digits, which widens losslessly to `u64`.
+pub(crate) trait Digits: Copy + Default + Into<u64> {
     /// Number of byte digits, at most `MAX_PASSES`.
     const PASSES: usize;
     /// The byte of `self` at bit offset `shift`, a multiple of 8 below the width.
@@ -163,7 +163,7 @@ pub(super) fn scratch<E: Copy + Default>(n: usize, needed: bool) -> Result<Vec<E
 /// `counts` holds the number of items per digit. Visiting the items in order keeps equal
 /// digits in their order, which makes the sort stable.
 #[inline(always)]
-fn scatter<S, D>(
+pub(super) fn scatter<S, D>(
     src: impl Iterator<Item = S>,
     counts: &[usize; RADIX],
     dst: &mut [D],

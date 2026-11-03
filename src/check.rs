@@ -139,6 +139,7 @@ enum Builtin {
 fn builtin(name: &str) -> Option<Builtin> {
     let (op, arity) = match name {
         "group_id" => return Some(Builtin::Op(Op::GroupId, 1..=2)),
+        "argsort" => return Some(Builtin::Op(Op::ArgSort, 1..=2)),
         "neg" => (Op::Neg, 1),
         "abs" => (Op::Abs, 1),
         "min" => (Op::Min, 2),
@@ -164,7 +165,6 @@ fn builtin(name: &str) -> Option<Builtin> {
         "slice" => (Op::Slice, 3),
         "histogram" => (Op::Histogram, 2),
         "div_const" => (Op::DivConst, 2),
-        "argsort" => (Op::ArgSort, 1),
         "rand_i64" => (Op::RandI64, 2),
         "rand_f64" => (Op::RandF64, 2),
         "length" => (Op::Length, 1),

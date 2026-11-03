@@ -268,7 +268,7 @@ struct Gen<'a, 'r> {
 }
 
 /// The kernel signatures the generator draws from: single-op kernels on generated types,
-/// without `load_*` and the internal `SameLen`.
+/// without `load_*`, the internal `SameLen`, and two-key `argsort`.
 pub struct Catalog {
     reg: Registry,
     sigs: Vec<Sig>,
@@ -282,6 +282,11 @@ impl Catalog {
             .filter_map(|(_, d)| {
                 let op = d.op?;
                 if d.pattern.is_some() || matches!(op, Op::Load(_) | Op::SameLen) {
+                    return None;
+                }
+                // Two-key `argsort` is not generated yet. Task 4 of the composite-key plan
+                // enables it together with the oracle that checks it.
+                if op == Op::ArgSort && d.inputs.len() == 2 {
                     return None;
                 }
                 let types_ok = d
