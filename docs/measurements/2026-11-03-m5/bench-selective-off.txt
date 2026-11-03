@@ -1,0 +1,59 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.07s
+     Running benches/acceptance.rs (target/release/deps/acceptance-67466d6703ccaebe)
+Gnuplot not found, using plotters backend
+Benchmarking acceptance/clickbench/q40/scalar
+Benchmarking acceptance/clickbench/q40/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/scalar: Collecting 10 samples in estimated 3.1035 s (1155 iterations)
+Benchmarking acceptance/clickbench/q40/scalar: Analyzing
+acceptance/clickbench/q40/scalar
+                        time:   [2.6861 ms 2.6994 ms 2.7098 ms]
+                        change: [+14.550% +15.032% +15.501%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q40/neon-intrinsics
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Collecting 10 samples in estimated 3.0292 s (1210 iterations)
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Analyzing
+acceptance/clickbench/q40/neon-intrinsics
+                        time:   [2.4946 ms 2.5090 ms 2.5261 ms]
+                        change: [+19.690% +20.355% +21.219%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q41/scalar
+Benchmarking acceptance/clickbench/q41/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/scalar: Collecting 10 samples in estimated 3.0747 s (1485 iterations)
+Benchmarking acceptance/clickbench/q41/scalar: Analyzing
+acceptance/clickbench/q41/scalar
+                        time:   [2.0623 ms 2.0683 ms 2.0745 ms]
+                        change: [+16.662% +17.400% +18.218%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q41/neon-intrinsics
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Collecting 10 samples in estimated 3.0257 s (1595 iterations)
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Analyzing
+acceptance/clickbench/q41/neon-intrinsics
+                        time:   [1.8714 ms 1.8767 ms 1.8819 ms]
+                        change: [+23.131% +23.623% +24.088%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q42/scalar
+Benchmarking acceptance/clickbench/q42/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/scalar: Collecting 10 samples in estimated 3.0341 s (1925 iterations)
+Benchmarking acceptance/clickbench/q42/scalar: Analyzing
+acceptance/clickbench/q42/scalar
+                        time:   [1.5599 ms 1.5631 ms 1.5651 ms]
+                        change: [+17.998% +18.253% +18.521%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q42/neon-intrinsics
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Collecting 10 samples in estimated 3.0064 s (2035 iterations)
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Analyzing
+acceptance/clickbench/q42/neon-intrinsics
+                        time:   [1.4674 ms 1.4691 ms 1.4721 ms]
+                        change: [+20.821% +21.542% +22.204%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set

@@ -1,0 +1,96 @@
+   Compiling verkehrt v0.1.0 (/Users/moritz/dev/repos/verkehrt/.claude/worktrees/m5-tier2-benchmarks)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 1m 03s
+     Running benches/corgi.rs (target/release/deps/corgi-c0318e381f2b6fdb)
+Gnuplot not found, using plotters backend
+sum: verkehrt 4998770.953740556 corgi 4998770.953739915 bit xor 0x6f0 abs diff 6.407499313354492e-7
+Benchmarking corgi/sum/corgi
+Benchmarking corgi/sum/corgi: Warming up for 500.00 ms
+Benchmarking corgi/sum/corgi: Collecting 10 samples in estimated 3.0482 s (550 iterations)
+Benchmarking corgi/sum/corgi: Analyzing
+corgi/sum/corgi         time:   [5.5133 ms 5.5219 ms 5.5308 ms]
+                        thrpt:  [13.471 GiB/s 13.493 GiB/s 13.514 GiB/s]
+                 change:
+                        time:   [+1.7219% +1.8695% +2.0060%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.9665% −1.8352% −1.6928%]
+                        Performance has regressed.
+
+dot: verkehrt 2499047.034215136 corgi 2499047.034215335 bit xor 0x255 abs diff 1.9883736968040466e-7
+Benchmarking corgi/dot/corgi
+Benchmarking corgi/dot/corgi: Warming up for 500.00 ms
+Benchmarking corgi/dot/corgi: Collecting 10 samples in estimated 3.0989 s (275 iterations)
+Benchmarking corgi/dot/corgi: Analyzing
+corgi/dot/corgi         time:   [11.133 ms 11.145 ms 11.166 ms]
+                        thrpt:  [13.345 GiB/s 13.371 GiB/s 13.384 GiB/s]
+                 change:
+                        time:   [+1.3240% +1.4748% +1.6532%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.6263% −1.4534% −1.3067%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking corgi/count/corgi
+Benchmarking corgi/count/corgi: Warming up for 500.00 ms
+Benchmarking corgi/count/corgi: Collecting 10 samples in estimated 3.0369 s (2145 iterations)
+Benchmarking corgi/count/corgi: Analyzing
+corgi/count/corgi       time:   [1.4182 ms 1.4253 ms 1.4300 ms]
+                        thrpt:  [52.104 GiB/s 52.273 GiB/s 52.537 GiB/s]
+                 change:
+                        time:   [+7.5833% +7.9258% +8.2777%] (p = 0.00 < 0.05)
+                        thrpt:  [−7.6449% −7.3437% −7.0488%]
+                        Performance has regressed.
+
+Benchmarking corgi/min/corgi
+Benchmarking corgi/min/corgi: Warming up for 500.00 ms
+Benchmarking corgi/min/corgi: Collecting 10 samples in estimated 3.0419 s (2530 iterations)
+Benchmarking corgi/min/corgi: Analyzing
+corgi/min/corgi         time:   [1.2018 ms 1.2042 ms 1.2092 ms]
+                        thrpt:  [61.617 GiB/s 61.873 GiB/s 61.993 GiB/s]
+                 change:
+                        time:   [+2.6073% +2.9359% +3.4446%] (p = 0.00 < 0.05)
+                        thrpt:  [−3.3299% −2.8522% −2.5411%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+filter-1pct: 99695 rows match
+Benchmarking corgi/filter-1pct/corgi
+Benchmarking corgi/filter-1pct/corgi: Warming up for 500.00 ms
+Benchmarking corgi/filter-1pct/corgi: Collecting 10 samples in estimated 3.0892 s (605 iterations)
+Benchmarking corgi/filter-1pct/corgi: Analyzing
+corgi/filter-1pct/corgi time:   [5.0933 ms 5.1089 ms 5.1282 ms]
+                        thrpt:  [14.529 GiB/s 14.583 GiB/s 14.628 GiB/s]
+                 change:
+                        time:   [+5.5641% +6.0691% +6.4834%] (p = 0.00 < 0.05)
+                        thrpt:  [−6.0887% −5.7219% −5.2708%]
+                        Performance has regressed.
+
+filter-50pct: 4998931 rows match
+Benchmarking corgi/filter-50pct/corgi
+Benchmarking corgi/filter-50pct/corgi: Warming up for 500.00 ms
+Benchmarking corgi/filter-50pct/corgi: Collecting 10 samples in estimated 3.1173 s (605 iterations)
+Benchmarking corgi/filter-50pct/corgi: Analyzing
+corgi/filter-50pct/corgi
+                        time:   [5.1821 ms 5.1975 ms 5.2121 ms]
+                        thrpt:  [14.295 GiB/s 14.335 GiB/s 14.378 GiB/s]
+                 change:
+                        time:   [+1.9454% +2.3005% +2.6588%] (p = 0.00 < 0.05)
+                        thrpt:  [−2.5900% −2.2488% −1.9083%]
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+
+filter-99pct: 9899130 rows match
+Benchmarking corgi/filter-99pct/corgi
+Benchmarking corgi/filter-99pct/corgi: Warming up for 500.00 ms
+Benchmarking corgi/filter-99pct/corgi: Collecting 10 samples in estimated 3.1936 s (605 iterations)
+Benchmarking corgi/filter-99pct/corgi: Analyzing
+corgi/filter-99pct/corgi
+                        time:   [5.2889 ms 5.3443 ms 5.3820 ms]
+                        thrpt:  [13.844 GiB/s 13.941 GiB/s 14.087 GiB/s]
+                 change:
+                        time:   [+2.1034% +2.5414% +3.1579%] (p = 0.00 < 0.05)
+                        thrpt:  [−3.0612% −2.4784% −2.0601%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild

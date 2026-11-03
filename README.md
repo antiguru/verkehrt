@@ -114,20 +114,23 @@ The clock runs at 3.0 GHz under load (user-reported, 2.0 to 3.0 GHz is the scali
 The `auto` and baseline medians drifted by up to 1.36x between builds of unchanged code, and the cause was not measured.
 Read [docs/measurements/2026-10-30-x86-kernels.md](docs/measurements/2026-10-30-x86-kernels.md) for the full tables, the setup, and the caveats before quoting any number.
 
-On an Apple M5 Max, the baseline build, which the compiler vectorizes for NEON, runs `sum`, `sum(x * y)`, and `count(x > 0.5)` within 1.02x of the native loop.
-The NEON intrinsics bring `min` from 5.48x to 0.96x of native and `argmin` from between 2.77x and 3.39x, depending on the run, to 0.93x.
-`filter` on `f64` rows reaches 1.10x to 1.39x of native, only 6 to 11% faster than the scalar entry.
+On an Apple M5 Max at commit `ab0c3cf`, the baseline build runs `sum`, `sum(x * y)`, and `count(x > 0.5)` at 1.01x, 1.02x, and 1.00x native at 10M rows.
+The NEON intrinsics bring `min` from 5.12x to 0.95x native and `argmin` from 2.81x to 0.94x; the three `filter` selectivities run at 1.09x to 1.41x native.
 The interpreter stays within 1.5x of native from 2^13 elements for `sum`, 2^14 for `x * y`, and 2^12 for `min`.
-These are single runs on AC power in high power mode, except two reruns of `argmin`, and the scalar `argmin` median varied between 3.58 and 4.36 ms across runs.
-Read [docs/measurements/2026-10-31-aarch64-kernels.md](docs/measurements/2026-10-31-aarch64-kernels.md) for the full tables, the first attempt that missed the target, and the caveats.
+Read [the current M5 measurements](docs/measurements/2026-11-03-m5.md) for full tables and the unexplained change in the native filter baseline, or [the earlier M5 record](docs/measurements/2026-11-02-m5.md) for the previous revision.
 
 On the tier 2 workloads, all seven acceptance queries run faster than corgi and DuckDB on one thread, with the best Verkehrt time between 0.07x and 0.47x of DuckDB's.
 ClickBench q42 first measured 21.59 ms because of a program bug, an unshifted bucket key, and subtracting the key's minimum took it to 2.60 ms.
 Of the kernels at 10M rows, `gather` with `vpgatherqq` reaches 0.80 of the scalar entry and 1.01x of the native gather loop at `x86-64-v3`, while `histogram` and `reduce_into` reach 1.72x and 1.94x of native.
 On x86, the bucket loops of `histogram` and `reduce_into`, the multiply-high of 64-bit `div_const` (the rest of its loop is vectorized), `scan` on integers and on float `min` and `max`, `scan_by` at `x86-64-v3` (and every fold but `add` at both levels), `argsort`, `gather` on 32-bit, `u8`, and bool rows, and the `i64` to `f64`, `f64` to `i64`, and `f64` to `u64` casts stay scalar loops (the `i64` to `f64` cast has a `vcvtqq2pd` vector loop at `x86-64-v4` with no measured gain), and the measurement document records the evidence for each.
 Benching the tier 2 kernels found that the `auto` entries of whole kernels called the scalar build of their bodies, which was fixed, and no test guards against it recurring.
-These are single runs on the same host with other work running and load averages between 1.6 and 18, and the aarch64 numbers are pending.
-Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.md) for the tables, the data, the strain cases, and the known limit that empty inputs give 0 or an error where SQL gives NULL.
+These x86 figures are single runs on a host with other work running and load averages between 1.6 and 18.
+Read [docs/measurements/2026-10-31-tier2.md](docs/measurements/2026-10-31-tier2.md) for the x86 tables, the data, the strain cases, and the known limit that empty inputs give 0 or an error where SQL gives NULL.
+
+On an Apple M5 Max at commit `ab0c3cf`, `gather` i64 reaches 1.19x native, `histogram` 1.44x, `reduce_into` add i64 1.48x, and `div_const` i64 2.12x at 10M rows.
+Both TPC-H acceptance queries beat the saved one-thread DuckDB reference; eight of 20 ClickBench queries are slower with the NEON variant.
+These are single benchmark sessions with Criterion means for Verkehrt, newly rerun best-of corgi times, and reused best-of DuckDB times on the same M5 data.
+Read [docs/measurements/2026-11-03-m5.md](docs/measurements/2026-11-03-m5.md) for all M5 tables, paired comparisons for selective evaluation and reduction fusion, raw logs, and caveats.
 
 ## Tier 2 primitives
 

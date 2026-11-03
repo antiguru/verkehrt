@@ -1,0 +1,24 @@
+   Compiling corgi v0.1.0 (/tmp/verkehrt-m5-acceptance.07nXWb/corgi-wip/corgi)
+    Finished `bench` profile [optimized] target(s) in 3.18s
+     Running benches/clickbench/main.rs (target/corgi-m5/release/deps/clickbench-82f634d4a9e6dd2b)
+query    corgi ms duckdb 1t ms    ratio duckdb all ms
+q00          0.00         0.11    0.00x         0.15
+q01          0.13         0.43    0.31x         0.27
+q02          0.16         0.41    0.38x         0.25
+q03          0.42         0.79    0.53x         0.30
+q04         14.25         3.59    3.97x         1.41
+q06          0.22         0.65    0.34x         0.25
+q07          0.53         0.58    0.91x         0.34
+q08         25.92         4.90    5.29x         2.33
+q09         27.83        14.49    1.92x         4.19
+q15         15.09         5.46    2.76x         1.79
+q19          0.42         0.17    2.45x         0.15
+q27          4.72         6.33    0.75x         1.36
+q29         18.02         2.59    6.96x         2.49
+q30          2.17         3.30    0.66x         1.46
+q31          2.23         3.54    0.63x         1.64
+q32         22.55        31.44    0.72x         6.46
+q35         17.73         7.89    2.25x         2.52
+q40          2.11         1.65    1.28x         1.50
+q41          1.95         1.62    1.20x         1.34
+q42          3.66         3.34    1.09x         1.80

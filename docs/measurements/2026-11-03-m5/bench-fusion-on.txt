@@ -1,0 +1,23 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.07s
+     Running benches/acceptance.rs (target/release/deps/acceptance-67466d6703ccaebe)
+Gnuplot not found, using plotters backend
+Benchmarking acceptance/clickbench/q03/scalar
+Benchmarking acceptance/clickbench/q03/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/scalar: Collecting 10 samples in estimated 3.0296 s (3135 iterations)
+Benchmarking acceptance/clickbench/q03/scalar: Analyzing
+acceptance/clickbench/q03/scalar
+                        time:   [937.63 µs 943.92 µs 956.89 µs]
+                        change: [−9.7855% −8.7857% −7.7413%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q03/neon-intrinsics
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Collecting 10 samples in estimated 3.0391 s (3245 iterations)
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Analyzing
+acceptance/clickbench/q03/neon-intrinsics
+                        time:   [936.88 µs 943.33 µs 951.76 µs]
+                        change: [−18.223% −14.886% −11.191%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set

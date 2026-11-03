@@ -1,0 +1,31 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.06s
+     Running benches/acceptance.rs (target/release/deps/acceptance-67466d6703ccaebe)
+Gnuplot not found, using plotters backend
+acceptance/clickbench: skipped, VERKEHRT_CLICKBENCH is not set
+Benchmarking acceptance/tpch/q01/scalar
+Benchmarking acceptance/tpch/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/scalar: Collecting 10 samples in estimated 3.7392 s (275 iterations)
+Benchmarking acceptance/tpch/q01/scalar: Analyzing
+acceptance/tpch/q01/scalar
+                        time:   [13.403 ms 13.448 ms 13.488 ms]
+Benchmarking acceptance/tpch/q01/neon-intrinsics
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Collecting 10 samples in estimated 3.4457 s (275 iterations)
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Analyzing
+acceptance/tpch/q01/neon-intrinsics
+                        time:   [12.527 ms 12.578 ms 12.660 ms]
+
+Benchmarking acceptance/tpch/q06/scalar
+Benchmarking acceptance/tpch/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/scalar: Collecting 10 samples in estimated 3.0480 s (1980 iterations)
+Benchmarking acceptance/tpch/q06/scalar: Analyzing
+acceptance/tpch/q06/scalar
+                        time:   [1.5350 ms 1.5387 ms 1.5442 ms]
+Benchmarking acceptance/tpch/q06/neon-intrinsics
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Collecting 10 samples in estimated 3.0376 s (2310 iterations)
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Analyzing
+acceptance/tpch/q06/neon-intrinsics
+                        time:   [1.2998 ms 1.3032 ms 1.3056 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild

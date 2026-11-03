@@ -1,0 +1,277 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.07s
+     Running benches/tier1.rs (target/release/deps/tier1-3ca1b5e0776d3a4d)
+Gnuplot not found, using plotters backend
+Benchmarking tier1/sum/scalar
+Benchmarking tier1/sum/scalar: Warming up for 500.00 ms
+Benchmarking tier1/sum/scalar: Collecting 10 samples in estimated 3.0351 s (3300 iterations)
+Benchmarking tier1/sum/scalar: Analyzing
+tier1/sum/scalar        time:   [882.98 µs 890.65 µs 897.85 µs]
+                        thrpt:  [82.983 GiB/s 83.654 GiB/s 84.380 GiB/s]
+                 change:
+                        time:   [+12.639% +14.132% +15.762%] (p = 0.00 < 0.05)
+                        thrpt:  [−13.616% −12.382% −11.220%]
+                        Performance has regressed.
+Benchmarking tier1/sum/native-base
+Benchmarking tier1/sum/native-base: Warming up for 500.00 ms
+Benchmarking tier1/sum/native-base: Collecting 10 samples in estimated 3.0271 s (3465 iterations)
+Benchmarking tier1/sum/native-base: Analyzing
+tier1/sum/native-base   time:   [867.28 µs 883.15 µs 900.01 µs]
+                        thrpt:  [82.783 GiB/s 84.364 GiB/s 85.907 GiB/s]
+                 change:
+                        time:   [+10.188% +11.710% +13.083%] (p = 0.00 < 0.05)
+                        thrpt:  [−11.569% −10.483% −9.2460%]
+                        Performance has regressed.
+
+Benchmarking tier1/dot/scalar
+Benchmarking tier1/dot/scalar: Warming up for 500.00 ms
+Benchmarking tier1/dot/scalar: Collecting 10 samples in estimated 3.0512 s (2090 iterations)
+Benchmarking tier1/dot/scalar: Analyzing
+tier1/dot/scalar        time:   [1.4554 ms 1.4580 ms 1.4613 ms]
+                        thrpt:  [101.97 GiB/s 102.21 GiB/s 102.39 GiB/s]
+                 change:
+                        time:   [+2.0042% +2.2047% +2.4215%] (p = 0.00 < 0.05)
+                        thrpt:  [−2.3643% −2.1571% −1.9648%]
+                        Performance has regressed.
+Benchmarking tier1/dot/native-base
+Benchmarking tier1/dot/native-base: Warming up for 500.00 ms
+Benchmarking tier1/dot/native-base: Collecting 10 samples in estimated 3.0544 s (2145 iterations)
+Benchmarking tier1/dot/native-base: Analyzing
+tier1/dot/native-base   time:   [1.4252 ms 1.4269 ms 1.4306 ms]
+                        thrpt:  [104.16 GiB/s 104.43 GiB/s 104.55 GiB/s]
+                 change:
+                        time:   [+0.7470% +0.9649% +1.2656%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.2497% −0.9557% −0.7414%]
+                        Change within noise threshold.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+
+Benchmarking tier1/count/scalar
+Benchmarking tier1/count/scalar: Warming up for 500.00 ms
+Benchmarking tier1/count/scalar: Collecting 10 samples in estimated 3.0347 s (3410 iterations)
+Benchmarking tier1/count/scalar: Analyzing
+tier1/count/scalar      time:   [894.02 µs 896.56 µs 898.46 µs]
+                        thrpt:  [82.926 GiB/s 83.102 GiB/s 83.338 GiB/s]
+                 change:
+                        time:   [+5.8912% +6.4444% +6.8825%] (p = 0.00 < 0.05)
+                        thrpt:  [−6.4393% −6.0542% −5.5635%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/count/native-base
+Benchmarking tier1/count/native-base: Warming up for 500.00 ms
+Benchmarking tier1/count/native-base: Collecting 10 samples in estimated 3.0014 s (3355 iterations)
+Benchmarking tier1/count/native-base: Analyzing
+tier1/count/native-base time:   [889.25 µs 893.54 µs 896.26 µs]
+                        thrpt:  [83.130 GiB/s 83.383 GiB/s 83.785 GiB/s]
+                 change:
+                        time:   [+4.8920% +6.2165% +7.3086%] (p = 0.00 < 0.05)
+                        thrpt:  [−6.8108% −5.8526% −4.6638%]
+                        Performance has regressed.
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking tier1/min/scalar
+Benchmarking tier1/min/scalar: Warming up for 500.00 ms
+Benchmarking tier1/min/scalar: Collecting 10 samples in estimated 3.1833 s (660 iterations)
+Benchmarking tier1/min/scalar: Analyzing
+tier1/min/scalar        time:   [4.7370 ms 4.7828 ms 4.8177 ms]
+                        thrpt:  [15.465 GiB/s 15.578 GiB/s 15.728 GiB/s]
+                 change:
+                        time:   [+0.2333% +2.0984% +3.5804%] (p = 0.03 < 0.05)
+                        thrpt:  [−3.4567% −2.0553% −0.2328%]
+                        Change within noise threshold.
+Benchmarking tier1/min/neon-intrinsics
+Benchmarking tier1/min/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/min/neon-intrinsics: Collecting 10 samples in estimated 3.0147 s (3410 iterations)
+Benchmarking tier1/min/neon-intrinsics: Analyzing
+tier1/min/neon-intrinsics
+                        time:   [885.01 µs 890.36 µs 895.16 µs]
+                        thrpt:  [83.232 GiB/s 83.680 GiB/s 84.186 GiB/s]
+                 change:
+                        time:   [+6.3348% +7.2111% +8.0196%] (p = 0.00 < 0.05)
+                        thrpt:  [−7.4242% −6.7261% −5.9574%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking tier1/min/native-base
+Benchmarking tier1/min/native-base: Warming up for 500.00 ms
+Benchmarking tier1/min/native-base: Collecting 10 samples in estimated 3.0355 s (3300 iterations)
+Benchmarking tier1/min/native-base: Analyzing
+tier1/min/native-base   time:   [918.83 µs 934.36 µs 947.71 µs]
+                        thrpt:  [78.617 GiB/s 79.740 GiB/s 81.087 GiB/s]
+                 change:
+                        time:   [+9.1621% +10.326% +11.540%] (p = 0.00 < 0.05)
+                        thrpt:  [−10.346% −9.3596% −8.3932%]
+                        Performance has regressed.
+
+argmin: first minimum 2.5056049013372217e-8 at index 5618431
+Benchmarking tier1/argmin/scalar
+Benchmarking tier1/argmin/scalar: Warming up for 500.00 ms
+Benchmarking tier1/argmin/scalar: Collecting 10 samples in estimated 3.0509 s (825 iterations)
+Benchmarking tier1/argmin/scalar: Analyzing
+tier1/argmin/scalar     time:   [3.6390 ms 3.6763 ms 3.7168 ms]
+                        thrpt:  [20.046 GiB/s 20.267 GiB/s 20.474 GiB/s]
+                 change:
+                        time:   [−10.666% −9.4631% −8.2636%] (p = 0.00 < 0.05)
+                        thrpt:  [+9.0080% +10.452% +11.940%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking tier1/argmin/neon-intrinsics
+Benchmarking tier1/argmin/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/argmin/neon-intrinsics: Collecting 10 samples in estimated 3.0090 s (2475 iterations)
+Benchmarking tier1/argmin/neon-intrinsics: Analyzing
+tier1/argmin/neon-intrinsics
+                        time:   [1.2209 ms 1.2259 ms 1.2329 ms]
+                        thrpt:  [60.433 GiB/s 60.777 GiB/s 61.026 GiB/s]
+                 change:
+                        time:   [+1.5031% +2.1047% +2.9192%] (p = 0.00 < 0.05)
+                        thrpt:  [−2.8364% −2.0613% −1.4808%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/argmin/native-base
+Benchmarking tier1/argmin/native-base: Warming up for 500.00 ms
+Benchmarking tier1/argmin/native-base: Collecting 10 samples in estimated 3.0168 s (2310 iterations)
+Benchmarking tier1/argmin/native-base: Analyzing
+tier1/argmin/native-base
+                        time:   [1.3010 ms 1.3084 ms 1.3155 ms]
+                        thrpt:  [56.637 GiB/s 56.946 GiB/s 57.269 GiB/s]
+                 change:
+                        time:   [−0.4411% +0.1830% +0.8953%] (p = 0.61 > 0.05)
+                        thrpt:  [−0.8874% −0.1827% +0.4431%]
+                        No change in performance detected.
+
+filter-1pct: 99695 of 10000000 rows match (0.997%)
+Benchmarking tier1/filter-1pct/scalar
+Benchmarking tier1/filter-1pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/scalar: Collecting 10 samples in estimated 3.0719 s (880 iterations)
+Benchmarking tier1/filter-1pct/scalar: Analyzing
+tier1/filter-1pct/scalar
+                        time:   [3.4695 ms 3.4761 ms 3.4877 ms]
+                        thrpt:  [21.363 GiB/s 21.434 GiB/s 21.474 GiB/s]
+                 change:
+                        time:   [+2.2418% +2.4654% +2.7016%] (p = 0.00 < 0.05)
+                        thrpt:  [−2.6306% −2.4061% −2.1927%]
+                        Performance has regressed.
+Benchmarking tier1/filter-1pct/neon-intrinsics
+Benchmarking tier1/filter-1pct/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/neon-intrinsics: Collecting 10 samples in estimated 3.1016 s (990 iterations)
+Benchmarking tier1/filter-1pct/neon-intrinsics: Analyzing
+tier1/filter-1pct/neon-intrinsics
+                        time:   [3.0989 ms 3.1090 ms 3.1162 ms]
+                        thrpt:  [23.909 GiB/s 23.965 GiB/s 24.043 GiB/s]
+                 change:
+                        time:   [+1.1053% +1.3138% +1.5305%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.5074% −1.2967% −1.0932%]
+                        Performance has regressed.
+Benchmarking tier1/filter-1pct/native-base
+Benchmarking tier1/filter-1pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-1pct/native-base: Collecting 10 samples in estimated 3.0602 s (1100 iterations)
+Benchmarking tier1/filter-1pct/native-base: Analyzing
+tier1/filter-1pct/native-base
+                        time:   [2.7797 ms 2.8444 ms 2.9165 ms]
+                        thrpt:  [25.546 GiB/s 26.194 GiB/s 26.803 GiB/s]
+                 change:
+                        time:   [−42.500% −41.931% −41.050%] (p = 0.00 < 0.05)
+                        thrpt:  [+69.636% +72.209% +73.912%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+filter-50pct: 4998931 of 10000000 rows match (49.989%)
+Benchmarking tier1/filter-50pct/scalar
+Benchmarking tier1/filter-50pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/scalar: Collecting 10 samples in estimated 3.0011 s (715 iterations)
+Benchmarking tier1/filter-50pct/scalar: Analyzing
+tier1/filter-50pct/scalar
+                        time:   [3.9852 ms 4.0317 ms 4.0996 ms]
+                        thrpt:  [18.174 GiB/s 18.480 GiB/s 18.696 GiB/s]
+                 change:
+                        time:   [+3.4237% +4.5445% +5.6269%] (p = 0.00 < 0.05)
+                        thrpt:  [−5.3271% −4.3469% −3.3104%]
+                        Performance has regressed.
+Benchmarking tier1/filter-50pct/neon-intrinsics
+Benchmarking tier1/filter-50pct/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/neon-intrinsics: Collecting 10 samples in estimated 3.0822 s (880 iterations)
+Benchmarking tier1/filter-50pct/neon-intrinsics: Analyzing
+tier1/filter-50pct/neon-intrinsics
+                        time:   [3.5059 ms 3.5142 ms 3.5256 ms]
+                        thrpt:  [21.133 GiB/s 21.201 GiB/s 21.252 GiB/s]
+                 change:
+                        time:   [+0.8617% +1.1371% +1.4535%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.4327% −1.1244% −0.8543%]
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-50pct/native-base
+Benchmarking tier1/filter-50pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-50pct/native-base: Collecting 10 samples in estimated 3.0912 s (1100 iterations)
+Benchmarking tier1/filter-50pct/native-base: Analyzing
+tier1/filter-50pct/native-base
+                        time:   [2.8068 ms 2.8123 ms 2.8181 ms]
+                        thrpt:  [26.438 GiB/s 26.493 GiB/s 26.545 GiB/s]
+                 change:
+                        time:   [−42.363% −42.283% −42.195%] (p = 0.00 < 0.05)
+                        thrpt:  [+72.995% +73.259% +73.498%]
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+filter-99pct: 9899130 of 10000000 rows match (98.991%)
+Benchmarking tier1/filter-99pct/scalar
+Benchmarking tier1/filter-99pct/scalar: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/scalar: Collecting 10 samples in estimated 3.0692 s (715 iterations)
+Benchmarking tier1/filter-99pct/scalar: Analyzing
+tier1/filter-99pct/scalar
+                        time:   [4.3043 ms 4.3513 ms 4.4070 ms]
+                        thrpt:  [16.906 GiB/s 17.123 GiB/s 17.310 GiB/s]
+                 change:
+                        time:   [+2.0915% +2.6367% +3.4505%] (p = 0.00 < 0.05)
+                        thrpt:  [−3.3354% −2.5690% −2.0487%]
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking tier1/filter-99pct/neon-intrinsics
+Benchmarking tier1/filter-99pct/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/neon-intrinsics: Collecting 10 samples in estimated 3.1077 s (770 iterations)
+Benchmarking tier1/filter-99pct/neon-intrinsics: Analyzing
+tier1/filter-99pct/neon-intrinsics
+                        time:   [4.0072 ms 4.0245 ms 4.0324 ms]
+                        thrpt:  [18.477 GiB/s 18.513 GiB/s 18.593 GiB/s]
+                 change:
+                        time:   [+1.0364% +1.2842% +1.5413%] (p = 0.00 < 0.05)
+                        thrpt:  [−1.5179% −1.2679% −1.0257%]
+                        Performance has regressed.
+Benchmarking tier1/filter-99pct/native-base
+Benchmarking tier1/filter-99pct/native-base: Warming up for 500.00 ms
+Benchmarking tier1/filter-99pct/native-base: Collecting 10 samples in estimated 3.1446 s (1100 iterations)
+Benchmarking tier1/filter-99pct/native-base: Analyzing
+tier1/filter-99pct/native-base
+                        time:   [2.8584 ms 2.8622 ms 2.8660 ms]
+                        thrpt:  [25.997 GiB/s 26.031 GiB/s 26.065 GiB/s]
+                 change:
+                        time:   [−41.931% −41.751% −41.591%] (p = 0.00 < 0.05)
+                        thrpt:  [+71.206% +71.676% +72.208%]
+                        Performance has improved.
+
+Benchmarking tier1/copy/copy-read-write
+Benchmarking tier1/copy/copy-read-write: Warming up for 500.00 ms
+Benchmarking tier1/copy/copy-read-write: Collecting 10 samples in estimated 3.0393 s (2695 iterations)
+Benchmarking tier1/copy/copy-read-write: Analyzing
+tier1/copy/copy-read-write
+                        time:   [1.1282 ms 1.1316 ms 1.1357 ms]
+                        thrpt:  [131.20 GiB/s 131.68 GiB/s 132.08 GiB/s]
+                 change:
+                        time:   [−1.2346% +0.5037% +1.9655%] (p = 0.58 > 0.05)
+                        thrpt:  [−1.9276% −0.5012% +1.2501%]
+                        No change in performance detected.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  2 (20.00%) high severe

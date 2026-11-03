@@ -1,0 +1,6 @@
+    Finished `bench` profile [optimized] target(s) in 0.01s
+     Running benches/tpch/main.rs (target/corgi-m5/release/deps/tpch-139c88f6b7904c91)
+query    corgi ms duckdb 1t ms    ratio duckdb all ms
+q01         20.95        18.79    1.12x         3.13
+q01b        17.64        18.51    0.95x         3.15
+q06          1.40         1.70    0.82x         0.59
