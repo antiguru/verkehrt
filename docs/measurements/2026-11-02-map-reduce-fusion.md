@@ -74,7 +74,7 @@ The topmost elementwise kernel `sub_i64`, the region root before fusion, falls b
 The total falls by 816.3 us (35%) and 1220.2 us (43%), more than the estimate, but 179.0 and 516.9 us of that is the change of `div_const_i64`, which fusion does not touch (next section).
 Without the `div_const_i64` change the total falls by 637.3 us (27% of the off total) on v4 and 703.3 us (25%) on v3, which brackets the estimate of 700 us.
 The root's time with fusion (320.0 us) is still above the 134 to 141 us it takes in the probes (below), a gap this record has not explained.
-In q03 the root reads `hi`, an 8 MB array that `div_const_i64` wrote earlier, besides `UserID`, and the probes read only `UserID`, which may account for it, but the evidence does not separate that from other causes.
+In q03 the plan is `sub_i64 UserID (mul_i64 hi 2^32)`, so `mul_i64` reads `hi` and `sub_i64` reads `UserID` and the tile buffer of `mul_i64`. `sub_i64` is the only kernel of the region that reads `UserID`, so it may pay for loading that column from memory, while in probes A and C an inner kernel of the region reads the column first (inference, not separated from other causes by the evidence).
 
 ### The `div_const_i64` change
 
@@ -222,7 +222,7 @@ A power-of-two path also makes `rem` cheap to build as the same shift and a subt
 
 The 525 us of `mul_i64` and `sub_i64` is also the input for issue #53, register-resident chains.
 Both kernels write to a tile buffer in cache, and with fusion on they run over 16384-row tiles of 128 KB (an 8-byte row) each, so the stores are cache hits, and no number here measures what a chain that skips the buffer would save.
-`sub_i64` at 320 us reads `hi` and `UserID` from memory in q03, and the probes' roots take 134 to 140 us over one input array, so part of the 320 us is likely the second input array and not the kernel (inference).
+`sub_i64` at 320 us is the first and only kernel of the q03 region that reads `UserID`, while the `sub_i64` roots of probes A and C take 134 to 140 us after an inner kernel read the same column, so part of the 320 us is likely the column load and not the kernel (inference).
 
 ## What remains
 
