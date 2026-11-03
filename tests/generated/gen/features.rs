@@ -159,6 +159,9 @@ impl<'f> Walk<'f> {
                     {
                         self.out.insert("shape compress(x, x cmp c)");
                     }
+                    (Op::Slice, Some(K::Op(Op::ArgSort, _, _))) => {
+                        self.out.insert("shape slice(argsort(..), s, e)");
+                    }
                     _ => {}
                 }
                 args.iter().for_each(|x| self.visit(x, lambda));

@@ -7,7 +7,9 @@ use crate::kernels::scalar::construct::width;
 use crate::kernels::scalar::elementwise::arity_error;
 use crate::kernels::scalar::reduce::array_arg;
 use crate::kernels::scalar::sort::radix::RadixKey;
-use crate::kernels::{InputSpec, KernelClass, KernelDef, KernelImpl, Registry, WholeBody};
+use crate::kernels::{
+    FusedPattern, InputSpec, KernelClass, KernelDef, KernelImpl, Registry, WholeBody,
+};
 use crate::ops::Op;
 #[cfg(test)]
 use crate::value::Elem;
@@ -85,6 +87,7 @@ mod composite;
 pub(super) mod radix;
 #[cfg(test)]
 mod tests;
+mod topk;
 
 macro_rules! argsort {
     ($reg:expr, $t:ty, $ty:expr) => {
@@ -132,6 +135,69 @@ macro_rules! argsort2_all {
     };
 }
 
+/// Registers `topk_<t>`, the fused `slice(argsort(x), s, e)`.
+fn topk<T: RadixKey>(reg: &mut Registry) {
+    let t = T::TYPE;
+    reg.add(KernelDef {
+        name: format!("topk_{}", t.name()),
+        class: KernelClass::Whole,
+        op: None,
+        inputs: vec![
+            InputSpec::Array(t),
+            InputSpec::Scalar(ScalarType::I64),
+            InputSpec::Scalar(ScalarType::I64),
+        ],
+        output: ValueType::Array(ScalarType::I64),
+        // One row read, below the argsort's row read and position written.
+        cost: width(t),
+        commutative: false,
+        pattern: Some(FusedPattern {
+            lhs: format!("(slice_i64 (argsort_{} ?x) ?s ?e)", t.name()),
+            vars: ["?x", "?s", "?e"].map(String::from).to_vec(),
+        }),
+        total: false,
+        impls: KernelImpl::whole::<topk::TopK<T>>(),
+    });
+}
+
+/// Registers `topk2_<a>_<b>`, the fused `slice(argsort(x, y), s, e)`.
+fn topk2<A: RadixKey, B: RadixKey>(reg: &mut Registry) {
+    let (ta, tb) = (A::TYPE, B::TYPE);
+    reg.add(KernelDef {
+        name: format!("topk2_{}_{}", ta.name(), tb.name()),
+        class: KernelClass::Whole,
+        op: None,
+        inputs: vec![
+            InputSpec::Array(ta),
+            InputSpec::Array(tb),
+            InputSpec::Scalar(ScalarType::I64),
+            InputSpec::Scalar(ScalarType::I64),
+        ],
+        output: ValueType::Array(ScalarType::I64),
+        // One row of each column read, below the argsort's reads and position written.
+        cost: width(ta) + width(tb),
+        commutative: false,
+        pattern: Some(FusedPattern {
+            lhs: format!(
+                "(slice_i64 (argsort2_{}_{} ?x ?y) ?s ?e)",
+                ta.name(),
+                tb.name()
+            ),
+            vars: ["?x", "?y", "?s", "?e"].map(String::from).to_vec(),
+        }),
+        total: false,
+        impls: KernelImpl::whole::<topk::TopK2<A, B>>(),
+    });
+}
+
+/// `topk2` with first column type `A` and every second column type.
+fn topk2_all<A: RadixKey>(reg: &mut Registry) {
+    topk2::<A, i64>(reg);
+    topk2::<A, u64>(reg);
+    topk2::<A, i32>(reg);
+    topk2::<A, u8>(reg);
+}
+
 pub(crate) fn register(reg: &mut Registry) {
     argsort!(reg, i64, ScalarType::I64);
     argsort!(reg, u64, ScalarType::U64);
@@ -142,4 +208,12 @@ pub(crate) fn register(reg: &mut Registry) {
     argsort2_all!(reg, u64, ScalarType::U64);
     argsort2_all!(reg, i32, ScalarType::I32);
     argsort2_all!(reg, u8, ScalarType::U8);
+    topk::<i64>(reg);
+    topk::<u64>(reg);
+    topk::<i32>(reg);
+    topk::<u8>(reg);
+    topk2_all::<i64>(reg);
+    topk2_all::<u64>(reg);
+    topk2_all::<i32>(reg);
+    topk2_all::<u8>(reg);
 }

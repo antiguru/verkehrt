@@ -284,6 +284,9 @@ pub struct Verdict {
     /// Whether the plan with the composite sort differs from the plan without it, the
     /// programs in which oracle 8 compared two runs.
     pub composite_changed_plan: bool,
+    /// Whether the fused plan contains a top-k kernel, so that oracles 2 and 3 compared it
+    /// with `slice` of `argsort`, and oracle 8 with the expanded two-column sort.
+    pub topk_in_plan: bool,
 }
 
 /// The shape classes of fused reductions, the classes that `FUSED_CLASSES` gates.
@@ -502,6 +505,10 @@ impl Engine {
             .then(|| prepare(&self.expanded, case))
             .transpose()?
             .map(|(plan, _)| plan);
+        // Only a program with the shape can contain a top-k kernel, so the others skip the
+        // rendering of the plan.
+        let topk_in_plan = case.features.contains("shape slice(argsort(..), s, e)")
+            && plan_text(false, case).contains("(topk");
         let composite_changed_plan = expanded.as_ref().is_some_and(|e| !fused.same_plans(e));
         if let (true, Some(expanded)) = (composite_changed_plan, &expanded) {
             let composite = run(&self.tiled, &fused, case);
@@ -553,6 +560,7 @@ impl Engine {
             narrowed_tiles,
             fused_runs,
             composite_changed_plan,
+            topk_in_plan,
         })
     }
 }

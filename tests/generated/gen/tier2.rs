@@ -220,6 +220,42 @@ impl Gen<'_, '_> {
         self.finish(cx, binding, r)
     }
 
+    /// `slice(argsort(...), s, e)` over one or two key columns, the shape that the top-k
+    /// kernels fuse, which a statement prints or exports. The bounds are usually in range and
+    /// the cut is short, so that the selection runs, and rarely out of range, an error.
+    /// Outside lambdas only.
+    pub(super) fn top_k(&mut self, cx: &mut Ctx) -> Option<E> {
+        if cx.lambda {
+            return None;
+        }
+        let ka = *self.c.pick(&INTS);
+        let a = self.expr(cx, ValueType::Array(ka), None);
+        let (a, binding) = self.anchor(cx, a);
+        let of = a.len.expect("an array has a length");
+        let sorted = if self.c.flip(50) {
+            let kb = *self.c.pick(&INTS);
+            let b = self.expr(cx, ValueType::Array(kb), Some(of));
+            self.op(cx, Op::ArgSort, vec![a, b], None)
+        } else {
+            self.op(cx, Op::ArgSort, vec![a], None)
+        };
+        let r = sorted.and_then(|sorted| match of {
+            Len::Known(n) => {
+                let e = self.c.below(n.min(70) + 1);
+                let s = self.c.below(e + 1);
+                let (ls, le) = (self.lit_i64(s), self.lit_i64(e));
+                self.op(cx, Op::Slice, vec![sorted, ls, le], Some(Len::Known(e - s)))
+            }
+            Len::Class(_) => {
+                let e = self.c.below(5);
+                let (ls, le) = (self.lit_i64(0), self.lit_i64(e));
+                let fresh = self.fresh_class();
+                self.op(cx, Op::Slice, vec![sorted, ls, le], Some(fresh))
+            }
+        });
+        self.finish(cx, binding, r)
+    }
+
     /// Keys in `0..n` with `n` and the length class of the result: the group ids of an array
     /// and its length, or a `bool[]` as keys with `n` of 2. Rarely any keys and `n`, which may
     /// be out of range, an error. The caller finishes the binding around its result.

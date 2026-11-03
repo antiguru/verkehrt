@@ -71,6 +71,16 @@ impl<T: Elem, const BOOL: bool> WholeBody for Gather<T, BOOL> {
     }
 }
 
+/// The rows `s..e` that `slice` keeps of `len` rows. Fails with `slice {start}..{end} out of
+/// range for length {len}` unless `0 <= start <= end <= len`.
+pub(crate) fn slice_bounds(start: i64, end: i64, len: usize) -> Result<(usize, usize), String> {
+    usize::try_from(start)
+        .ok()
+        .zip(usize::try_from(end).ok())
+        .filter(|&(s, e)| s <= e && e <= len)
+        .ok_or_else(|| format!("slice {start}..{end} out of range for length {len}"))
+}
+
 /// `slice` on arrays of type `ty`, a view of rows `start..end`.
 fn run_slice(args: &[Value], ty: ScalarType) -> Result<Value, String> {
     let [xs, start, end] = args else {
@@ -78,16 +88,7 @@ fn run_slice(args: &[Value], ty: ScalarType) -> Result<Value, String> {
     };
     let xs = array_arg(xs, ty)?;
     let (start, end) = (i64_arg(start)?, i64_arg(end)?);
-    let len = xs.len();
-    let bounds = usize::try_from(start)
-        .ok()
-        .zip(usize::try_from(end).ok())
-        .filter(|&(s, e)| s <= e && e <= len);
-    let Some((s, e)) = bounds else {
-        return Err(format!(
-            "slice {start}..{end} out of range for length {len}"
-        ));
-    };
+    let (s, e) = slice_bounds(start, end, xs.len())?;
     Ok(Value::Array(xs.slice(s, e - s)))
 }
 

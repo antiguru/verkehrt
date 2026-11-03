@@ -152,7 +152,8 @@ fn kernel_names(reg: &Registry, graph: &PlanGraph, id: PlanId, out: &mut BTreeSe
 }
 
 /// One program per element type, with the natural source of every fused kernel: dot, sumsq,
-/// and count, filter, and conditional sum for each of the six comparisons.
+/// and count, filter, and conditional sum for each of the six comparisons, and `slice` of
+/// `argsort` on one and two key columns of every key type.
 fn fused_sources() -> String {
     let mut src = String::new();
     // Element type, literal suffix, and a literal for each of the two array elements.
@@ -178,6 +179,16 @@ fn fused_sources() -> String {
                  print(sum(map({a}, |v| if v {cmp} {c} {{ v }} else {{ {e} }})));"
             )
             .unwrap();
+        }
+    }
+    // The top-k kernels, with one and two key columns of every key type.
+    let keys = [("i64", "i64"), ("u64", "u64"), ("i32", "i32"), ("u8", "u8")];
+    for (_, sa) in keys {
+        let a = format!("[2{sa}, 1{sa}, 3{sa}]");
+        writeln!(src, "print(slice(argsort({a}), 0, 2));").unwrap();
+        for (_, sb) in keys {
+            let b = format!("[1{sb}, 2{sb}, 1{sb}]");
+            writeln!(src, "print(slice(argsort({a}, {b}), 0, 2));").unwrap();
         }
     }
     src

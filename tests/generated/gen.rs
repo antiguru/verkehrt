@@ -90,6 +90,10 @@ const INDICES_TWO_KEYS: usize = 8;
 /// a two-key sort, printed or exported.
 const SORTED_COLUMN_PERCENT: usize = 8;
 
+/// The percentage of statements that `Gen::top_k` replaces by `slice(argsort(...), s, e)`,
+/// the shape that the top-k kernels fuse, printed or exported.
+const TOP_K_PERCENT: usize = 4;
+
 /// The percentage of generic `argsort` draws that take two key columns.
 const ARGSORT_TWO_KEYS: usize = 60;
 
@@ -470,6 +474,15 @@ impl<'a> Gen<'a, '_> {
                 && let Some(sorted) = self.sorted_column(&mut cx)
             {
                 e = sorted;
+                if kind == "let" { "export" } else { kind }
+            } else {
+                kind
+            };
+            // The first positions of a sort are never a let for the same reason.
+            let kind = if self.c.flip(TOP_K_PERCENT)
+                && let Some(top) = self.top_k(&mut cx)
+            {
+                e = top;
                 if kind == "let" { "export" } else { kind }
             } else {
                 kind

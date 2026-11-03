@@ -1280,12 +1280,14 @@ fn variant_entry_counts_are_stable() {
     // The 4 `group_id_<t>` and 16 `group_id2_<t1>_<t2>` kernels added 20 scalar and 20 auto
     // entries per x86 ISA.
     // The 16 `argsort2_<t1>_<t2>` kernels added 16 scalar and 16 auto entries per x86 ISA.
+    // The 4 `topk_<t>` and 16 `topk2_<t1>_<t2>` kernels added 20 scalar and 20 auto entries
+    // per x86 ISA.
     #[cfg(target_arch = "x86_64")]
-    assert_eq!(counts, [785, 475, 39, 475, 43, 0, 0]);
+    assert_eq!(counts, [805, 495, 39, 495, 43, 0, 0]);
     // NEON intrinsics cover 7 compress kernels, `where`, 30 fused filters, and the 8 float
     // min, max, argmin, and argmax reductions. Its auto slot stays empty by design.
     #[cfg(target_arch = "aarch64")]
-    assert_eq!(counts, [785, 0, 0, 0, 0, 0, 46]);
+    assert_eq!(counts, [805, 0, 0, 0, 0, 0, 46]);
 }
 
 fn u64s(v: &[u64]) -> Value {

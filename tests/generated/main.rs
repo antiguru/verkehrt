@@ -58,6 +58,9 @@ const FUSED_CLASSES: [&str; 2] = ["int sum and product", "float sum and product"
 /// The fewest programs of a run of `CI_CASES` or more in which oracle 8 compared the composite
 /// and the expanded two-column sort, a third of what `CI_SEED` gives.
 const MIN_COMPOSITE_PLANS: usize = 8;
+/// The fewest programs of a run of `CI_CASES` or more whose plan contains a top-k kernel,
+/// a third of what `CI_SEED` gives.
+const MIN_TOPK_PLANS: usize = 3;
 /// Workers of the CI run, fixed so that every machine runs the same programs.
 const CI_THREADS: u64 = 4;
 /// How long a worker shrinks a failing case.
@@ -89,6 +92,8 @@ struct Stats {
     failing_unread: usize,
     /// Cases whose plan differs with and without the composite sort, see `Verdict`.
     composite_changed_plan: usize,
+    /// Cases whose plan contains a top-k kernel, see `Verdict`.
+    topk_in_plan: usize,
     /// Region runs that completed tiled in oracle 4.
     tiled_regions: u64,
     /// Evaluations of shared nodes that reused a value in oracle 5.
@@ -115,6 +120,7 @@ impl Stats {
         self.fusion_changed_plan += other.fusion_changed_plan;
         self.failing_unread += other.failing_unread;
         self.composite_changed_plan += other.composite_changed_plan;
+        self.topk_in_plan += other.topk_in_plan;
         self.tiled_regions += other.tiled_regions;
         self.shared_hits += other.shared_hits;
         self.narrowed_tiles += other.narrowed_tiles;
@@ -204,6 +210,7 @@ fn search(seed: u64, cases: u32, params: Params, shrink_secs: u32) -> (Stats, Op
         stats.failing_unread += usize::from(verdict.failing_unread);
         stats.fusion_changed_plan += usize::from(verdict.fusion_changed_plan);
         stats.composite_changed_plan += usize::from(verdict.composite_changed_plan);
+        stats.topk_in_plan += usize::from(verdict.topk_in_plan);
         stats.tiled_regions += verdict.tiled_regions;
         stats.shared_hits += verdict.shared_hits;
         stats.narrowed_tiles += verdict.narrowed_tiles;
@@ -294,7 +301,8 @@ fn generated_programs() {
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
          plan of {}, {} have a failing unread binding, {} region runs completed tiled, {} \
          shared evaluations reused a value, {} guard evaluations narrowed their right operand, \
-         {} fused reduction runs, {} programs compared the composite sort with its expansion",
+         {} fused reduction runs, {} programs compared the composite sort with its expansion, \
+         {} programs plan a top-k kernel",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
@@ -306,6 +314,7 @@ fn generated_programs() {
         stats.narrowed_tiles,
         stats.fused_runs.values().sum::<u64>(),
         stats.composite_changed_plan,
+        stats.topk_in_plan,
     );
     eprintln!(
         "slowest case, {:.0?} for planning twice and running:\n{}",
@@ -384,6 +393,14 @@ fn generated_programs() {
         "only {} of {} programs compared the composite sort with its expansion, want \
          {MIN_COMPOSITE_PLANS}",
         stats.composite_changed_plan,
+        stats.cases
+    );
+    // The top-k kernels are compared with nothing if no plan contains one.
+    assert!(
+        u64::try_from(stats.cases).expect("cases fit u64") < CI_CASES
+            || stats.topk_in_plan >= MIN_TOPK_PLANS,
+        "only {} of {} programs plan a top-k kernel, want {MIN_TOPK_PLANS}",
+        stats.topk_in_plan,
         stats.cases
     );
     let unfused_classes: Vec<&str> = FUSED_CLASSES

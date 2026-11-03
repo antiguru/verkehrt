@@ -63,6 +63,14 @@ The CI run gates on programs in which oracle 8 compared different plans: at leas
 The 5000-case release run at seed 7800000, before `sorted_column`, and a 1500-case run at seed 7900000 with it had no oracle failure.
 Swapping the key order of the expansion passed the 64-case CI run before `sorted_column` and fails it at oracle 8 in 3 of 4 workers since. The 1500-case release run at seed 7700000 caught the swap before `sorted_column` in 8 of 32 workers, and the unit test `oracle_8_compares_programs_with_a_two_column_sort` catches it.
 The unit test `the_feature_argsort2_covers_every_plan_the_expansion_changes` checks over 12 programs from pseudo-random choices that every plan the expansion changes has the feature `argsort2`, so the skip cannot hide one.
+The fused top-k kernels `topk_<t>` and `topk2_<a>_<b>` need no oracle of their own, because they are fused patterns that oracle 2 compares with `slice` of `argsort` and, for the two-column kernels, oracle 8 compares with the expanded sort.
+They need programs with `slice(argsort(...), s, e)`, which the first generator did not draw: with an option of weight 2 against 8 for the other options of `slice`, the fixed CI seed gave no plan with a top-k kernel.
+`Gen::top_k` now replaces 4% of statements by `slice(argsort(...), s, e)` over one or two key columns, printed or exported, with `e` at most 70 and `s` at most `e` when the length is a known literal, so that the selection runs, and with a literal `e` below 5 when it is not, which can fail.
+At 6% of statements the fixed CI seed gave 14 plans with a top-k kernel and the debug CI run took 26.9 s, and at 4% it gives 10 plans and 24.5 s, so 4% stays.
+At 4% the other counts of the seed are 23 programs in which oracle 8 compared different plans, 212 region runs that completed tiled, 278 shared reuses, 274 narrowed guard evaluations, 122 fused reduction runs, and 26 programs with a failing unread binding, all above their gates.
+The CI run gates on programs whose plan contains a top-k kernel: at least 3 must, a third of the 10 the fixed CI seed gives.
+The gate counts the programs with the feature `shape slice(argsort(..), s, e)` whose rendered fused plan contains `(topk`, and only those programs render the plan.
+The debug CI run, `cargo test --locked --test generated -- --nocapture` at a load average of 4 to 6, took 22.2 s on the commit before the top-k change and 24.5 s with it. The earlier 20.1 to 20.3 s was measured at a lower load, so only the 2.3 s difference is comparable, about 0.25 s per plan with a top-k kernel.
 Whether fusion changed a plan is decided by `Prepared::same_plans`, which numbers the plan graphs by the tree that the plan text prints, in linear time. Rendering the plan text expands shared nodes, so the oracles render it only for failure messages. On 664 programs, the CI seed and 600 cases at seed 5400000, `same_plans` agreed with comparing the rendered text in every case.
 
 ## Runs
