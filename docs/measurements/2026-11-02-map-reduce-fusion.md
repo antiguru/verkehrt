@@ -2,8 +2,8 @@
 
 This document measures fused reductions (issue #30), where a reduction over an elementwise chain is the root of a tiled region and each tile goes straight into the reduction's accumulator.
 ClickBench q03 has a fused region (one run of `reduce_add_i64` per query run, the only one of the three queries whose statistics were recorded, and the only one the spec's plan survey finds), and it is the only query that moves beyond the 10% noise band in the full suites.
-On `x86-64-v4`, fusion cuts q03's total kernel time from 2334.0 to 1517.7 us (0.65 times), and the region root `sub_i64` falls from 928.6 to 320.0 us, which is the effect the spec estimated (about 700 us from `sub_i64`).
-The criterion means of q03 are lower with fusion in all 30 variant pairs of six off and on runs, but the size of the gain is unresolved: the best variant is 0.49 to 0.89 times its off time, because the off runs fall into two modes, about 2.5 ms and about 1.4 ms, and the on runs stay at 1.25 ms.
+On `x86-64-v4`, fusion cuts q03's total kernel time from 2334.0 to 1517.7 us (0.65 times), and `sub_i64`, the topmost elementwise kernel and the region root before fusion, falls from 928.6 to 320.0 us, which is the effect the spec estimated (about 700 us from `sub_i64`).
+The criterion means of q03 are lower with fusion in all 30 variant pairs of six off and on runs, but the size of the gain is unresolved: the best variant is 0.49 to 0.89 times its off time, because the off runs form a fast cluster at about 1.4 ms and slower clusters between 2.2 and 3.4 ms, and the on runs stay at 1.25 ms.
 The stats of the other kernels of q03 disagree with the criterion in one place: `div_const_i64`, which no fusion touches, fell from 1008.6 to 829.6 us in the first pair of stats runs, and the evidence shows that its time varies from 804 to 1471 us across runs of both modes, so that fall is not an effect of fusion.
 After fusion the division by 2^32 is 55% of q03's kernel time (53% to 63% across the runs), and this record gives it as the input for the `rem` and power-of-two `div_const` follow-up.
 The before numbers come from the same build with `VERKEHRT_REDUCTION_FUSION=off`, and the DuckDB and corgi figures are reused from earlier records and were not re-run.
@@ -32,11 +32,11 @@ Differences within about 10% count as noise.
 
 All files are in `2026-11-02-map-reduce-fusion/`. Loads are the 1-minute average at the start and the end, and a bench run adds up to 1 to the end value.
 
-* `plans.txt`: the output of `acceptance_plans`, which equals `2026-11-02-term-graph/plans-after.txt` apart from the cargo header lines and the timing line.
+* `plans.txt`: the output of `acceptance_plans`, which equals `2026-11-02-term-graph/plans-after.txt` apart from the timing line.
 * `stats-off.txt` and `stats-on.txt`: per-kernel totals of q03, TPC-H q06 and TPC-H q01 on `x86-64-v3` and `x86-64-v4`, with `tiled_regions`, `narrowed_tiles` and `fused_reductions`. Load 2.39 to 2.41 and 2.41 to 2.38.
 * `probe-a.vk`, `probe-b.vk`, `probe-c.vk`: the three probe programs of the spec. They were copied into `tests/acceptance/clickbench/` for the runs and deleted afterwards.
 * `stats-probes-off.txt` and `stats-probes-on.txt`: the same statistics for the probes. Load 2.38 to 2.35 and 2.35 to 2.35.
-* `stats-heap-off.txt`, `stats-heap-on.txt`, `stats-mmap-off.txt`, `stats-mmap-on.txt`: q03 with `MALLOC_MMAP_THRESHOLD_` set to 1073741824 (8 MB arrays come from the heap) and to 65536 (every large array is a fresh mapping). Loads 2.01 to 2.01 in three of them and 2.01 to 2.09 in `stats-mmap-on.txt`, with a 15-minute load of 10.1 to 10.2.
+* `stats-heap-off.txt`, `stats-heap-on.txt`, `stats-mmap-off.txt`, `stats-mmap-on.txt`: q03 with `MALLOC_MMAP_THRESHOLD_` set to 1073741824 (meant to serve 8 MB arrays from the heap, but glibc probably ignores values above 32 MiB, so this run may not have pinned anything) and to 65536 (every large array is a fresh mapping). Loads 2.01 to 2.01 in three of them and 2.01 to 2.09 in `stats-mmap-on.txt`, with a 15-minute load of 10.1 to 10.2.
 * `bench-q03-p1-off.txt`, `bench-q03-p1-on.txt`, `bench-q03-p2-on.txt`, `bench-q03-p2-off.txt`, `bench-q03-p3-off.txt`, `bench-q03-p3-on.txt`: three interleaved pairs of q03 (off, on, on, off, off, on). Loads 2.00 to 3.81, 3.81 to 2.82, 2.82 to 2.53, 2.53 to 2.38, 2.38 to 2.28, 2.28 to 2.19.
 * `bench-q03-p4-off.txt`, `bench-q03-p4-on.txt`, `bench-q03-p5-on.txt`, `bench-q03-p5-off.txt`: two more pairs, because the first three disagreed in size. Loads 1.98 to 2.22, 2.22 to 2.73, 2.73 to 2.53, 2.53 to 2.49.
 * `bench-tpch-off.txt` and `bench-tpch-on.txt`: the control pair, TPC-H q01 and q06. Load 2.19 to 2.15 and 2.15 to 2.40.
@@ -46,7 +46,7 @@ All files are in `2026-11-02-map-reduce-fusion/`. Loads are the 1-minute average
 ## The plans
 
 The plans are unchanged.
-`diff` of `plans.txt` against `2026-11-02-term-graph/plans-after.txt` shows no difference outside the cargo header and the test timing line, so the planner, the plans and `--plan` output are as before.
+`diff` of `plans.txt` against `2026-11-02-term-graph/plans-after.txt` shows no difference outside the test timing line, so the planner, the plans and `--plan` output are as before.
 q03's plan has `div_const_i64 UserID 4294967296` as its own statement (`hi`, read by two statements) and `reduce_add_i64 (sub_i64 UserID (mul_i64 hi 4294967296))` for the sum of `lo`, and the fused region is that sum with `sub_i64` and `mul_i64` below it.
 `fused_reductions` is `reduce_add_i64=1` for q03 in `stats-on.txt` on both ISAs and empty for TPC-H q06 and q01, so q03 is the only one of the three with a fused region.
 With fusion off it is empty everywhere.
@@ -63,14 +63,14 @@ Times in us, from `stats-off.txt` and `stats-on.txt`.
 | Kernel | v4 off | v4 on | change | v3 off | v3 on | change |
 |---|---|---|---|---|---|---|
 | `div_const_i64` | 1008.6 | 829.6 | -179.0 | 1382.2 | 865.3 | -516.9 |
-| `sub_i64` (region root, elementwise) | 928.6 | 320.0 | -608.6 | 934.1 | 334.8 | -599.3 |
+| `sub_i64` (topmost elementwise kernel, root before fusion) | 928.6 | 320.0 | -608.6 | 934.1 | 334.8 | -599.3 |
 | `mul_i64` (inner) | 192.9 | 204.6 | +11.7 | 288.9 | 208.3 | -80.6 |
 | `reduce_add_i64` | 181.5 | 153.2 | -28.3 | 199.6 | 177.3 | -22.3 |
 | other | 22.4 | 10.3 | -12.1 | 10.4 | 9.3 | -1.1 |
 | total | 2334.0 | 1517.7 | -816.3 | 2815.2 | 1595.0 | -1220.2 |
 
 The spec estimated that fusion saves most of the difference between a region root that writes a full array and an inner kernel, about 700 us of 2359 us (30%).
-The root `sub_i64` falls by 608.6 us on `x86-64-v4` and 599.3 us on `x86-64-v3`, about 600 us, 90 to 100 us below the estimate on the root alone, and the reduction's own time falls by 28 and 22 us.
+The topmost elementwise kernel `sub_i64`, the region root before fusion, falls by 608.6 us on `x86-64-v4` and 599.3 us on `x86-64-v3`, about 600 us, 90 to 100 us below the estimate on the root alone, and the reduction's own time falls by 28 and 22 us.
 The total falls by 816.3 us (35%) and 1220.2 us (43%), more than the estimate, but 179.0 and 516.9 us of that is the change of `div_const_i64`, which fusion does not touch (next section).
 Without the `div_const_i64` change the total falls by 637.3 us (27% of the off total) on v4 and 703.3 us (25%) on v3, which brackets the estimate of 700 us.
 The root's time with fusion (320.0 us) is still above the 134 to 141 us it takes in the probes (below), a gap this record has not explained.
@@ -80,19 +80,19 @@ In q03 the root reads `hi`, an 8 MB array that `div_const_i64` wrote earlier, be
 
 `div_const_i64` is the first kernel q03 runs, its input `UserID` is a global, and it is a whole call in both modes, so fusion changes neither its work nor its arguments.
 Its time still fell by 18% on v4 and 37% on v3 in the first pair of stats runs, which is the unexplained change of the task 2 probe.
-`stats-heap-*.txt` and `stats-mmap-*.txt` repeat q03 with the allocator pinned to one behavior, and the times of `div_const_i64` across all q03 runs in this record are:
+`stats-mmap-*.txt` repeat q03 with every large array a fresh mapping, and `stats-heap-*.txt` tried to pin the opposite behavior but may not have (see the evidence list), and the times of `div_const_i64` across all q03 runs in this record are:
 
 | Run | v4 off | v4 on | v3 off | v3 on |
 |---|---|---|---|---|
 | default allocator (`stats-off.txt`, `stats-on.txt`) | 1008.6 | 829.6 | 1382.2 | 865.3 |
-| 8 MB arrays from the heap (`stats-heap-*.txt`) | 816.2 | 803.7 | 877.2 | 1136.3 |
+| heap pin attempted, possibly not in effect (`stats-heap-*.txt`) | 816.2 | 803.7 | 877.2 | 1136.3 |
 | every large array a fresh mapping (`stats-mmap-*.txt`) | 1470.7 | 1107.2 | 1170.2 | 1134.8 |
 
-The time ranges from 803.7 to 1470.7 us over the twelve runs and does not separate the modes: with the heap pinned the two modes are level on v4 (816.2 and 803.7) and the on run is slower on v3 (877.2 against 1136.3), and with mappings pinned the off run is slower on both.
+The time ranges from 803.7 to 1470.7 us over the twelve runs and does not separate the modes: the default runs disagree in direction with the heap-attempt runs (on is faster by 18% and 37% in the default pair, level on v4 and slower by 30% on v3 in the heap-attempt pair), and with mappings pinned the off run is slower on v4 (1470.7 against 1107.2) and level on v3 (1170.2 against 1134.8, 3%).
 So the evidence rules out a stable effect of fusion on `div_const_i64`, and the 18% and 37% falls of the default pair are two draws from a spread that is as wide in each mode.
 The cause of the spread is not established.
-The first-touch page faults of its fresh 8 MB output are a candidate by inference, because the stats timer wraps the output allocation, but the pinned runs do not show that setting alone removes the spread.
-Under the pinned heap the root `sub_i64` stays at 916.2 us (v4, off) and 981.4 us (v3, off), against 329.3 and 348.9 us on, so the root's cost with fusion off is not page faults of a fresh mapping alone.
+The first-touch page faults of its fresh 8 MB output are a candidate by inference, because the stats timer wraps the output allocation, and no run here tests it, since the heap attempt may not have pinned anything.
+The heap-attempt runs show the off root at 916.2 us (v4) and 981.4 us (v3) against 329.3 and 348.9 us on, which is the same size as the default runs, and since that attempt may not have changed the allocator, this record draws no conclusion about page faults from it.
 
 ## The probes
 
@@ -144,12 +144,12 @@ The last column group is the full suite run (`bench-full-off.txt`, `bench-full-o
 
 The on runs are stable: 1.244 to 1.254 ms on each v4 variant, 1.310 to 1.338 ms on each v3 variant and 2.118 to 2.145 ms on scalar across the six runs, a spread of about 1% on v4 and 2% on v3.
 The off runs are not.
-Each off measurement lands in a fast mode (1.403 to 1.462 ms on the four vector variants, 2.289 to 2.296 ms on scalar) or a slow one (2.172 to 2.612 ms, and 3.028 to 3.370 ms on scalar), 9 of 30 in the fast mode, and the mode changes between variants within one file (pair 2 has `x86-64-v3-intrinsics` at 1.445 ms among slow neighbours).
+Each off measurement lands in a fast cluster (1.403 to 1.462 ms on the four vector variants, 2.289 to 2.296 ms on scalar) or among slower values (2.172 to 2.612 ms, which split again into 2.17 to 2.25 and 2.49 to 2.61 ms, and 2.289 to 3.370 ms on scalar), 9 of 30 in the fast cluster, and the cluster changes between variants within one file (pair 2 has `x86-64-v3-intrinsics` at 1.445 ms among slow neighbours).
 The ratio is 0.49 to 0.70 against a slow-mode off and 0.88 to 0.93 against a fast-mode off.
 The pairs therefore disagree in size, and this record calls the size unresolved, between about 0.5 and 0.9 times.
-The direction does not disagree, because the on mean is below the off mean in all 30 pairs, and 26 of the 30 are beyond the 10% band (the four others are 0.90 to 0.93).
+The direction does not disagree, because the on mean is below the off mean in all 30 pairs, and 26 of the 30 are beyond the 10% band (the four others are 0.91 to 0.93).
 The fast off mode (1.40 ms on v4) is still 12% above the on runs (1.25 ms), so a fast-mode off run does not close the gap.
-Earlier records saw the same spread without fusion (1.4 to 3.4 ms in `2026-11-02-term-graph.md` and `2026-11-02-selective-predicates.md`, both left unresolved), and this record does not explain the two off modes either.
+Earlier records saw the same spread without fusion (1.4 to 3.4 ms in `2026-11-02-term-graph.md` and `2026-11-02-selective-predicates.md`, both left unresolved), and this record does not explain the fast cluster of the off runs either.
 The stats runs are another measurement (kernel time with the timer on, in one process of five runs), so they cannot say which criterion mode they correspond to, and the per-kernel evidence says nothing about what the fast mode is.
 
 The per-kernel stats are the primary evidence, and they say fusion removes about 600 us at the root of q03's sum and 27% to 35% of its kernel time on v4, which agrees in direction with every pair, and the kernel-time ratio of 0.65 on v4 lies inside the slow-mode range of the pairs (0.49 to 0.70).
@@ -185,7 +185,8 @@ Ratios are on over off, and values below 1.0 mean fusion is faster.
 
 So q03 is the only query beyond the band, and it was repeated with four more pairs, as the section above describes.
 No query got slower beyond the band.
-`q27` was unstable across pairs in the tiled-regions record, it stays inside the band here (1.04 to 1.08), and it was not repeated.
+`q27` was unstable across pairs in the tiled-regions record, it stays inside the band here (1.04 to 1.08) and was not repeated, but it is slower on all five variants, so a small regression is possible and unchecked.
+`bench-full-off.txt` ended at load 5.94, and its last queries (the TPC-H ones, which run after the ClickBench ones) show ratios of 0.96 to 1.03, so no bias is visible there, though this record did not test for one.
 The 21 other queries have no fused region by the plans (see "The plans"), so their ratios are the noise of the host and not an effect of fusion, which this record did not test beyond the plan reading.
 
 ## Against DuckDB and corgi
@@ -226,6 +227,6 @@ Both kernels write to a tile buffer in cache, and with fusion on they run over 1
 ## What remains
 
 Fusion removes the full-size output of the region root, and the evidence agrees with the spec on size: about 600 us at q03's root and 27% to 35% of its kernel time on v4, a 1.25 ms criterion mean on every variant of q03 against 1.4 to 2.6 ms before.
-The size of the criterion gain stays unresolved because q03's off time has two modes that this record did not explain, and the on runs hold one mode.
+The size of the criterion gain stays unresolved because q03's off time has a fast cluster and slower values that this record did not explain, and the on runs hold one value.
 The division by 2^32 is more than half of q03's kernel time, and the change of its time in the first stats pair is not an effect of fusion.
-The `rem` and power-of-two decision, issue #53 and the open question of the off modes are the follow-ups this record leaves.
+The `rem` and power-of-two decision, issue #53 and the open question of the off clusters are the follow-ups this record leaves.
