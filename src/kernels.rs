@@ -402,6 +402,9 @@ pub struct KernelDef {
     pub cost: u64,
     pub commutative: bool,
     pub pattern: Option<FusedPattern>,
+    /// The kernel's entries never fail on arguments the kernel accepts whose arrays have equal
+    /// lengths.
+    pub total: bool,
     /// The entries by variant. The scalar entry is always set.
     pub impls: KernelTable,
 }

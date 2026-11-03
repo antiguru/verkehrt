@@ -1,0 +1,77 @@
+selective: off (on means VERKEHRT_SELECTIVE unset), default tiling
+load start: 2.64 2.76 3.63
+== q03 x86-64-v3
+query q03 total kernel time 2715.6 us
+tiled_regions 1
+narrowed_tiles 0
+stats add_f64_s calls=1 bytes=0 read=0 time=0.8
+stats add_i64_s calls=1 bytes=0 read=0 time=4.1
+stats cast_i64_f64_s calls=3 bytes=0 read=0 time=1.5
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=1021.7
+stats div_const_i64_s calls=1 bytes=0 read=0 time=4.9
+stats div_f64_s calls=1 bytes=0 read=0 time=0.6
+stats length_i64 calls=1 bytes=8000000 read=8000000 time=0.8
+stats mul_f64_s calls=1 bytes=0 read=0 time=1.2
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=218.5
+stats mul_i64_s calls=1 bytes=0 read=0 time=0.9
+stats reduce_add_i64 calls=2 bytes=16000000 read=16000000 time=186.0
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=1273.9
+stats sub_i64_s calls=1 bytes=0 read=0 time=0.7
+== tpch/q01 x86-64-v3
+query tpch/q01 total kernel time 20917.9 us
+tiled_regions 4
+narrowed_tiles 0
+stats add_i64 calls=2 bytes=47318160 read=28390896 time=934.8
+stats cast_i64_f64 calls=2 bytes=128 read=64 time=1.1
+stats cast_i64_u8 calls=2 bytes=72 read=64 time=11.5
+stats cast_u8_i64 calls=2 bytes=21293172 read=2365908 time=1552.9
+stats compress_i64 calls=4 bytes=81053412 read=43198884 time=4132.8
+stats compress_u8 calls=2 bytes=7165784 read=4799876 time=1562.9
+stats div_const_i64 calls=1 bytes=64 read=32 time=2.8
+stats div_f64 calls=1 bytes=96 read=64 time=5.2
+stats gather_i64 calls=5 bytes=2621760 read=2621600 time=11.7
+stats histogram calls=1 bytes=9987920 read=9463632 time=1652.9
+stats le_i64 calls=1 bytes=10799721 read=9599752 time=446.6
+stats lt_i64 calls=1 bytes=589824 read=524288 time=15.5
+stats mul_i64 calls=4 bytes=75709120 read=47318192 time=3175.5
+stats reduce_into_add_i64 calls=4 bytes=77806208 read=75709056 time=7105.1
+stats sub_i64 calls=2 bytes=18927360 read=9463696 time=272.2
+stats where calls=1 bytes=65568 read=65536 time=34.4
+== q03 x86-64-v4
+query q03 total kernel time 2401.2 us
+tiled_regions 1
+narrowed_tiles 0
+stats add_f64_s calls=1 bytes=0 read=0 time=0.7
+stats add_i64_s calls=1 bytes=0 read=0 time=4.9
+stats cast_i64_f64_s calls=3 bytes=0 read=0 time=1.2
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=1083.7
+stats div_const_i64_s calls=1 bytes=0 read=0 time=6.2
+stats div_f64_s calls=1 bytes=0 read=0 time=0.7
+stats length_i64 calls=1 bytes=8000000 read=8000000 time=0.9
+stats mul_f64_s calls=1 bytes=0 read=0 time=1.2
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=205.5
+stats mul_i64_s calls=1 bytes=0 read=0 time=0.9
+stats reduce_add_i64 calls=2 bytes=16000000 read=16000000 time=177.4
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=917.4
+stats sub_i64_s calls=1 bytes=0 read=0 time=0.5
+== tpch/q01 x86-64-v4
+query tpch/q01 total kernel time 17431.9 us
+tiled_regions 4
+narrowed_tiles 0
+stats add_i64 calls=2 bytes=47318160 read=28390896 time=795.4
+stats cast_i64_f64 calls=2 bytes=128 read=64 time=1.0
+stats cast_i64_u8 calls=2 bytes=72 read=64 time=10.3
+stats cast_u8_i64 calls=2 bytes=21293172 read=2365908 time=1143.3
+stats compress_i64 calls=4 bytes=81053412 read=43198884 time=3024.4
+stats compress_u8 calls=2 bytes=7165784 read=4799876 time=225.0
+stats div_const_i64 calls=1 bytes=64 read=32 time=2.1
+stats div_f64 calls=1 bytes=96 read=64 time=5.5
+stats gather_i64 calls=5 bytes=2621760 read=2621600 time=11.3
+stats histogram calls=1 bytes=9987920 read=9463632 time=1576.4
+stats le_i64 calls=1 bytes=10799721 read=9599752 time=382.7
+stats lt_i64 calls=1 bytes=589824 read=524288 time=11.5
+stats mul_i64 calls=4 bytes=75709120 read=47318192 time=3084.4
+stats reduce_into_add_i64 calls=4 bytes=77806208 read=75709056 time=6866.7
+stats sub_i64 calls=2 bytes=18927360 read=9463696 time=274.1
+stats where calls=1 bytes=65568 read=65536 time=17.8
+load end: 2.62 2.75 3.62

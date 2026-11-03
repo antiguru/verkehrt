@@ -85,6 +85,7 @@ The `intrinsics` backend holds hand-written kernels and exists only where one wa
 `--no-fusion` plans without fused kernels and without the integer sum rewrites, such as `sum(x + k)` to `sum(x) + length(x) * k`, so every plan uses single-op kernels only.
 `--no-tiling` runs chains of elementwise kernels over whole arrays instead of in tiles of 16384 rows, and changes no value and no error.
 `--no-sharing` evaluates a plan node every time a statement reaches it instead of once per run, which changes kernel call counts only.
+`--no-selective` runs the right operand of `and` and `or` over every row of a tile instead of only over the rows the left operand leaves open, and changes no value and no error.
 `--disable FEATURE` treats a CPU feature such as `avx512vbmi2` as absent and can be repeated.
 Kernel entries that need a disabled feature are not selected, and `--isa` rejects a level that needs one.
 A feature this CPU does not report prints a note, because disabling it has no effect.

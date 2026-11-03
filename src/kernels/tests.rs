@@ -229,6 +229,7 @@ fn lookup_is_exact_for_non_elementwise_kernels() {
             cost: 0,
             commutative: false,
             pattern: None,
+            total: false,
             impls: KernelImpl::Whole(dummy).scalar_only(),
         })
     };
@@ -581,6 +582,7 @@ fn add_rejects_entries_of_another_class() {
         cost: 0,
         commutative: false,
         pattern: None,
+        total: false,
         impls: KernelImpl::Elementwise(entry).scalar_only(),
     });
 }
@@ -1933,4 +1935,135 @@ fn byte_compress_declares_vbmi2() {
         }
     }
     assert_eq!(declaring, 2);
+}
+
+/// Rows of extreme values of `t` at the positions `pick`, and the number of extreme values.
+/// They are zero, one, the type's minimum and maximum, minus one for signed types, negative
+/// zero, NaN, and both infinities for floats, and both values for bool.
+fn extremes(t: ScalarType, pick: &[usize]) -> (usize, Array) {
+    macro_rules! typed {
+        ($($v:expr),+ $(,)?) => {{
+            let v = [$($v),+];
+            (v.len(), Array::from_vec(pick.iter().map(|&i| v[i]).collect()))
+        }};
+    }
+    macro_rules! int {
+        ($t:ty) => {
+            typed!(0, 1, <$t>::MIN, <$t>::MAX)
+        };
+    }
+    macro_rules! signed {
+        ($t:ty) => {
+            typed!(0, 1, -1, <$t>::MIN, <$t>::MAX)
+        };
+    }
+    macro_rules! float {
+        ($t:ty) => {
+            typed!(
+                0.0,
+                -0.0,
+                1.0,
+                <$t>::MIN,
+                <$t>::MAX,
+                <$t>::NAN,
+                <$t>::INFINITY,
+                <$t>::NEG_INFINITY,
+            )
+        };
+    }
+    match t {
+        ScalarType::I8 => signed!(i8),
+        ScalarType::I16 => signed!(i16),
+        ScalarType::I32 => signed!(i32),
+        ScalarType::I64 => signed!(i64),
+        ScalarType::U8 => int!(u8),
+        ScalarType::U16 => int!(u16),
+        ScalarType::U32 => int!(u32),
+        ScalarType::U64 => int!(u64),
+        ScalarType::F32 => float!(f32),
+        ScalarType::F64 => float!(f64),
+        ScalarType::Bool => {
+            let v = [false, true];
+            let rows: Vec<bool> = pick.iter().map(|&i| v[i]).collect();
+            (v.len(), Array::from_bools(&rows))
+        }
+    }
+}
+
+#[test]
+fn total_elementwise_kernels_accept_extreme_values() {
+    let reg = Registry::new();
+    let variants: Vec<Dispatch> = Isa::ALL
+        .into_iter()
+        .filter(|isa| isa.is_available_with(FeatureSet::EMPTY))
+        .flat_map(|isa| [Backend::Auto, Backend::Intrinsics].map(|b| (isa, b)))
+        .map(|(isa, b)| reg.resolve(isa, b, FeatureSet::EMPTY))
+        .collect();
+    let mut checked = 0;
+    for (id, def) in reg.iter() {
+        if def.class != KernelClass::Elementwise
+            || !matches!(def.output, ValueType::Array(_))
+            || !def.total
+        {
+            continue;
+        }
+        // Every operand is an array, holding every combination of extreme values.
+        let types: Vec<ScalarType> = def
+            .inputs
+            .iter()
+            .map(|spec| match *spec {
+                InputSpec::Array(t) | InputSpec::Either(t) => t,
+                other => panic!("{} has the operand {other:?}", def.name),
+            })
+            .collect();
+        let counts: Vec<usize> = types.iter().map(|&t| extremes(t, &[]).0).collect();
+        let n: usize = counts.iter().product();
+        let mut stride = 1;
+        let args: Vec<Value> = types
+            .iter()
+            .zip(&counts)
+            .map(|(&t, &m)| {
+                let pick: Vec<usize> = (0..n).map(|r| (r / stride) % m).collect();
+                stride *= m;
+                Value::Array(extremes(t, &pick).1)
+            })
+            .collect();
+        for dispatch in &variants {
+            let got = dispatch.call(&reg, id, &args);
+            assert!(
+                got.is_ok(),
+                "{} on {}: {got:?}",
+                def.name,
+                dispatch.variant_used(id)
+            );
+        }
+        checked += 1;
+    }
+    assert!(checked > 100, "{checked} total kernels");
+}
+
+#[test]
+fn only_div_const_kernels_are_elementwise_and_not_total() {
+    let reg = Registry::new();
+    let partial: Vec<&str> = reg
+        .iter()
+        .filter(|(_, def)| def.class == KernelClass::Elementwise && !def.total)
+        .map(|(_, def)| def.name.as_str())
+        .collect();
+    let want = [
+        "div_const_i64",
+        "div_const_i64_s",
+        "div_const_u64",
+        "div_const_u64_s",
+        "div_const_i32",
+        "div_const_i32_s",
+        "div_const_u8",
+        "div_const_u8_s",
+    ];
+    assert_eq!(partial, want);
+    // No kernel of another class is total.
+    assert!(
+        reg.iter()
+            .all(|(_, def)| def.class == KernelClass::Elementwise || !def.total)
+    );
 }

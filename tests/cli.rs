@@ -69,6 +69,48 @@ fn no_sharing_traces_each_use() {
 }
 
 #[test]
+fn no_selective_prints_the_same_output() {
+    let dir = std::env::temp_dir().join(format!("verkehrt-cli-selective-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("mask.vk");
+    // `x != 50000` runs over rows 40000 to 79999 only, unless `--no-selective`.
+    std::fs::write(
+        &file,
+        "let x = iota(100000);\nprint(sum(compress(x, and(and(x >= 40000, x < 80000), x != 50000))));\n",
+    )
+    .unwrap();
+    let run = |flags: &[&str]| {
+        let a = verkehrt()
+            .args(["run", "--trace"])
+            .args(flags)
+            .arg(&file)
+            .assert()
+            .success();
+        let out = String::from_utf8(a.get_output().stdout.clone()).unwrap();
+        let ne = stderr_of(&a)
+            .lines()
+            .find(|l| l.starts_with("trace ne_i64 "))
+            .map(|l| {
+                l.split(' ')
+                    .find(|w| w.starts_with("n="))
+                    .unwrap()
+                    .to_string()
+            });
+        (out, ne)
+    };
+    let (selective, ne) = run(&[]);
+    let (whole, ne_whole) = run(&["--no-selective"]);
+    assert_eq!(selective, whole);
+    assert_eq!(
+        selective,
+        format!("{}\n", (40000..80000i64).sum::<i64>() - 50000)
+    );
+    assert_eq!(ne_whole.as_deref(), Some("n=100000"));
+    assert_eq!(ne.as_deref(), Some("n=40000"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn plan_goes_to_stderr() {
     let a = verkehrt()
         .args(["run", "--plan", "tests/cli/dot.vk"])

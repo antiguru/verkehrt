@@ -239,8 +239,8 @@ fn run_select<T: Elem>(args: &[Arg], out: &mut [u8], ty: ScalarType) -> Result<(
 }
 
 /// Registers the array kernel `name` (when every type is a v1 array type) and the
-/// scalar-only kernel `{name}_s`. Both run body `B`. Only the array kernel gets ISA variants,
-/// because a `_s` kernel computes one row.
+/// scalar-only kernel `{name}_s`. Both run body `B` and are total, see `KernelDef::total`. Only
+/// the array kernel gets ISA variants, because a `_s` kernel computes one row.
 fn add_entry<B: ElementwiseBody>(
     reg: &mut Registry,
     op: Op,
@@ -250,11 +250,13 @@ fn add_entry<B: ElementwiseBody>(
     commutative: bool,
 ) {
     let specs: Vec<InputSpec> = inputs.iter().map(|t| InputSpec::Either(*t)).collect();
-    add_entry_with::<B>(reg, op, name, inputs, specs, out, commutative);
+    add_entry_with::<B>(reg, op, name, inputs, specs, out, commutative, true);
 }
 
 /// `add_entry` with explicit input specs for the array kernel, for operands that must be
-/// scalars. The `_s` kernel takes scalars throughout.
+/// scalars, and with `total` set on both kernels, see `KernelDef::total`. The `_s` kernel
+/// takes scalars throughout.
+#[expect(clippy::too_many_arguments)]
 fn add_entry_with<B: ElementwiseBody>(
     reg: &mut Registry,
     op: Op,
@@ -263,6 +265,7 @@ fn add_entry_with<B: ElementwiseBody>(
     array_specs: Vec<InputSpec>,
     out: ScalarType,
     commutative: bool,
+    total: bool,
 ) {
     let row_bytes: usize = inputs.iter().map(|t| t.width()).sum::<usize>() + out.width();
     let v1 = inputs
@@ -278,6 +281,7 @@ fn add_entry_with<B: ElementwiseBody>(
         cost,
         commutative,
         pattern: None,
+        total,
         impls,
     };
     if v1 {
@@ -741,6 +745,8 @@ fn register_div_const<T: DivConst>(reg: &mut Registry) {
         &[t, t],
         vec![InputSpec::Either(t), InputSpec::Scalar(t)],
         t,
+        false,
+        // The body fails on a zero divisor.
         false,
     );
 }

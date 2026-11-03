@@ -315,6 +315,7 @@ macro_rules! group_id {
             cost: width($ty) + 8,
             commutative: false,
             pattern: None,
+            total: false,
             impls: KernelImpl::whole::<GroupId<$t>>(),
         })
     };
@@ -332,6 +333,7 @@ macro_rules! group_id2 {
             cost: width($ta) + width($tb) + 8,
             commutative: false,
             pattern: None,
+            total: false,
             impls: KernelImpl::whole::<GroupId2<$a, $b>>(),
         })
     };

@@ -213,6 +213,7 @@ fn compress<T: Elem, const BOOL: bool>(reg: &mut Registry) {
         cost: 2 * width(ty) + 1,
         commutative: false,
         pattern: None,
+        total: false,
         impls: compress_impls::<T, BOOL>(),
     });
 }
@@ -250,6 +251,7 @@ pub(crate) fn register(reg: &mut Registry) {
         cost: 9,
         commutative: false,
         pattern: None,
+        total: false,
         impls: where_impls(),
     });
 }

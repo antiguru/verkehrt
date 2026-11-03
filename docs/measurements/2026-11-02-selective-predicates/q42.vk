@@ -1,0 +1,6 @@
+let CounterID = iota(100) + 1;
+let EventDate = iota(100) + 2;
+let IsRefresh = iota(100) + 3;
+let DontCountHits = iota(100) + 4;
+let m = and(and(CounterID == 62, and(EventDate >= 15900, EventDate <= 15901)), and(IsRefresh == 0, DontCountHits == 0));
+export m = m;

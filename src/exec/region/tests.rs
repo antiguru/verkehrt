@@ -1,0 +1,925 @@
+use std::cell::Cell;
+
+use crate::error::{ErrorKind, Span};
+use crate::exec::tests::{
+    Builder, Built, assert_tiles, compare, compare_narrowed, eval_node, eval_selective, rows, run,
+    text, tilings, variants,
+};
+use crate::exec::{Slot, Tiling};
+use crate::kernels::{Backend, ElementwiseBody, InputSpec, Isa, KernelDef, KernelImpl, WholeBody};
+use crate::kernels::{KernelClass, KernelId, Registry};
+use crate::lower::Leaf;
+use crate::value::{Arg, Array, Scalar, ScalarType, Value, ValueType};
+use crate::{Interpreter, Options};
+
+#[test]
+fn mask_chain() {
+    // Five comparisons combined with `and` and `or`, as in TPC-H q06.
+    let src = "let x = iota(100);
+let d = x * 3;
+let m = and(and(x >= 10, x < 90), or(and(d >= 5, d <= 70), x < 24));
+let s = sum(compress(x, m));";
+    let m = (0..100).map(|x| (10..90).contains(&x) && ((5..=70).contains(&(x * 3)) || x < 24));
+    assert_tiles(src, &[("m", text(m)), ("s", text([231]))]);
+}
+
+#[test]
+fn arithmetic_chain_with_broadcast_scalars() {
+    let src = "let x = iota(100);
+let r = ((x * 3) + 7) - x;
+let f = (fill(100, 0.5) * 3.0) + 1.0;";
+    let r = (0..100).map(|x| x * 2 + 7);
+    assert_tiles(src, &[("r", text(r)), ("f", text(["2.5"; 100]))]);
+}
+
+#[test]
+fn chain_over_a_view() {
+    // The view starts at row 7 of its buffer, and the mask chain reads it twice.
+    let src = "let x = slice(iota(120), 7, 107);
+let r = (x * 3) + 1;
+let m = and(x > 20, x < 50);";
+    let r = (7..107).map(|x| x * 3 + 1);
+    let m = (7..107).map(|x| x > 20 && x < 50);
+    assert_tiles(src, &[("r", text(r)), ("m", text(m))]);
+}
+
+#[test]
+fn chain_over_an_empty_array() {
+    let src = "let e = slice(iota(10), 3, 3);
+let r = (e * 3) + 1;
+let m = and(e > 1, e < 5);";
+    let none = Vec::<String>::new();
+    assert_tiles(src, &[("r", none.clone()), ("m", none)]);
+}
+
+#[test]
+fn chain_over_a_multiple_of_the_tile_rows() {
+    // 48 rows are 48, 16, and 3 tiles of the tested tile row counts.
+    let src = "let x = iota(48);
+let r = ((x * 3) + 1) - x;";
+    assert_tiles(src, &[("r", text((0..48).map(|x| x * 2 + 1)))]);
+}
+
+#[test]
+fn chain_in_the_taken_branch_tiles() {
+    let src = "let x = iota(100);
+let r = if length(x) > 0 { (x * 3) + 1 } else { x };";
+    assert_tiles(src, &[("r", text((0..100).map(|x| x * 3 + 1)))]);
+}
+
+#[test]
+fn chain_in_the_untaken_branch_does_not_run() {
+    let src = "let x = iota(100);
+let r = if length(x) > 1000 { (x * 3) + 1 } else { x };";
+    let (outcome, counts) = compare(src, &["r"]);
+    assert_eq!(outcome.unwrap().1, [text(0..100)]);
+    assert!(counts.iter().all(|&c| c == 0), "{counts:?}");
+}
+
+#[test]
+fn chain_between_other_kernels() {
+    // A selection feeds the region and a reduction reads it, both run once and whole.
+    let src = "let x = iota(100);
+let c = compress(x, x > 30);
+let s = sum((c * 2) + 1);
+let t = sum(((compress(x, x > 30) * 2) + 1) - c);";
+    let s: i64 = (31..100).map(|x| x * 2 + 1).sum();
+    let t: i64 = (31..100).map(|x| x + 1).sum();
+    assert_tiles(src, &[("s", text([s])), ("t", text([t]))]);
+}
+
+#[test]
+fn failing_regions_raise_the_untiled_error() {
+    // A length mismatch inside the region, a failing kernel in every tile, and an input
+    // that fails before the region runs.
+    for src in [
+        "let r = (iota(5) + iota(6)) * 2; print(r);",
+        "let z = length(slice(iota(3), 0, 0)); let r = div_const(iota(40) * 2, z); print(r);",
+        "let r = (gather(iota(40), iota(40) - 1) * 2) + 1; print(r);",
+    ] {
+        let (outcome, counts) = compare(src, &[]);
+        let e = outcome.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Runtime, "{src}");
+        assert!(e.span.is_some(), "{src}");
+        assert!(counts.iter().all(|&c| c == 0), "{counts:?} for\n{src}");
+    }
+}
+
+#[test]
+fn chains_with_unaligned_tiles_and_vector_tails() {
+    // 1003 rows end every tested tiling, and every vector width, in a partial tile.
+    let src = "let x = iota(1003);
+let a = ((cast_f64(x) * 0.25) + 1.5) - cast_f64(x);
+let b = (cast_f32(x) + cast_f32(x)) * cast_f32(x);
+let c = ((cast_i32(x) + cast_i32(x)) * cast_i32(x)) - cast_i32(x);
+let m = or(and(x > 100, x < 900), x == 1001);";
+    let a = (0..1003).map(|x| format!("{:?}", (f64::from(x) * 0.25 + 1.5) - f64::from(x)));
+    let b = (0..1003u16).map(|x| format!("{:?}", (f32::from(x) + f32::from(x)) * f32::from(x)));
+    let c = (0..1003).map(|x| (x + x) * x - x);
+    let m = (0..1003).map(|x| (x > 100 && x < 900) || x == 1001);
+    assert_tiles(
+        src,
+        &[
+            ("a", a.collect()),
+            ("b", b.collect()),
+            ("c", text(c)),
+            ("m", text(m)),
+        ],
+    );
+}
+
+/// The kernel names of the trace lines of running `src` with `tiling`, in order.
+fn trace_order(src: &str, tiling: Tiling) -> Vec<String> {
+    let mut interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        trace: true,
+        tiling,
+        ..Options::default()
+    })
+    .unwrap();
+    let mut diag = Vec::new();
+    interp.run(src, &mut std::io::sink(), &mut diag).unwrap();
+    String::from_utf8(diag)
+        .unwrap()
+        .lines()
+        .map(|l| l.split(' ').nth(1).unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn region_lines_follow_their_inputs_in_post_order() {
+    // In the first program the left operand of the root is a region kernel over a whole
+    // kernel input, which the whole evaluation reaches before any region kernel, so the
+    // region tiles. In the second the whole kernel input follows region kernels, so the
+    // region runs whole. Either way the lines keep the order of the whole evaluation.
+    let names = |n: &[&str]| n.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let cases = [
+        (
+            "let x = iota(100);
+print(sum((gather(x, x) * 2) + ((x * 3) - x)));",
+            names(&[
+                "iota",
+                "gather_i64",
+                "mul_i64",
+                "mul_i64",
+                "sub_i64",
+                "add_i64",
+                "reduce_add_i64",
+            ]),
+            1,
+        ),
+        (
+            "let x = iota(100);
+print(sum(((x * 3) - x) + (gather(x, x) * 2)));",
+            names(&[
+                "iota",
+                "mul_i64",
+                "sub_i64",
+                "gather_i64",
+                "mul_i64",
+                "add_i64",
+                "reduce_add_i64",
+            ]),
+            0,
+        ),
+    ];
+    for (src, want, regions) in cases {
+        for tiling in tilings() {
+            assert_eq!(trace_order(src, tiling), want, "{tiling:?} of\n{src}");
+        }
+        let (_, counts) = compare(src, &[]);
+        assert!(
+            counts.iter().all(|&c| c == regions),
+            "{counts:?} for\n{src}"
+        );
+    }
+}
+
+#[test]
+fn a_left_kernel_error_wins_over_a_right_input_error() {
+    // The whole evaluation fails in `div_const` before it reaches the failing right input.
+    // That input follows region kernels, so the region runs whole and never evaluates it,
+    // and the trace and stats lines match the untiled run.
+    // A failed binding of the same program raises at its statement, so only an earlier
+    // program's failed global reaches a region as a variable, see the test below.
+    for right in [
+        "gather(iota(40), iota(40) - 1)",
+        "load_i64(\"/nonexistent/x.bin\")",
+    ] {
+        let src = format!(
+            "let z = length(slice(iota(3), 0, 0));
+let r = div_const(iota(40) * 2, z) + {right};
+print(r);"
+        );
+        let (outcome, counts) = compare(&src, &[]);
+        let e = outcome.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Runtime, "{src}");
+        assert_eq!(e.message, "div_const: division by zero", "{src}");
+        assert!(counts.iter().all(|&c| c == 0), "{counts:?} for\n{src}");
+    }
+}
+
+#[test]
+fn a_failed_global_of_an_earlier_program_raises_like_untiled() {
+    // `g` fails in the first program. The second program's region reads it after a left
+    // `div_const` that fails, so the untiled error is the `div_const` one.
+    let outcome = |tiling| {
+        let mut interp = Interpreter::new(Options {
+            isa: Some(Isa::Scalar),
+            tiling,
+            ..Options::default()
+        })
+        .unwrap();
+        let (mut out, mut diag) = (Vec::new(), Vec::new());
+        // The unread binding fails and stays bound as an error.
+        interp
+            .run(
+                "let _g = gather(iota(40), iota(40) - 1);\nprint(1);\n",
+                &mut out,
+                &mut diag,
+            )
+            .unwrap();
+        let src = "let z = length(slice(iota(3), 0, 0));
+let r = div_const(iota(40) * 2, z) + _g;
+print(r);";
+        interp.run(src, &mut out, &mut diag).unwrap_err()
+    };
+    let want = outcome(Tiling::Off);
+    assert_eq!(want.kind, ErrorKind::Runtime);
+    assert_eq!(want.message, "div_const: division by zero");
+    for tiling in tilings().into_iter().skip(1) {
+        let got = outcome(tiling);
+        assert_eq!((got.kind, got.message), (want.kind, want.message.clone()));
+    }
+}
+
+#[test]
+fn prepared_execute_counts_tiled_regions() {
+    let interp = Interpreter::new(Options {
+        isa: Some(Isa::Scalar),
+        ..Options::default()
+    })
+    .unwrap();
+    let prepared = interp
+        .prepare("input x: i64[]; export y = (x * 3) + 1;")
+        .unwrap();
+    let x = Value::Array(Array::from_vec((0..10_000i64).collect()));
+    let out = prepared
+        .execute(&interp, &[("x", x)], &mut std::io::sink())
+        .unwrap();
+    let Value::Array(y) = &out[0].1 else {
+        panic!("expected an array");
+    };
+    assert_eq!(y.as_slice::<i64>()[9_999], 29_998);
+    assert_eq!(interp.tiled_regions(), 1);
+}
+
+/// Copies its `i64` rows and fails on the first row holding `FAIL_AT`, naming that row's
+/// position in the call's arguments, so a tiled call would report a different position.
+struct FailAt;
+
+const FAIL_AT: i64 = 90;
+
+impl ElementwiseBody for FailAt {
+    fn run(args: &[Arg], out: &mut [u8]) -> Result<(), String> {
+        let [Arg::Rows(a)] = args else {
+            return Err("fail_at takes one array".into());
+        };
+        let out: &mut [i64] = bytemuck::cast_slice_mut(out);
+        for (i, (o, &x)) in out.iter_mut().zip(a.as_slice::<i64>()).enumerate() {
+            if x == FAIL_AT {
+                return Err(format!("fail_at: row {i} holds {x}"));
+            }
+            *o = x;
+        }
+        Ok(())
+    }
+}
+#[test]
+fn kernel_failing_in_a_later_tile_raises_the_untiled_error() {
+    let mut reg = Registry::new();
+    let fail = reg.add(KernelDef {
+        name: "fail_at_i64".into(),
+        class: KernelClass::Elementwise,
+        op: None,
+        inputs: vec![InputSpec::Array(ScalarType::I64)],
+        output: ValueType::Array(ScalarType::I64),
+        cost: 16,
+        commutative: false,
+        pattern: None,
+        total: false,
+        impls: KernelImpl::elementwise_scalar::<FailAt>().scalar_only(),
+    });
+    let add = reg.by_name("add_i64").unwrap();
+    let mut b = Builder::default();
+    // (fail_at (x + 1)) + 1 over x = 0..100 fails at the row holding 90, row 89 of x.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let inc = b.kernel(add, vec![x, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let root = b.kernel(add, vec![failed, one]);
+    let node = b.finish(root);
+    let leaves = |n: i64| {
+        vec![
+            Leaf::Const(Value::Array(Array::from_vec((0..n).collect()))),
+            Leaf::Const(Value::Scalar(Scalar::I64(1))),
+        ]
+    };
+    let scalar = (Isa::Scalar, Backend::Auto);
+    let (untiled, _) = eval_node(&reg, &node, &leaves(100), scalar, Tiling::Off);
+    let want = untiled.unwrap_err();
+    assert_eq!(want.message, "fail_at: row 89 holds 90");
+    assert_eq!(want.span, Some(Span { line: 3, col: 1 }));
+    // Without the failing row every tiled run completes and matches the untiled value.
+    let (passing, _) = eval_node(&reg, &node, &leaves(80), scalar, Tiling::Off);
+    let Ok(Value::Array(whole)) = passing else {
+        panic!("expected an array, got {passing:?}");
+    };
+    for variant in variants() {
+        for tiling in tilings() {
+            let (got, regions) = eval_node(&reg, &node, &leaves(100), variant, tiling);
+            assert_eq!(got.unwrap_err(), want, "{variant:?} {tiling:?}");
+            assert_eq!(regions, 0, "{variant:?} {tiling:?}");
+        }
+        for tiling in tilings().into_iter().skip(1) {
+            let (got, regions) = eval_node(&reg, &node, &leaves(80), variant, tiling);
+            let Ok(Value::Array(got)) = got else {
+                panic!("expected an array, got {got:?}");
+            };
+            assert_eq!(
+                got.as_slice::<i64>(),
+                whole.as_slice::<i64>(),
+                "{variant:?} {tiling:?}"
+            );
+            assert_eq!(regions, 1, "{variant:?} {tiling:?}");
+        }
+    }
+}
+
+thread_local! {
+    /// The calls of `Probe` on this thread.
+    static PROBE_CALLS: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Returns its one argument and counts the call in `PROBE_CALLS`. Its class is `Whole`, so
+/// it is never part of a region, only a region input.
+struct Probe;
+
+impl WholeBody for Probe {
+    fn run(args: &[Value]) -> Result<Value, String> {
+        PROBE_CALLS.with(|c| c.set(c.get() + 1));
+        match args {
+            [v] => Ok(v.clone()),
+            _ => Err("probe takes one array".into()),
+        }
+    }
+}
+
+/// A registry with `fail_at_i64` and `probe_i64` added, and the ids of `fail_at_i64`,
+/// `probe_i64`, and `add_i64`.
+fn probe_registry() -> (Registry, KernelId, KernelId, KernelId) {
+    let mut reg = Registry::new();
+    let fail = reg.add(KernelDef {
+        name: "fail_at_i64".into(),
+        class: KernelClass::Elementwise,
+        op: None,
+        inputs: vec![InputSpec::Array(ScalarType::I64)],
+        output: ValueType::Array(ScalarType::I64),
+        cost: 16,
+        commutative: false,
+        pattern: None,
+        total: false,
+        impls: KernelImpl::elementwise_scalar::<FailAt>().scalar_only(),
+    });
+    let probe = reg.add(KernelDef {
+        name: "probe_i64".into(),
+        class: KernelClass::Whole,
+        op: None,
+        inputs: vec![InputSpec::Array(ScalarType::I64)],
+        output: ValueType::Array(ScalarType::I64),
+        cost: 16,
+        commutative: false,
+        pattern: None,
+        total: false,
+        impls: KernelImpl::whole::<Probe>(),
+    });
+    let add = reg.by_name("add_i64").unwrap();
+    (reg, fail, probe, add)
+}
+
+/// Evaluates `node` over the leaves `0..n` and the scalar 1 with every tiling on every
+/// variant, and checks that each run gives the untiled scalar result, tiles `regions`
+/// regions when tiled, and calls `Probe` `probes` times. Returns the untiled scalar result.
+fn compare_probed(reg: &Registry, node: &Built, n: i64, regions: u64, probes: usize) -> Slot {
+    let leaves = vec![
+        Leaf::Const(Value::Array(Array::from_vec((0..n).collect()))),
+        Leaf::Const(Value::Scalar(Scalar::I64(1))),
+    ];
+    let probed = |variant: (Isa, Backend), tiling: Tiling| {
+        PROBE_CALLS.with(|c| c.set(0));
+        let (got, count) = eval_node(reg, node, &leaves, variant, tiling);
+        let calls = PROBE_CALLS.with(Cell::get);
+        assert_eq!(calls, probes, "probe calls of {variant:?} {tiling:?}");
+        (got.map(|v| rows(&v)), count)
+    };
+    let (want, _) = probed((Isa::Scalar, Backend::Auto), Tiling::Off);
+    for variant in variants() {
+        for tiling in tilings() {
+            let (got, count) = probed(variant, tiling);
+            assert_eq!(got, want, "{variant:?} {tiling:?}");
+            let regions = if tiling == Tiling::Off { 0 } else { regions };
+            assert_eq!(count, regions, "{variant:?} {tiling:?}");
+        }
+    }
+    eval_node(
+        reg,
+        node,
+        &leaves,
+        (Isa::Scalar, Backend::Auto),
+        Tiling::Off,
+    )
+    .0
+}
+
+#[test]
+fn an_input_after_a_failing_kernel_is_never_evaluated() {
+    let (reg, fail, probe, add) = probe_registry();
+    let mut b = Builder::default();
+    // fail_at(x + 1) + probe(x): over 0..100 the whole evaluation fails in `fail_at` before
+    // it reaches `probe`, which a tiled run would evaluate first. Over 0..80 `probe` runs
+    // once, after the left operand, and the region runs whole.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let inc = b.kernel(add, vec![x, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let probed = b.kernel(probe, vec![x]);
+    let root = b.kernel(add, vec![failed, probed]);
+    let node = b.finish(root);
+    let e = compare_probed(&reg, &node, 100, 0, 0).unwrap_err();
+    assert_eq!(e.message, "fail_at: row 89 holds 90");
+    compare_probed(&reg, &node, 80, 0, 1).unwrap();
+}
+
+#[test]
+fn an_input_before_the_first_region_kernel_tiles() {
+    let (reg, fail, probe, add) = probe_registry();
+    let mut b = Builder::default();
+    // fail_at(probe(x) + 1) + 1: the whole evaluation reaches `probe` before any region
+    // kernel, so the region tiles over 0..80. Over 0..100 the tiled run fails, and its
+    // fallback reuses the value of `probe` instead of evaluating it again.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let probed = b.kernel(probe, vec![x]);
+    let inc = b.kernel(add, vec![probed, one]);
+    let failed = b.kernel(fail, vec![inc]);
+    let root = b.kernel(add, vec![failed, one]);
+    let node = b.finish(root);
+    let got = compare_probed(&reg, &node, 80, 1, 1).unwrap();
+    assert_eq!(rows(&got), text(2..82));
+    let e = compare_probed(&reg, &node, 100, 0, 1).unwrap_err();
+    assert_eq!(e.message, "fail_at: row 89 holds 90");
+}
+
+#[test]
+fn a_kernel_reached_twice_runs_once_outside_any_region() {
+    let (reg, _, probe, add) = probe_registry();
+    let mul = reg.by_name("mul_i64").unwrap();
+    // (y + 1) * (y + 1) with the sum one node, where `y` is `x` or `probe(x)`.
+    let square = |probed: bool| {
+        let mut b = Builder::default();
+        let (x, one) = (b.leaf(0), b.bcast(1));
+        let y = if probed { b.kernel(probe, vec![x]) } else { x };
+        let inc = b.kernel(add, vec![y, one]);
+        let root = b.kernel(mul, vec![inc, inc]);
+        b.finish(root)
+    };
+    let want = text((1..81).map(|v: i64| v * v));
+    // The sum has two uses, so it is shared and never a region kernel. The product is then
+    // the only elementwise kernel above it, which is no region, and the sum runs once.
+    let leaves = compare_probed(&reg, &square(false), 80, 0, 0).unwrap();
+    assert_eq!(rows(&leaves), want);
+    // Below the shared sum, `probe` runs once too.
+    let probed = compare_probed(&reg, &square(true), 80, 0, 1).unwrap();
+    assert_eq!(rows(&probed), want);
+}
+
+#[test]
+fn a_shared_input_reached_again_in_its_region_tiles() {
+    let (reg, _, probe, add) = probe_registry();
+    let (mul, sub) = (
+        reg.by_name("mul_i64").unwrap(),
+        reg.by_name("sub_i64").unwrap(),
+    );
+    let mut b = Builder::default();
+    // (s + x) * (s - x) with s = probe(x) + 1 shared. The region's first input is s, before
+    // any region kernel, and its second s is an earlier input reached again, which whole
+    // evaluation finds in the memo, so the region tiles and `probe` runs once.
+    let (x, one) = (b.leaf(0), b.bcast(1));
+    let probed = b.kernel(probe, vec![x]);
+    let s = b.kernel(add, vec![probed, one]);
+    let left = b.kernel(add, vec![s, x]);
+    let right = b.kernel(sub, vec![s, x]);
+    let root = b.kernel(mul, vec![left, right]);
+    let got = compare_probed(&reg, &b.finish(root), 80, 1, 1).unwrap();
+    assert_eq!(rows(&got), text((0..80).map(|v: i64| 2 * v + 1)));
+}
+
+#[test]
+fn a_shared_input_after_a_region_kernel_runs_whole() {
+    let (reg, _, probe, add) = probe_registry();
+    let mul = reg.by_name("mul_i64").unwrap();
+    let mut b = Builder::default();
+    // ((x * 3) + s) * s with s = probe(x) + 1 shared. Whole evaluation calls `x * 3` before
+    // it first reaches s, which has not run, so the region runs whole. The second s is a
+    // memo hit, and `probe` runs once.
+    let (x, one, three) = (b.leaf(0), b.bcast(1), b.bcast(2));
+    let probed = b.kernel(probe, vec![x]);
+    let s = b.kernel(add, vec![probed, one]);
+    let tripled = b.kernel(mul, vec![x, three]);
+    let inner = b.kernel(add, vec![tripled, s]);
+    let root = b.kernel(mul, vec![inner, s]);
+    let node = b.finish(root);
+    let leaves = vec![
+        Leaf::Const(Value::Array(Array::from_vec((0..80i64).collect()))),
+        Leaf::Const(Value::Scalar(Scalar::I64(1))),
+        Leaf::Const(Value::Scalar(Scalar::I64(3))),
+    ];
+    let want = text((0..80).map(|v: i64| (4 * v + 1) * (v + 1)));
+    for variant in variants() {
+        for tiling in tilings() {
+            PROBE_CALLS.with(|c| c.set(0));
+            let (got, regions) = eval_node(&reg, &node, &leaves, variant, tiling);
+            assert_eq!(rows(&got.unwrap()), want, "{variant:?} {tiling:?}");
+            assert_eq!(regions, 0, "{variant:?} {tiling:?}");
+            assert_eq!(PROBE_CALLS.with(Cell::get), 1, "{variant:?} {tiling:?}");
+        }
+    }
+}
+
+#[test]
+fn a_mask_chain_over_leaves_tiles() {
+    // and(x >= 10, x < 90) as in q40: every input is a leaf or a broadcast leaf.
+    let reg = Registry::new();
+    let id = |n| reg.by_name(n).unwrap();
+    let mut b = Builder::default();
+    let col = b.leaf(0);
+    let mut cmp = |name, c| {
+        let k = b.bcast(c);
+        b.kernel(id(name), vec![col, k])
+    };
+    let (ge, lt) = (cmp("ge_i64", 1), cmp("lt_i64", 2));
+    let root = b.kernel(id("and_bool"), vec![ge, lt]);
+    let node = b.finish(root);
+    let leaves = vec![
+        Leaf::Const(Value::Array(Array::from_vec((0..100i64).collect()))),
+        Leaf::Const(Value::Scalar(Scalar::I64(10))),
+        Leaf::Const(Value::Scalar(Scalar::I64(90))),
+    ];
+    let want = text((0..100).map(|x| (10..90).contains(&x)));
+    for variant in variants() {
+        for tiling in tilings().into_iter().skip(1) {
+            let (got, regions) = eval_node(&reg, &node, &leaves, variant, tiling);
+            assert_eq!(rows(&got.unwrap()), want, "{variant:?} {tiling:?}");
+            assert_eq!(regions, 1, "{variant:?} {tiling:?}");
+        }
+    }
+}
+
+/// The tile row counts of the tiled runs of `tilings`, in order.
+fn tile_rows() -> Vec<usize> {
+    tilings()
+        .into_iter()
+        .filter_map(|t| match t {
+            Tiling::Rows(n) => Some(n.get()),
+            Tiling::Off => None,
+        })
+        .collect()
+}
+
+/// The tiles of `t` rows in which the rows from the first to the last row of `open` span
+/// fewer rows than the tile, which a guard whose left operand leaves exactly the rows of
+/// `open` open narrows.
+fn narrowed(open: &[bool], t: usize) -> u64 {
+    let tiles = open.chunks(t).filter(|tile| {
+        match (tile.iter().position(|&o| o), tile.iter().rposition(|&o| o)) {
+            (Some(first), Some(last)) => last + 1 - first < tile.len(),
+            _ => true,
+        }
+    });
+    u64::try_from(tiles.count()).unwrap()
+}
+
+/// Checks `src` like `compare_narrowed`, that it binds every name of `want` to its rows,
+/// and that every selective run narrows `expect(t)` tiles for its tile row count `t`.
+fn assert_narrows(src: &str, want: &[(&str, Vec<String>)], expect: impl Fn(usize) -> u64) {
+    let names: Vec<&str> = want.iter().map(|(n, _)| *n).collect();
+    let (outcome, counts, narrowed) = compare_narrowed(src, &names);
+    let (_, bound) = outcome.unwrap();
+    for ((name, rows), got) in want.iter().zip(bound) {
+        assert_eq!(&got, rows, "{name} of\n{src}");
+    }
+    assert!(counts.iter().all(|&c| c > 0), "{counts:?} for\n{src}");
+    let tiles = tile_rows();
+    let expected: Vec<u64> = variants()
+        .iter()
+        .flat_map(|_| tiles.iter().map(|&t| expect(t)))
+        .collect();
+    assert_eq!(narrowed, expected, "narrowed tiles of\n{src}");
+}
+
+#[test]
+fn and_narrows_to_the_rows_its_left_operand_keeps() {
+    // The left operand is false in whole tiles below row 40, so they skip the right operand.
+    let src = "let x = iota(100);
+let m = and(x >= 40, x != 70);";
+    let open: Vec<bool> = (0..100).map(|x| x >= 40).collect();
+    let m = (0..100).map(|x| x >= 40 && x != 70);
+    assert_narrows(src, &[("m", text(m))], |t| narrowed(&open, t));
+}
+
+#[test]
+fn and_narrows_a_tile_false_at_both_ends() {
+    // The left operand is a guard itself, true in rows 40 to 59 only, so a tile around them
+    // is false at both ends. Its own left operand narrows too.
+    let src = "let x = iota(100);
+let m = and(and(x >= 40, x < 60), x != 50);";
+    let inner: Vec<bool> = (0..100).map(|x| x >= 40).collect();
+    let outer: Vec<bool> = (0..100).map(|x| (40..60).contains(&x)).collect();
+    let m = (0..100).map(|x| (40..60).contains(&x) && x != 50);
+    assert_narrows(src, &[("m", text(m))], |t| {
+        narrowed(&inner, t) + narrowed(&outer, t)
+    });
+}
+
+#[test]
+fn and_with_a_left_operand_true_throughout_narrows_nothing() {
+    let src = "let x = iota(100);
+let m = and(x >= 0, x != 70);";
+    let m = (0..100).map(|x| x != 70);
+    assert_narrows(src, &[("m", text(m))], |_| 0);
+}
+
+#[test]
+fn or_narrows_to_the_rows_its_left_operand_leaves_false() {
+    let src = "let x = iota(100);
+let m = or(x < 30, x > 80);";
+    let open: Vec<bool> = (0..100).map(|x| x >= 30).collect();
+    let m = (0..100).map(|x| !(30..=80).contains(&x));
+    assert_narrows(src, &[("m", text(m))], |t| narrowed(&open, t));
+}
+
+#[test]
+fn nested_guards_narrow_within_their_parent_range() {
+    // The inner guard runs over the rows the outer one gives it, and narrows them further.
+    let src = "let x = iota(100);
+let m = and(x >= 20, and(x < 70, or(x < 30, x > 60)));
+let r = or(x < 10, and(x > 50, x != 75));";
+    let m = (0..100).map(|x| (20..70).contains(&x) && !(30..=60).contains(&x));
+    let r = (0..100).map(|x| x < 10 || (x > 50 && x != 75));
+    let (outcome, counts, narrowed) = compare_narrowed(src, &["m", "r"]);
+    assert_eq!(outcome.unwrap().1, [text(m), text(r)]);
+    assert!(counts.iter().all(|&c| c == 2), "{counts:?}");
+    assert!(narrowed.iter().all(|&c| c > 0), "{narrowed:?}");
+}
+
+#[test]
+fn a_guard_feeding_select_fills_its_tile_buffer() {
+    // The guard is an inner kernel whose output is a tile buffer that `select` reads.
+    let src = "let x = iota(100);
+let s = map(x, |v| if and(v > 20, v < 60) { v } else { 0 });
+let o = map(x, |v| if or(v < 20, v > 60) { 0 } else { v });";
+    let open: Vec<bool> = (0..100).map(|x| x > 20).collect();
+    let open_or: Vec<bool> = (0..100).map(|x| x >= 20).collect();
+    let s = (0..100).map(|x| if x > 20 && x < 60 { x } else { 0 });
+    let o = (0..100).map(|x| if (20..=60).contains(&x) { x } else { 0 });
+    assert_narrows(src, &[("s", text(s)), ("o", text(o))], |t| {
+        narrowed(&open, t) + narrowed(&open_or, t)
+    });
+}
+
+#[test]
+fn a_region_input_array_guards_as_a_left_operand() {
+    let src = "let x = iota(100);
+let b = x > 30;
+let m = and(b, x < 60);";
+    let open: Vec<bool> = (0..100).map(|x| x > 30).collect();
+    let m = (0..100).map(|x| x > 30 && x < 60);
+    assert_narrows(src, &[("m", text(m))], |t| narrowed(&open, t));
+}
+
+#[test]
+fn a_right_operand_that_is_a_region_input_is_not_narrowed() {
+    // In the second program the right operand is a shared node, a region input too.
+    let src = "let x = iota(100);
+let b = x > 30;
+let m = and(x < 60, b);";
+    let m = (0..100).map(|x| x > 30 && x < 60);
+    assert_narrows(src, &[("m", text(m))], |_| 0);
+    let shared = "let x = iota(100);
+let s = sum(compress(x, and(x < 60, (x * 2) > 50)));
+let o = sum(compress(x, or(x > 90, (x * 2) > 50)));";
+    let s: i64 = (26..60).sum();
+    let o: i64 = (26..100).sum();
+    assert_narrows(shared, &[("s", text([s])), ("o", text([o]))], |_| 0);
+}
+
+#[test]
+fn a_guard_over_a_view_narrows() {
+    // The view starts at row 7 of its buffer.
+    let src = "let x = slice(iota(120), 7, 107);
+let m = and(x > 20, x < 50);";
+    let open: Vec<bool> = (7..107).map(|x| x > 20).collect();
+    let m = (7..107).map(|x| x > 20 && x < 50);
+    assert_narrows(src, &[("m", text(m))], |t| narrowed(&open, t));
+}
+
+#[test]
+fn a_guard_over_an_empty_array_narrows_nothing() {
+    let src = "let e = slice(iota(10), 3, 3);
+let m = and(e > 1, e < 5);
+let o = or(e > 2, e < 4);";
+    let none = Vec::<String>::new();
+    assert_narrows(src, &[("m", none.clone()), ("o", none)], |_| 0);
+}
+
+#[test]
+fn statistics_count_the_rows_a_narrowed_kernel_ran_over() {
+    // The right operand `ne_i64` runs over rows 40 to 99 in every tiling, reading 8 bytes
+    // of the column and writing 1 per row. The guard reads two bytes per row.
+    let src = "let x = iota(100);
+let m = and(x > 39, x != 70);";
+    let line = |lines: &[String], name: &str| {
+        lines
+            .iter()
+            .find(|l| l.starts_with(&format!("stats {name} ")))
+            .unwrap_or_else(|| panic!("no stats line of {name} in {lines:?}"))
+            .clone()
+    };
+    let read_rows = |l: &str, width: u64| {
+        let read = l.split(' ').find_map(|w| w.strip_prefix("read=")).unwrap();
+        read.parse::<u64>().unwrap() / width
+    };
+    for variant in variants() {
+        for t in tilings().into_iter().skip(1) {
+            let at = format!("{variant:?} {t:?}");
+            let on = run(src, &["m"], variant, t, true);
+            let ne = line(&on.lines, "ne_i64");
+            assert_eq!(read_rows(&ne, 8), 60, "{at}: {ne}");
+            assert_eq!(ne, "stats ne_i64 calls=1 bytes=540 read=480", "{at}");
+            let and = line(&on.lines, "and_bool");
+            assert_eq!(and, "stats and_bool calls=1 bytes=180 read=120", "{at}");
+            let lt = line(&on.lines, "lt_i64");
+            assert_eq!(lt, "stats lt_i64 calls=1 bytes=900 read=800", "{at}");
+            assert!(
+                on.lines
+                    .iter()
+                    .any(|l| l.starts_with("trace ne_i64 ")
+                        && l.ends_with(" n=60 read=480 write=60")),
+                "{at}: {:?}",
+                on.lines
+            );
+            let off = run(src, &["m"], variant, t, false);
+            let whole = line(&off.lines, "ne_i64");
+            assert_eq!(whole, "stats ne_i64 calls=1 bytes=900 read=800", "{at}");
+        }
+    }
+}
+
+#[test]
+fn a_right_operand_that_can_fail_is_not_skipped() {
+    // `x` is at most 5 in every row, so narrowing would skip the right operand everywhere
+    // and hide the division by zero of the whole evaluation.
+    let src = "let x = iota(40) - 100;
+let y = iota(40);
+let z = length(slice(iota(3), 0, 0));
+print(and(x > 5, div_const(y, z) > 0));";
+    let (outcome, counts, narrowed) = compare_narrowed(src, &[]);
+    let e = outcome.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Runtime);
+    assert_eq!(e.message, "div_const: division by zero");
+    assert_eq!(e.span, Some(Span { line: 4, col: 1 }));
+    assert!(counts.iter().all(|&c| c == 0), "{counts:?}");
+    assert!(narrowed.iter().all(|&c| c == 0), "{narrowed:?}");
+}
+
+#[test]
+fn a_kernel_failing_after_narrowed_tiles_raises_the_untiled_error() {
+    let (reg, fail, _, _) = probe_registry();
+    let id = |n| reg.by_name(n).unwrap();
+    let mut b = Builder::default();
+    // select(and(10 < x, x < 20), fail_at(x), x): the guard narrows every tile not inside
+    // rows 11 to 19, and `fail_at` fails at row 90 over 0..100, after tiles that narrowed.
+    let (x, ten, twenty) = (b.leaf(0), b.bcast(1), b.bcast(2));
+    let above = b.kernel(id("lt_i64"), vec![ten, x]);
+    let below = b.kernel(id("lt_i64"), vec![x, twenty]);
+    let guard = b.kernel(id("and_bool"), vec![above, below]);
+    let failed = b.kernel(fail, vec![x]);
+    let root = b.kernel(id("select_i64"), vec![guard, failed, x]);
+    let node = b.finish(root);
+    let leaves = |n: i64| {
+        vec![
+            Leaf::Const(Value::Array(Array::from_vec((0..n).collect()))),
+            Leaf::Const(Value::Scalar(Scalar::I64(10))),
+            Leaf::Const(Value::Scalar(Scalar::I64(20))),
+        ]
+    };
+    let scalar = (Isa::Scalar, Backend::Auto);
+    let (untiled, _) = eval_node(&reg, &node, &leaves(100), scalar, Tiling::Off);
+    let want = untiled.unwrap_err();
+    assert_eq!(want.message, "fail_at: row 90 holds 90");
+    assert_eq!(want.span, Some(Span { line: 3, col: 1 }));
+    let want_rows = text(0..80);
+    for variant in variants() {
+        for tiling in tilings().into_iter().skip(1) {
+            for selective in [false, true] {
+                let at = format!("{variant:?} {tiling:?} selective {selective}");
+                let attempt = eval_selective(&reg, &node, &leaves(100), variant, tiling, selective);
+                assert_eq!(attempt.0.unwrap_err(), want, "{at}");
+                assert_eq!((attempt.1, attempt.2), (0, 0), "{at}");
+                // Over 0..80 the run completes, and the selective one narrows.
+                let (got, regions, narrowed) =
+                    eval_selective(&reg, &node, &leaves(80), variant, tiling, selective);
+                assert_eq!(rows(&got.unwrap()), want_rows, "{at}");
+                assert_eq!(regions, 1, "{at}");
+                assert_eq!(narrowed > 0, selective, "{at}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_open_span_scan_matches_a_row_by_row_scan() {
+    // Runs of open rows at offsets around the 64-row blocks the scan skips at once.
+    let naive = |rows: &[u8], open: bool| {
+        let is_open = |b: &u8| (*b != 0) == open;
+        let first = rows.iter().position(is_open)?;
+        Some((first, rows.iter().rposition(is_open).unwrap() + 1))
+    };
+    for n in [0, 1, 63, 64, 65, 127, 128, 129, 200, 300] {
+        let mut patterns: Vec<Vec<u8>> = vec![vec![0; n], vec![1; n]];
+        for a in (0..n).step_by(7) {
+            for b in (a..=n).step_by(11) {
+                patterns.push((0..n).map(|i| u8::from((a..b).contains(&i))).collect());
+                patterns.push((0..n).map(|i| u8::from(i == a || i + 1 == b)).collect());
+            }
+        }
+        for rows in patterns {
+            for open in [true, false] {
+                assert_eq!(
+                    super::open_span(&rows, open),
+                    naive(&rows, open),
+                    "{open} in {rows:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn guards_over_tiles_longer_than_the_scan_blocks_narrow() {
+    // 100-row tiles over 300 rows put whole 64-row blocks without open rows at the start and
+    // the end of a tile, which the scan skips at once: rows 100 to 163 for `h`, rows 136 to
+    // 199 for `t`, and whole tiles for `a`.
+    let src = "let x = iota(300);
+let a = and(and(x >= 110, x < 190), x != 150);
+let o = or(x < 30, x != 250);
+let h = and(x >= 180, x != 190);
+let t = and(x < 130, x != 5);";
+    let inner: Vec<bool> = (0..300).map(|x| x >= 110).collect();
+    let outer: Vec<bool> = (0..300).map(|x| (110..190).contains(&x)).collect();
+    let open_or: Vec<bool> = (0..300).map(|x| x >= 30).collect();
+    let a = text((0..300).map(|x| (110..190).contains(&x) && x != 150));
+    let o = text((0..300).map(|x| x < 30 || x != 250));
+    let h = text((0..300).map(|x| x >= 180 && x != 190));
+    let t = text((0..300).map(|x| x < 130 && x != 5));
+    let open_h: Vec<bool> = (0..300).map(|x| x >= 180).collect();
+    let open_t: Vec<bool> = (0..300).map(|x| x < 130).collect();
+    let tiling = Tiling::Rows(std::num::NonZeroUsize::new(100).unwrap());
+    let want = [inner, outer, open_or, open_h, open_t]
+        .iter()
+        .map(|open| narrowed(open, 100))
+        .sum::<u64>();
+    assert!(want > 0);
+    for variant in variants() {
+        let names = ["a", "o", "h", "t"];
+        let off = run(src, &names, variant, tiling, false);
+        let on = run(src, &names, variant, tiling, true);
+        let (_, bound) = on.outcome.as_ref().unwrap();
+        let rows = [a.clone(), o.clone(), h.clone(), t.clone()];
+        assert_eq!(bound, &rows, "{variant:?}");
+        assert_eq!(on.outcome, off.outcome, "{variant:?}");
+        assert_eq!(on.regions, 4, "{variant:?}");
+        assert_eq!(on.narrowed, want, "{variant:?}");
+        assert_eq!(off.narrowed, 0, "{variant:?}");
+    }
+}
+
+#[test]
+fn selective_evaluation_without_tiles_changes_nothing() {
+    let src = "let x = iota(100);
+let m = and(and(x >= 40, x < 60), x != 50);";
+    for variant in variants() {
+        let off = run(src, &["m"], variant, Tiling::Off, false);
+        let on = run(src, &["m"], variant, Tiling::Off, true);
+        assert_eq!(on.outcome, off.outcome, "{variant:?}");
+        assert_eq!(on.lines, off.lines, "{variant:?}");
+        assert_eq!((on.regions, on.narrowed), (0, 0), "{variant:?}");
+    }
+}

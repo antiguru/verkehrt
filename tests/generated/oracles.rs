@@ -33,6 +33,12 @@
 //!   `Options::no_sharing`, and fails with the same error, compared by kind, message, and
 //!   span. Reusing a value changes only kernel calls, and a failed evaluation is never
 //!   reused, so the error is that of the unshared run. Oracles 1 to 4 run with sharing on.
+//! * Oracle 6, selective against non-selective: on the scalar interpreter with three-row
+//!   tiles, each plan run with selective evaluation gives the output and exports of the run
+//!   with `Options::no_selective`, and fails with the same error, compared by kind, message,
+//!   and span. Narrowing skips only kernels that cannot fail, and a failing tile falls back
+//!   to whole evaluation, so the error is that of the run without narrowing. Oracles 1 to 5
+//!   run with selective evaluation on.
 //!
 //! Whether fusion changed a plan compares the plans by `Prepared::same_plans`, in time linear
 //! in the plan graphs, and the plan text, exponential in the nesting of shared nodes, is
@@ -216,6 +222,9 @@ pub struct Engine {
     untiled: Interpreter,
     /// The scalar interpreter of oracle 5, with tiles of three rows and without sharing.
     unshared: Interpreter,
+    /// The scalar interpreter of oracle 6, with tiles of three rows and without selective
+    /// evaluation.
+    unselective: Interpreter,
     reg: Registry,
     /// The integer sum rewrites the fused planner emits.
     rewrites: Vec<SumRewrite>,
@@ -244,6 +253,9 @@ pub struct Verdict {
     /// The evaluations of shared nodes that reused a value in the shared runs of both plans
     /// in oracle 5.
     pub shared_hits: u64,
+    /// The guard evaluations that narrowed their right operand, in the selective runs of both
+    /// plans in oracle 6.
+    pub narrowed_tiles: u64,
 }
 
 impl Engine {
@@ -270,20 +282,22 @@ impl Engine {
                 (v, interp)
             })
             .collect();
-        let scalar = |tiling, no_sharing| {
+        let scalar = |tiling, no_sharing, no_selective| {
             Interpreter::new(Options {
                 isa: Some(Isa::Scalar),
                 tiling,
                 no_sharing,
+                no_selective,
                 ..Options::default()
             })
             .expect("scalar is always available")
         };
         let reg = Registry::new();
         Engine {
-            tiled: scalar(Tiling::Rows(tile_rows()), false),
-            untiled: scalar(Tiling::Off, false),
-            unshared: scalar(Tiling::Rows(tile_rows()), true),
+            tiled: scalar(Tiling::Rows(tile_rows()), false, false),
+            untiled: scalar(Tiling::Off, false, false),
+            unshared: scalar(Tiling::Rows(tile_rows()), true, false),
+            unselective: scalar(Tiling::Rows(tile_rows()), false, true),
             fused: planner(false),
             unfused: planner(true),
             runners,
@@ -302,7 +316,7 @@ impl Engine {
     }
 
     /// Plans `case` with and without fusion, runs both plans on every variant, evaluates it
-    /// with the reference evaluator, and applies the five oracles. A program that does not
+    /// with the reference evaluator, and applies the six oracles. A program that does not
     /// compile is a generator bug.
     pub fn check(&self, case: &Case) -> Result<Verdict, String> {
         let (fused, fused_rewrites) = prepare(&self.fused, case)?;
@@ -346,6 +360,7 @@ impl Engine {
         }
         let before = self.tiled.tiled_regions();
         let hits_before = self.tiled.shared_hits();
+        let narrowed_before = self.tiled.narrowed_tiles();
         let mut tiled_regions = 0;
         for (plan, label, no_fusion) in [(&fused, "fused", false), (&unfused, "unfused", true)] {
             let tiled = run(&self.tiled, plan, case);
@@ -371,7 +386,18 @@ impl Engine {
                     plan_text(no_fusion, case),
                 ));
             }
+            let unselective = run(&self.unselective, plan, case);
+            if tiled != unselective {
+                return Err(format!(
+                    "oracle 6: the selective run differs from the non-selective run of the \
+                     {label} plan\n{}\n{label} plan:\n{}selective: {tiled}\n\
+                     non-selective: {unselective}",
+                    describe(case),
+                    plan_text(no_fusion, case),
+                ));
+            }
         }
+        let narrowed_tiles = self.tiled.narrowed_tiles() - narrowed_before;
         let shared_hits = self.tiled.shared_hits() - hits_before;
         // The generator produces nothing unsupported, so a skip here would quietly turn the
         // oracle off.
@@ -406,6 +432,7 @@ impl Engine {
             failing_unread,
             tiled_regions,
             shared_hits,
+            narrowed_tiles,
         })
     }
 }

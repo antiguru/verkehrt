@@ -94,6 +94,13 @@ const DEEP_SHARE_PERCENT: usize = 6;
 /// The feature of a program with a statement whose sharing depth exceeds `DEEP_SHARE_DEPTH`.
 pub const DEEP_SHARE_FEATURE: &str = "sharing depth over 3";
 
+/// The percentage of statements that `Gen::mask_chain` replaces by a chain of `and` and `or`
+/// over comparisons.
+const MASK_CHAIN_PERCENT: usize = 6;
+
+/// The feature of a program with a statement that `Gen::mask_chain` built.
+pub const MASK_CHAIN_FEATURE: &str = "selective mask chain";
+
 /// The length of an array, as far as generation knows it. Arrays of one class have equal
 /// lengths at run time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -382,6 +389,7 @@ impl<'a> Gen<'a, '_> {
         let mut may_stay_unread = BTreeSet::new();
         let mut failing_lets = Vec::new();
         let mut deep_share = false;
+        let mut mask_chain = false;
         let n_stmts = plan.stmts.len().clamp(1, self.p.max_stmts);
         for i in 0..n_stmts {
             self.c = Choices::new(plan.stmts.get(i).map_or(&[], Vec::as_slice));
@@ -418,6 +426,14 @@ impl<'a> Gen<'a, '_> {
             // statements get a chain of them on purpose.
             if self.c.flip(DEEP_SHARE_PERCENT) {
                 e = self.deep_share(&mut cx, e);
+            }
+            // Random programs rarely guard a comparison with another one that most rows never
+            // reach, so some statements get such a chain on purpose.
+            if self.c.flip(MASK_CHAIN_PERCENT)
+                && let Some(chain) = self.mask_chain(&mut cx)
+            {
+                e = chain;
+                mask_chain = true;
             }
             // Bindings read more than once that nest deeply grow the term as a tree
             // exponentially. Lowering and planning share them in graphs (#39), and the
@@ -466,6 +482,9 @@ impl<'a> Gen<'a, '_> {
         let (mut features, uses) = self.features(&stmts, &may_stay_unread);
         if deep_share {
             features.insert(DEEP_SHARE_FEATURE);
+        }
+        if mask_chain {
+            features.insert(MASK_CHAIN_FEATURE);
         }
         let mut body = String::new();
         for (kind, name, e) in &stmts {
@@ -1016,6 +1035,112 @@ impl<'a> Gen<'a, '_> {
             lt: ty,
             len,
         }
+    }
+
+    /// A chain of `and` and `or`, some of them nested, over comparisons of arrays of one
+    /// length with scalars, demanded as the mask itself, as `compress` by it, or as the sum of
+    /// its rows. The first comparison is against a literal near an end of the type's range,
+    /// and it holds in few rows when the first guard is an `and` and in most when it is an
+    /// `or`. A tile of it often has open rows only in the middle or none, which a guard over
+    /// the later comparisons narrows to. `None` when no array of a numeric type is in scope.
+    /// Outside lambdas only.
+    fn mask_chain(&mut self, cx: &mut Ctx) -> Option<E> {
+        let xs: Vec<Var> = cx
+            .vars
+            .iter()
+            .filter(|v| is_array(v.ty) && elem(v.ty) != ScalarType::Bool)
+            .cloned()
+            .collect();
+        if xs.is_empty() || cx.lambda {
+            return None;
+        }
+        let v = self.c.pick(&xs).clone();
+        let x = self.var(cx, &v);
+        let t = elem(x.ty);
+        // The literals that few rows of the generated inputs reach.
+        let (high, low): (&[&str], &[&str]) = match t {
+            ScalarType::F64 => (&["1000000.0", "100.0"], &["(-7.25)", "(-1.0)"]),
+            ScalarType::F32 => (&["100.0f32", "3.0f32"], &["(-7.25f32)", "(-1.0f32)"]),
+            ScalarType::I64 => (
+                &["9223372036854775807", "100"],
+                &["(-9223372036854775808)", "(-5)"],
+            ),
+            ScalarType::I32 => (
+                &["2147483647i32", "100i32"],
+                &["(-2147483648i32)", "(-5i32)"],
+            ),
+            ScalarType::U8 => (&["255u8", "100u8"], &["0u8", "1u8"]),
+            ScalarType::U64 => (&["18446744073709551615u64", "100u64"], &["0u64", "1u64"]),
+            other => unreachable!("{other:?} is not generated"),
+        };
+        // For an `and` the first comparison holds in few rows, so most rows are closed. For an
+        // `or` it holds in most rows, so the rows where the right operand matters are few.
+        let selective = |g: &mut Self, scope: &Ctx, base: E, or: bool| {
+            let (cmp, text) = match (g.c.below(3), or) {
+                (0, false) => (*g.c.pick(&[Op::Gt, Op::Ge, Op::Eq]), *g.c.pick(high)),
+                (1, false) => (*g.c.pick(&[Op::Lt, Op::Le, Op::Eq]), *g.c.pick(low)),
+                (_, false) => (Op::Eq, *g.c.pick(literals(t))),
+                (0, true) => (*g.c.pick(&[Op::Lt, Op::Le, Op::Ne]), *g.c.pick(high)),
+                (1, true) => (*g.c.pick(&[Op::Gt, Op::Ge, Op::Ne]), *g.c.pick(low)),
+                (_, true) => (Op::Ne, *g.c.pick(literals(t))),
+            };
+            let c = E {
+                k: K::Lit(text.to_string()),
+                ty: ValueType::Scalar(t),
+                lt: ValueType::Scalar(t),
+                len: None,
+            };
+            g.op(scope, cmp, vec![base, c], None)
+        };
+        // The other comparisons read an array of the length of `x`, if there is one.
+        let ys: Vec<Var> = xs
+            .iter()
+            .filter(|y| x.len.is_some() && y.len == x.len)
+            .cloned()
+            .collect();
+        // The scalars are variables and literals, because a scalar that needs a computation
+        // after the first kernel keeps the region from running tiled.
+        let leaf = |g: &mut Self, scope: &mut Ctx| {
+            let y = if ys.is_empty() {
+                x.clone()
+            } else {
+                let pick = g.c.pick(&ys).clone();
+                g.var(scope, &pick)
+            };
+            let cmp = if elem(y.ty) == ScalarType::Bool {
+                *g.c.pick(&[Op::Eq, Op::Ne])
+            } else {
+                *g.c.pick(&CMPS)
+            };
+            let c = g.leaf(scope, ValueType::Scalar(elem(y.ty)), None);
+            g.op(scope, cmp, vec![y, c], None)
+        };
+        let steps = 1 + self.c.below(3);
+        let mut outers: Vec<Op> = (0..steps)
+            .map(|_| *self.c.pick(&[Op::And, Op::Or]))
+            .collect();
+        let mut acc = selective(self, cx, x.clone(), outers[0] == Op::Or)?;
+        for outer in outers.drain(..) {
+            let right = if self.c.flip(40) {
+                let inner = *self.c.pick(&[Op::And, Op::Or]);
+                let (a, b) = (leaf(self, cx)?, leaf(self, cx)?);
+                self.op(cx, inner, vec![a, b], None)?
+            } else {
+                leaf(self, cx)?
+            };
+            acc = self.op(cx, outer, vec![acc, right], None)?;
+        }
+        Some(match self.c.below(3) {
+            0 => acc,
+            1 => {
+                let fresh = Some(self.fresh_class());
+                self.op(cx, Op::Compress, vec![x, acc], fresh)?
+            }
+            _ => {
+                let ones = self.op(cx, Op::Cast(ScalarType::I64), vec![acc], None)?;
+                self.op(cx, Op::Reduce(ReduceOp::Add), vec![ones], None)?
+            }
+        })
     }
 
     /// A conditional on a scalar `bool`. Inside a lambda it lifts to a select.

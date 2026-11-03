@@ -1,5 +1,5 @@
 //! Loads the column files of the acceptance data into program inputs, and reads the tiling and
-//! the sharing the acceptance tools run with.
+//! the sharing and the selective evaluation the acceptance tools run with.
 
 use std::env::VarError;
 use std::fs;
@@ -43,6 +43,22 @@ pub fn sharing_from_env() -> bool {
         Ok(v) if v == "off" => false,
         Ok(v) => panic!("VERKEHRT_SHARING={v}: expected off or unset"),
         Err(VarError::NotUnicode(v)) => panic!("VERKEHRT_SHARING={v:?}: expected off or unset"),
+    }
+}
+
+/// Whether selective evaluation is on, as the environment variable `VERKEHRT_SELECTIVE` says:
+/// `off` turns it off, and it is on when the variable is unset. The acceptance bench and the
+/// stats example call it.
+///
+/// # Panics
+///
+/// When the variable is set to anything but `off`.
+pub fn selective_from_env() -> bool {
+    match std::env::var("VERKEHRT_SELECTIVE") {
+        Err(VarError::NotPresent) => true,
+        Ok(v) if v == "off" => false,
+        Ok(v) => panic!("VERKEHRT_SELECTIVE={v}: expected off or unset"),
+        Err(VarError::NotUnicode(v)) => panic!("VERKEHRT_SELECTIVE={v:?}: expected off or unset"),
     }
 }
 
