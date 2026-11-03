@@ -282,22 +282,24 @@ pub const SHAPE_CLASSES: [&str; 7] = [
     "fused kernel",
 ];
 
-/// The shape class of a reduction root, by its kernel name.
+/// The shape class of a reduction root, by its kernel name. Panics on a name it does not
+/// list, so a new reduction must be classified before the test accepts it.
 fn shape_class(name: &str) -> &'static str {
-    let float = name.ends_with("_f64") || name.ends_with("_f32");
-    if name.starts_with("reduce_add_") || name.starts_with("reduce_mul_") {
-        SHAPE_CLASSES[usize::from(float)]
-    } else if name.starts_with("reduce_min_") || name.starts_with("reduce_max_") {
-        SHAPE_CLASSES[2]
-    } else if name.starts_with("argmin_") || name.starts_with("argmax_") {
-        SHAPE_CLASSES[3]
-    } else if matches!(name, "count" | "any" | "all") || name.ends_with("_bool") {
-        SHAPE_CLASSES[4]
-    } else if name.starts_with("reduce_") {
-        SHAPE_CLASSES[5]
-    } else {
+    let parts: Vec<&str> = name.split('_').collect();
+    let ty = parts.last().copied().unwrap_or_default();
+    let known_ty = matches!(ty, "f64" | "f32" | "i64" | "i32" | "u8" | "u64" | "bool");
+    let float = matches!(ty, "f64" | "f32");
+    match parts.as_slice() {
+        ["count" | "any" | "all"] => SHAPE_CLASSES[4],
+        ["reduce", "add" | "mul", _] if known_ty => SHAPE_CLASSES[usize::from(float)],
+        ["reduce", "min" | "max", _] if known_ty => SHAPE_CLASSES[2],
+        ["argmin" | "argmax", _] if known_ty => SHAPE_CLASSES[3],
+        ["reduce", "and" | "or" | "xor", "bool"] => SHAPE_CLASSES[4],
+        ["reduce", "and" | "or" | "xor", _] if known_ty => SHAPE_CLASSES[5],
         // `count_<cmp>`, `condsum_<cmp>`, `dot`, and `sumsq`.
-        SHAPE_CLASSES[6]
+        ["count" | "condsum", cmp, _] if known_ty && !cmp.is_empty() => SHAPE_CLASSES[6],
+        ["dot" | "sumsq", _] if known_ty => SHAPE_CLASSES[6],
+        _ => panic!("the reduction {name} has no shape class, add it to `shape_class`"),
     }
 }
 

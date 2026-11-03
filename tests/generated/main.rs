@@ -286,7 +286,8 @@ fn generated_programs() {
     eprintln!(
         "{} programs on {} variants in {:.1?}, {} source bytes on average, fusion changed the \
          plan of {}, {} have a failing unread binding, {} region runs completed tiled, {} \
-         shared evaluations reused a value, {} guard evaluations narrowed their right operand, {} fused reduction runs",
+         shared evaluations reused a value, {} guard evaluations narrowed their right operand, \
+         {} fused reduction runs",
         stats.cases,
         engine.variant_count(),
         begin.elapsed(),
