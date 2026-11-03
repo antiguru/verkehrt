@@ -1,0 +1,52 @@
+reduction fusion: off, default tiling
+load start: 2.38 7.03 10.46
+== probe-a x86-64-v3
+query probe-a total kernel time 1415.8 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=680.6
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=163.1
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=93.5
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=478.6
+== probe-a x86-64-v4
+query probe-a total kernel time 1308.5 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=654.6
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=94.3
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=89.8
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=469.8
+== probe-b x86-64-v3
+query probe-b total kernel time 871.9 us
+tiled_regions 0
+narrowed_tiles 0
+fused_reductions
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=776.0
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=95.9
+== probe-b x86-64-v4
+query probe-b total kernel time 834.3 us
+tiled_regions 0
+narrowed_tiles 0
+fused_reductions
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=745.8
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=88.5
+== probe-c x86-64-v3
+query probe-c total kernel time 951.1 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=384.3
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=94.0
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=472.8
+== probe-c x86-64-v4
+query probe-c total kernel time 815.0 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=283.4
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=90.1
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=441.5
+
+load end: 2.35 6.95 10.42

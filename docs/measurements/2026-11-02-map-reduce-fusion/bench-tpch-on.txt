@@ -1,0 +1,99 @@
+reduction fusion: on (VERKEHRT_REDUCTION_FUSION unset), default tiling, filter tpch/
+load start: 2.15 2.95 6.61
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/acceptance.rs (target/release/deps/acceptance-244f0e7085fa31c0)
+Benchmarking acceptance/tpch/q01/scalar
+Benchmarking acceptance/tpch/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/scalar: Collecting 10 samples in estimated 4.3603 s (165 iterations)
+Benchmarking acceptance/tpch/q01/scalar: Analyzing
+acceptance/tpch/q01/scalar
+                        time:   [26.224 ms 26.262 ms 26.340 ms]
+                        change: [+9.3086% +10.218% +11.110%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Collecting 10 samples in estimated 3.3826 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Analyzing
+acceptance/tpch/q01/x86-64-v3-auto
+                        time:   [20.324 ms 20.383 ms 20.444 ms]
+                        change: [+1.8342% +2.6723% +3.5236%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2732 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Analyzing
+acceptance/tpch/q01/x86-64-v3-intrinsics
+                        time:   [19.218 ms 19.302 ms 19.399 ms]
+                        change: [−6.2286% −5.4517% −4.5752%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Collecting 10 samples in estimated 3.2455 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Analyzing
+acceptance/tpch/q01/x86-64-v4-auto
+                        time:   [19.537 ms 19.663 ms 19.782 ms]
+                        change: [−0.6010% +0.1181% +0.8083%] (p = 0.75 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.6576 s (220 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Analyzing
+acceptance/tpch/q01/x86-64-v4-intrinsics
+                        time:   [16.331 ms 16.404 ms 16.493 ms]
+                        change: [−6.1696% −5.5429% −4.9017%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+Benchmarking acceptance/tpch/q06/scalar
+Benchmarking acceptance/tpch/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/scalar: Collecting 10 samples in estimated 3.0310 s (495 iterations)
+Benchmarking acceptance/tpch/q06/scalar: Analyzing
+acceptance/tpch/q06/scalar
+                        time:   [6.1338 ms 6.1420 ms 6.1493 ms]
+                        change: [−0.0616% +0.0989% +0.2504%] (p = 0.28 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Collecting 10 samples in estimated 3.0939 s (1045 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Analyzing
+acceptance/tpch/q06/x86-64-v3-auto
+                        time:   [2.9188 ms 2.9211 ms 2.9243 ms]
+                        change: [−1.0500% −0.3064% +0.8598%] (p = 0.62 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0031 s (1210 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Analyzing
+acceptance/tpch/q06/x86-64-v3-intrinsics
+                        time:   [2.4890 ms 2.4952 ms 2.5001 ms]
+                        change: [−0.6009% −0.2344% +0.1158%] (p = 0.24 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Collecting 10 samples in estimated 3.0092 s (1265 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Analyzing
+acceptance/tpch/q06/x86-64-v4-auto
+                        time:   [2.3808 ms 2.3853 ms 2.3902 ms]
+                        change: [−0.6062% −0.2113% +0.2332%] (p = 0.37 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0151 s (1760 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Analyzing
+acceptance/tpch/q06/x86-64-v4-intrinsics
+                        time:   [1.7058 ms 1.7082 ms 1.7108 ms]
+                        change: [−0.1767% +0.5723% +1.3410%] (p = 0.18 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+
+
+load end: 2.40 2.85 6.25

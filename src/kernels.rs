@@ -45,12 +45,15 @@ pub type ElementwiseFn = unsafe fn(args: &[Arg], out: &mut [u8]) -> Result<(), S
 /// safety must check them itself.
 pub type ReducerFn = unsafe fn() -> Box<dyn Reducer>;
 
+/// The row multiple of every `Reducer::update` but the last.
+pub const REDUCE_BLOCK: usize = 16;
+
 /// The running state of one reduction.
 ///
-/// Every `update` except the last receives a row count that is a multiple of 16, and `finish`
-/// follows the last `update`. An empty input means no `update` at all, and `finish` then
-/// returns the identity, or the empty-array error for `reduce_min`, `reduce_max`, `argmin`,
-/// and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
+/// Every `update` except the last receives a row count that is a multiple of
+/// `REDUCE_BLOCK`, and `finish` follows the last `update`. An empty input means no `update`
+/// at all, and `finish` then returns the identity, or the empty-array error for
+/// `reduce_min`, `reduce_max`, `argmin`, and `argmax`. Index results (`argmin`, `argmax`) count rows over all updates, so a tile's
 /// local index is offset by the rows consumed before it.
 pub trait Reducer: Send {
     /// Consumes one tile. `args` may arrive with unchecked kinds and row counts, see
@@ -150,11 +153,24 @@ fn scalar_whole<W: WholeBody>(args: &[Value]) -> Result<Value, String> {
 /// function does not need.
 pub type WholeFn = unsafe fn(&[Value]) -> Result<Value, String>;
 
+/// Whether the result bits of a reduction entry depend on how its rows split into updates
+/// that follow the contract of `Reducer`. The default is `Bound`, so an entry is `Free` only
+/// where its registration says so.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Split {
+    /// Every split into updates gives the bits of one update, NaN results included.
+    Free,
+    /// Different splits may give different bits, so only one update over all rows fixes the
+    /// result.
+    #[default]
+    Bound,
+}
+
 /// The entry of a kernel variant. The variant of the entry matches `KernelDef::class`.
 #[derive(Clone, Copy)]
 pub enum KernelImpl {
     Elementwise(ElementwiseFn),
-    Reduction(ReducerFn),
+    Reduction(ReducerFn, Split),
     Selection(SelectionFn),
     Scan(ScanFn),
     Whole(WholeFn),
@@ -166,7 +182,7 @@ impl KernelImpl {
         matches!(
             (self, class),
             (KernelImpl::Elementwise(_), KernelClass::Elementwise)
-                | (KernelImpl::Reduction(_), KernelClass::Reduction)
+                | (KernelImpl::Reduction(..), KernelClass::Reduction)
                 | (KernelImpl::Selection(_), KernelClass::Selection)
                 | (KernelImpl::Scan(_), KernelClass::Scan)
                 | (KernelImpl::Whole(_), KernelClass::Whole)
@@ -191,10 +207,10 @@ impl KernelImpl {
         impls
     }
 
-    /// The table of a reduction body, see `elementwise`.
-    pub(crate) fn reduction<R: ReductionBody>() -> KernelTable {
-        let mut impls = KernelImpl::Reduction(scalar_reducer::<R>).scalar_only();
-        arch::add_reduction::<R>(&mut impls);
+    /// The table of a reduction body, see `elementwise`, whose entries all have `split`.
+    pub(crate) fn reduction<R: ReductionBody>(split: Split) -> KernelTable {
+        let mut impls = KernelImpl::Reduction(scalar_reducer::<R>, split).scalar_only();
+        arch::add_reduction::<R>(&mut impls, split);
         impls
     }
 

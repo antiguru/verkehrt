@@ -9,7 +9,7 @@
 
 use crate::kernels::{
     Backend, ElementwiseBody, Isa, KernelImpl, KernelTable, ReductionBody, ScanBody, SelectionBody,
-    Variant, WholeBody,
+    Split, Variant, WholeBody,
 };
 use crate::value::Elem;
 
@@ -65,15 +65,16 @@ pub(crate) fn add_elementwise<B: ElementwiseBody>(impls: &mut KernelTable) {
     );
 }
 
-/// Adds the x86-64-v3 and x86-64-v4 auto entries of a reduction body to its table.
-pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut KernelTable) {
+/// Adds the x86-64-v3 and x86-64-v4 auto entries of a reduction body to its table, each with
+/// `split`, which they share with the scalar entry because they compile the same body.
+pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut KernelTable, split: Split) {
     impls.set(
         V3_AUTO,
-        KernelImpl::Reduction(auto::x86_64_v3::reducer::<R>),
+        KernelImpl::Reduction(auto::x86_64_v3::reducer::<R>, split),
     );
     impls.set(
         V4_AUTO,
-        KernelImpl::Reduction(auto::x86_64_v4::reducer::<R>),
+        KernelImpl::Reduction(auto::x86_64_v4::reducer::<R>, split),
     );
 }
 

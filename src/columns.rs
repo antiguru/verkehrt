@@ -62,6 +62,24 @@ pub fn selective_from_env() -> bool {
     }
 }
 
+/// Whether fused reductions are on, as the environment variable `VERKEHRT_REDUCTION_FUSION`
+/// says: `off` turns them off, and they are on when the variable is unset. The acceptance bench
+/// and the stats example call it.
+///
+/// # Panics
+///
+/// When the variable is set to anything but `off`.
+pub fn reduction_fusion_from_env() -> bool {
+    match std::env::var("VERKEHRT_REDUCTION_FUSION") {
+        Err(VarError::NotPresent) => true,
+        Ok(v) if v == "off" => false,
+        Ok(v) => panic!("VERKEHRT_REDUCTION_FUSION={v}: expected off or unset"),
+        Err(VarError::NotUnicode(v)) => {
+            panic!("VERKEHRT_REDUCTION_FUSION={v:?}: expected off or unset")
+        }
+    }
+}
+
 /// The columns of the ClickBench data that `prepare.py` stores with the sign bit flipped, so
 /// that the words' unsigned order is the signed order. Pass it to [`load_inputs`].
 pub const CLICKBENCH_SIGNED: &[&str] = &[

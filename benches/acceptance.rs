@@ -19,7 +19,8 @@ use std::time::Duration;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use verkehrt::columns::{
-    CLICKBENCH_SIGNED, load_inputs, selective_from_env, sharing_from_env, tiling_from_env,
+    CLICKBENCH_SIGNED, load_inputs, reduction_fusion_from_env, selective_from_env,
+    sharing_from_env, tiling_from_env,
 };
 use verkehrt::kernels::{Backend, Isa};
 use verkehrt::value::Value;
@@ -35,6 +36,7 @@ fn interpreters() -> Vec<(String, Interpreter)> {
             tiling: tiling_from_env(),
             no_sharing: !sharing_from_env(),
             no_selective: !selective_from_env(),
+            no_reduction_fusion: !reduction_fusion_from_env(),
             ..Options::default()
         })
         .unwrap()

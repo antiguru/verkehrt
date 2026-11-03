@@ -1,0 +1,1014 @@
+reduction fusion: off, default tiling, filter acceptance
+load start: 2.49 2.65 5.13
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.09s
+     Running benches/acceptance.rs (target/release/deps/acceptance-244f0e7085fa31c0)
+Benchmarking acceptance/clickbench/q00/scalar
+Benchmarking acceptance/clickbench/q00/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/scalar: Collecting 10 samples in estimated 3.0000 s (15M iterations)
+Benchmarking acceptance/clickbench/q00/scalar: Analyzing
+acceptance/clickbench/q00/scalar
+                        time:   [200.34 ns 200.48 ns 200.65 ns]
+                        change: [+1.8505% +2.9807% +3.6791%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q00/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q00/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/x86-64-v3-auto: Collecting 10 samples in estimated 3.0000 s (15M iterations)
+Benchmarking acceptance/clickbench/q00/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q00/x86-64-v3-auto
+                        time:   [203.04 ns 203.15 ns 203.27 ns]
+                        change: [+2.6573% +3.2983% +3.8378%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q00/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q00/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0000 s (15M iterations)
+Benchmarking acceptance/clickbench/q00/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q00/x86-64-v3-intrinsics
+                        time:   [208.37 ns 208.71 ns 209.21 ns]
+                        change: [+1.7732% +2.3916% +2.8819%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+Benchmarking acceptance/clickbench/q00/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q00/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/x86-64-v4-auto: Collecting 10 samples in estimated 3.0000 s (15M iterations)
+Benchmarking acceptance/clickbench/q00/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q00/x86-64-v4-auto
+                        time:   [200.34 ns 200.46 ns 200.63 ns]
+                        change: [+2.1102% +2.9907% +3.6193%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q00/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q00/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0000 s (15M iterations)
+Benchmarking acceptance/clickbench/q00/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q00/x86-64-v4-intrinsics
+                        time:   [206.39 ns 206.59 ns 206.78 ns]
+                        change: [+2.7104% +2.9846% +3.2325%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+
+Benchmarking acceptance/clickbench/q01/scalar
+Benchmarking acceptance/clickbench/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/scalar: Collecting 10 samples in estimated 3.0080 s (13k iterations)
+Benchmarking acceptance/clickbench/q01/scalar: Analyzing
+acceptance/clickbench/q01/scalar
+                        time:   [222.91 µs 223.35 µs 223.85 µs]
+                        change: [−0.3384% −0.0777% +0.1557%] (p = 0.57 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q01/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q01/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/x86-64-v3-auto: Collecting 10 samples in estimated 3.0048 s (29k iterations)
+Benchmarking acceptance/clickbench/q01/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q01/x86-64-v3-auto
+                        time:   [102.63 µs 102.79 µs 102.94 µs]
+                        change: [+6.7039% +6.8212% +6.9408%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q01/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q01/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0005 s (29k iterations)
+Benchmarking acceptance/clickbench/q01/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q01/x86-64-v3-intrinsics
+                        time:   [103.72 µs 103.76 µs 103.83 µs]
+                        change: [+8.0048% +8.1366% +8.2804%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q01/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q01/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/x86-64-v4-auto: Collecting 10 samples in estimated 3.0003 s (30k iterations)
+Benchmarking acceptance/clickbench/q01/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q01/x86-64-v4-auto
+                        time:   [98.200 µs 98.302 µs 98.425 µs]
+                        change: [+6.6652% +6.9324% +7.2368%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q01/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q01/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0028 s (31k iterations)
+Benchmarking acceptance/clickbench/q01/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q01/x86-64-v4-intrinsics
+                        time:   [98.212 µs 98.992 µs 99.333 µs]
+                        change: [+7.0152% +7.4142% +7.8631%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q02/scalar
+Benchmarking acceptance/clickbench/q02/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/scalar: Collecting 10 samples in estimated 3.0088 s (8800 iterations)
+Benchmarking acceptance/clickbench/q02/scalar: Analyzing
+acceptance/clickbench/q02/scalar
+                        time:   [341.27 µs 341.61 µs 341.92 µs]
+                        change: [−0.1887% −0.0012% +0.1819%] (p = 0.99 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q02/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q02/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/x86-64-v3-auto: Collecting 10 samples in estimated 3.0005 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q02/x86-64-v3-auto
+                        time:   [187.00 µs 188.21 µs 191.05 µs]
+                        change: [+2.0942% +3.5956% +4.9713%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q02/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q02/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0072 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q02/x86-64-v3-intrinsics
+                        time:   [193.54 µs 194.44 µs 195.04 µs]
+                        change: [+5.4227% +5.8514% +6.2442%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low severe
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q02/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q02/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/x86-64-v4-auto: Collecting 10 samples in estimated 3.0073 s (17k iterations)
+Benchmarking acceptance/clickbench/q02/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q02/x86-64-v4-auto
+                        time:   [176.12 µs 181.07 µs 186.90 µs]
+                        change: [+0.4026% +1.5978% +3.4677%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking acceptance/clickbench/q02/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q02/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0095 s (16k iterations)
+Benchmarking acceptance/clickbench/q02/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q02/x86-64-v4-intrinsics
+                        time:   [177.46 µs 181.58 µs 191.22 µs]
+                        change: [+3.0650% +5.8799% +7.9535%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q03/scalar
+Benchmarking acceptance/clickbench/q03/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/scalar: Collecting 10 samples in estimated 3.0166 s (990 iterations)
+Benchmarking acceptance/clickbench/q03/scalar: Analyzing
+acceptance/clickbench/q03/scalar
+                        time:   [3.0286 ms 3.0326 ms 3.0376 ms]
+                        change: [+32.096% +32.513% +32.999%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q03/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q03/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/x86-64-v3-auto: Collecting 10 samples in estimated 3.0412 s (1375 iterations)
+Benchmarking acceptance/clickbench/q03/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q03/x86-64-v3-auto
+                        time:   [2.2362 ms 2.2461 ms 2.2551 ms]
+                        change: [−14.219% −13.648% −13.116%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q03/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q03/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0809 s (1375 iterations)
+Benchmarking acceptance/clickbench/q03/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q03/x86-64-v3-intrinsics
+                        time:   [2.2375 ms 2.2412 ms 2.2434 ms]
+                        change: [−14.831% −14.015% −13.210%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  2 (20.00%) high severe
+Benchmarking acceptance/clickbench/q03/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q03/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/x86-64-v4-auto: Collecting 10 samples in estimated 3.0989 s (1430 iterations)
+Benchmarking acceptance/clickbench/q03/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q03/x86-64-v4-auto
+                        time:   [2.1666 ms 2.1725 ms 2.1763 ms]
+                        change: [−13.826% −13.544% −13.279%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q03/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q03/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0487 s (2145 iterations)
+Benchmarking acceptance/clickbench/q03/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q03/x86-64-v4-intrinsics
+                        time:   [1.4076 ms 1.4088 ms 1.4101 ms]
+                        change: [+0.4286% +0.7088% +0.9956%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+
+Benchmarking acceptance/clickbench/q04/scalar
+Benchmarking acceptance/clickbench/q04/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/scalar: Collecting 10 samples in estimated 3.2483 s (495 iterations)
+Benchmarking acceptance/clickbench/q04/scalar: Analyzing
+acceptance/clickbench/q04/scalar
+                        time:   [6.5505 ms 6.5703 ms 6.5891 ms]
+                        change: [−2.8507% −2.4772% −2.0967%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q04/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q04/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/x86-64-v3-auto: Collecting 10 samples in estimated 3.1537 s (550 iterations)
+Benchmarking acceptance/clickbench/q04/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q04/x86-64-v3-auto
+                        time:   [5.7263 ms 5.7344 ms 5.7524 ms]
+                        change: [−2.8243% −2.4439% −2.0720%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q04/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q04/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1636 s (550 iterations)
+Benchmarking acceptance/clickbench/q04/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q04/x86-64-v3-intrinsics
+                        time:   [5.7374 ms 5.7524 ms 5.7642 ms]
+                        change: [−1.7421% −1.4821% −1.2247%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q04/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q04/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/x86-64-v4-auto: Collecting 10 samples in estimated 3.1347 s (550 iterations)
+Benchmarking acceptance/clickbench/q04/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q04/x86-64-v4-auto
+                        time:   [5.7017 ms 5.7109 ms 5.7190 ms]
+                        change: [+0.2964% +0.6846% +1.2391%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+Found 4 outliers among 10 measurements (40.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q04/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q04/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1359 s (550 iterations)
+Benchmarking acceptance/clickbench/q04/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q04/x86-64-v4-intrinsics
+                        time:   [5.6992 ms 5.7111 ms 5.7213 ms]
+                        change: [−0.0773% +0.4186% +0.8746%] (p = 0.12 > 0.05)
+                        No change in performance detected.
+
+Benchmarking acceptance/clickbench/q06/scalar
+Benchmarking acceptance/clickbench/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/scalar: Collecting 10 samples in estimated 3.0238 s (5830 iterations)
+Benchmarking acceptance/clickbench/q06/scalar: Analyzing
+acceptance/clickbench/q06/scalar
+                        time:   [516.79 µs 517.18 µs 517.59 µs]
+                        change: [−1.5388% −1.2757% −1.0501%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q06/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q06/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/x86-64-v3-auto: Collecting 10 samples in estimated 3.0006 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q06/x86-64-v3-auto
+                        time:   [203.45 µs 203.95 µs 204.24 µs]
+                        change: [+6.0598% +6.2562% +6.4505%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q06/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q06/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0054 s (15k iterations)
+Benchmarking acceptance/clickbench/q06/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q06/x86-64-v3-intrinsics
+                        time:   [201.96 µs 202.13 µs 202.26 µs]
+                        change: [+5.4008% +5.4981% +5.5824%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q06/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q06/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/x86-64-v4-auto: Collecting 10 samples in estimated 3.0075 s (16k iterations)
+Benchmarking acceptance/clickbench/q06/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q06/x86-64-v4-auto
+                        time:   [185.36 µs 185.45 µs 185.60 µs]
+                        change: [+0.1511% +0.3373% +0.5119%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q06/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q06/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0101 s (16k iterations)
+Benchmarking acceptance/clickbench/q06/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q06/x86-64-v4-intrinsics
+                        time:   [185.28 µs 185.42 µs 185.59 µs]
+                        change: [+0.4815% +0.6263% +0.7702%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+
+Benchmarking acceptance/clickbench/q07/scalar
+Benchmarking acceptance/clickbench/q07/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/scalar: Collecting 10 samples in estimated 3.0006 s (3630 iterations)
+Benchmarking acceptance/clickbench/q07/scalar: Analyzing
+acceptance/clickbench/q07/scalar
+                        time:   [824.75 µs 828.23 µs 831.27 µs]
+                        change: [−13.430% −13.157% −12.864%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q07/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q07/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/x86-64-v3-auto: Collecting 10 samples in estimated 3.0216 s (4290 iterations)
+Benchmarking acceptance/clickbench/q07/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q07/x86-64-v3-auto
+                        time:   [702.20 µs 704.23 µs 706.40 µs]
+                        change: [−0.7939% −0.3143% +0.0970%] (p = 0.21 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q07/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q07/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0169 s (6600 iterations)
+Benchmarking acceptance/clickbench/q07/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q07/x86-64-v3-intrinsics
+                        time:   [453.39 µs 454.59 µs 455.61 µs]
+                        change: [−0.2481% +0.1119% +0.4933%] (p = 0.58 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q07/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q07/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/x86-64-v4-auto: Collecting 10 samples in estimated 3.0093 s (4345 iterations)
+Benchmarking acceptance/clickbench/q07/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q07/x86-64-v4-auto
+                        time:   [691.27 µs 692.29 µs 693.02 µs]
+                        change: [+1.8575% +2.0592% +2.2429%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q07/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q07/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0135 s (9460 iterations)
+Benchmarking acceptance/clickbench/q07/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q07/x86-64-v4-intrinsics
+                        time:   [317.52 µs 321.41 µs 325.41 µs]
+                        change: [+0.3738% +1.3387% +2.2782%] (p = 0.02 < 0.05)
+                        Change within noise threshold.
+
+Benchmarking acceptance/clickbench/q08/scalar
+Benchmarking acceptance/clickbench/q08/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/scalar: Collecting 10 samples in estimated 3.6892 s (220 iterations)
+Benchmarking acceptance/clickbench/q08/scalar: Analyzing
+acceptance/clickbench/q08/scalar
+                        time:   [16.741 ms 16.766 ms 16.788 ms]
+                        change: [+0.9114% +1.3544% +1.7336%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q08/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q08/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/x86-64-v3-auto: Collecting 10 samples in estimated 3.3647 s (220 iterations)
+Benchmarking acceptance/clickbench/q08/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q08/x86-64-v3-auto
+                        time:   [15.361 ms 15.373 ms 15.384 ms]
+                        change: [+0.7158% +1.7127% +2.3511%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+Benchmarking acceptance/clickbench/q08/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q08/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.3805 s (220 iterations)
+Benchmarking acceptance/clickbench/q08/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q08/x86-64-v3-intrinsics
+                        time:   [15.375 ms 15.412 ms 15.443 ms]
+                        change: [+1.7283% +2.1712% +2.6588%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q08/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q08/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/x86-64-v4-auto: Collecting 10 samples in estimated 3.3956 s (220 iterations)
+Benchmarking acceptance/clickbench/q08/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q08/x86-64-v4-auto
+                        time:   [15.428 ms 15.445 ms 15.477 ms]
+                        change: [+2.1426% +2.5149% +2.8963%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  2 (20.00%) high mild
+Benchmarking acceptance/clickbench/q08/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q08/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.3993 s (220 iterations)
+Benchmarking acceptance/clickbench/q08/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q08/x86-64-v4-intrinsics
+                        time:   [15.412 ms 15.455 ms 15.500 ms]
+                        change: [+2.6466% +3.3444% +4.0762%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q09/scalar
+Benchmarking acceptance/clickbench/q09/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/scalar: Collecting 10 samples in estimated 3.5308 s (165 iterations)
+Benchmarking acceptance/clickbench/q09/scalar: Analyzing
+acceptance/clickbench/q09/scalar
+                        time:   [21.351 ms 21.509 ms 21.647 ms]
+                        change: [−1.5089% −1.1026% −0.6396%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q09/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q09/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/x86-64-v3-auto: Collecting 10 samples in estimated 3.1271 s (165 iterations)
+Benchmarking acceptance/clickbench/q09/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q09/x86-64-v3-auto
+                        time:   [18.578 ms 18.644 ms 18.777 ms]
+                        change: [−4.8486% −4.1258% −3.3767%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q09/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q09/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2287 s (165 iterations)
+Benchmarking acceptance/clickbench/q09/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q09/x86-64-v3-intrinsics
+                        time:   [19.492 ms 19.517 ms 19.565 ms]
+                        change: [−0.5676% −0.3748% −0.1581%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q09/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q09/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/x86-64-v4-auto: Collecting 10 samples in estimated 3.3425 s (165 iterations)
+Benchmarking acceptance/clickbench/q09/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q09/x86-64-v4-auto
+                        time:   [20.234 ms 20.363 ms 20.516 ms]
+                        change: [+3.9932% +4.8095% +5.6069%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q09/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q09/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.3340 s (165 iterations)
+Benchmarking acceptance/clickbench/q09/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q09/x86-64-v4-intrinsics
+                        time:   [20.354 ms 20.433 ms 20.491 ms]
+                        change: [+3.6143% +4.6787% +5.5346%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+Benchmarking acceptance/clickbench/q15/scalar
+Benchmarking acceptance/clickbench/q15/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/scalar: Collecting 10 samples in estimated 3.3879 s (275 iterations)
+Benchmarking acceptance/clickbench/q15/scalar: Analyzing
+acceptance/clickbench/q15/scalar
+                        time:   [12.307 ms 12.320 ms 12.333 ms]
+                        change: [+0.6061% +0.7464% +0.8984%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q15/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q15/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/x86-64-v3-auto: Collecting 10 samples in estimated 3.0092 s (275 iterations)
+Benchmarking acceptance/clickbench/q15/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q15/x86-64-v3-auto
+                        time:   [11.011 ms 11.020 ms 11.032 ms]
+                        change: [−0.2832% −0.0545% +0.1502%] (p = 0.67 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q15/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q15/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0424 s (275 iterations)
+Benchmarking acceptance/clickbench/q15/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q15/x86-64-v3-intrinsics
+                        time:   [10.988 ms 11.002 ms 11.016 ms]
+                        change: [−0.6052% −0.3434% −0.1124%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q15/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q15/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/x86-64-v4-auto: Collecting 10 samples in estimated 3.0336 s (275 iterations)
+Benchmarking acceptance/clickbench/q15/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q15/x86-64-v4-auto
+                        time:   [10.997 ms 11.036 ms 11.055 ms]
+                        change: [+2.2102% +2.5414% +2.8564%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q15/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q15/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0221 s (275 iterations)
+Benchmarking acceptance/clickbench/q15/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q15/x86-64-v4-intrinsics
+                        time:   [10.994 ms 11.020 ms 11.033 ms]
+                        change: [+2.5812% +2.8101% +3.0262%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+Benchmarking acceptance/clickbench/q19/scalar
+Benchmarking acceptance/clickbench/q19/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/scalar: Collecting 10 samples in estimated 3.0349 s (3520 iterations)
+Benchmarking acceptance/clickbench/q19/scalar: Analyzing
+acceptance/clickbench/q19/scalar
+                        time:   [861.93 µs 862.74 µs 863.33 µs]
+                        change: [+18.344% +18.607% +18.838%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q19/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q19/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/x86-64-v3-auto: Collecting 10 samples in estimated 3.0140 s (4565 iterations)
+Benchmarking acceptance/clickbench/q19/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q19/x86-64-v3-auto
+                        time:   [656.68 µs 662.58 µs 668.50 µs]
+                        change: [+3.3167% +4.0734% +4.9270%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q19/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q19/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0185 s (8745 iterations)
+Benchmarking acceptance/clickbench/q19/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q19/x86-64-v3-intrinsics
+                        time:   [342.98 µs 344.02 µs 344.77 µs]
+                        change: [−1.6965% −0.8450% −0.0268%] (p = 0.08 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q19/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q19/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/x86-64-v4-auto: Collecting 10 samples in estimated 3.0038 s (4620 iterations)
+Benchmarking acceptance/clickbench/q19/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q19/x86-64-v4-auto
+                        time:   [650.10 µs 650.90 µs 651.73 µs]
+                        change: [−16.192% −15.976% −15.773%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q19/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q19/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0105 s (11k iterations)
+Benchmarking acceptance/clickbench/q19/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q19/x86-64-v4-intrinsics
+                        time:   [282.63 µs 285.71 µs 289.00 µs]
+                        change: [−0.2891% +0.6501% +1.4303%] (p = 0.19 > 0.05)
+                        No change in performance detected.
+
+Benchmarking acceptance/clickbench/q27/scalar
+Benchmarking acceptance/clickbench/q27/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/scalar: Collecting 10 samples in estimated 3.0966 s (385 iterations)
+Benchmarking acceptance/clickbench/q27/scalar: Analyzing
+acceptance/clickbench/q27/scalar
+                        time:   [7.9797 ms 7.9985 ms 8.0171 ms]
+                        change: [−1.0451% −0.3277% +0.3139%] (p = 0.40 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Collecting 10 samples in estimated 3.0994 s (495 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q27/x86-64-v3-auto
+                        time:   [6.1564 ms 6.1779 ms 6.2133 ms]
+                        change: [−4.8571% −3.6721% −2.4382%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.2931 s (550 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q27/x86-64-v3-intrinsics
+                        time:   [5.8121 ms 5.8413 ms 5.8865 ms]
+                        change: [−5.6545% −4.3162% −2.9548%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Collecting 10 samples in estimated 3.2830 s (550 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q27/x86-64-v4-auto
+                        time:   [5.9959 ms 6.0259 ms 6.0557 ms]
+                        change: [+0.8456% +1.3791% +1.9018%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1789 s (605 iterations)
+Benchmarking acceptance/clickbench/q27/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q27/x86-64-v4-intrinsics
+                        time:   [5.3323 ms 5.4180 ms 5.4766 ms]
+                        change: [−3.2599% −2.1462% −0.8659%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+
+Benchmarking acceptance/clickbench/q29/scalar
+Benchmarking acceptance/clickbench/q29/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/scalar: Collecting 10 samples in estimated 3.0101 s (15k iterations)
+Benchmarking acceptance/clickbench/q29/scalar: Analyzing
+acceptance/clickbench/q29/scalar
+                        time:   [202.62 µs 202.97 µs 203.53 µs]
+                        change: [+0.1349% +0.2937% +0.4842%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Collecting 10 samples in estimated 3.0048 s (23k iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v3-auto
+                        time:   [131.35 µs 132.04 µs 132.52 µs]
+                        change: [+6.8039% +7.1389% +7.5407%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0013 s (23k iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v3-intrinsics
+                        time:   [131.77 µs 131.85 µs 131.97 µs]
+                        change: [+6.4921% +6.8600% +7.1527%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Collecting 10 samples in estimated 3.0027 s (23k iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q29/x86-64-v4-auto
+                        time:   [130.23 µs 130.69 µs 131.37 µs]
+                        change: [+6.5230% +6.8763% +7.1895%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0007 s (23k iterations)
+Benchmarking acceptance/clickbench/q29/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q29/x86-64-v4-intrinsics
+                        time:   [130.55 µs 130.80 µs 131.24 µs]
+                        change: [+5.4607% +5.7377% +6.0835%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking acceptance/clickbench/q30/scalar
+Benchmarking acceptance/clickbench/q30/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/scalar: Collecting 10 samples in estimated 3.2885 s (385 iterations)
+Benchmarking acceptance/clickbench/q30/scalar: Analyzing
+acceptance/clickbench/q30/scalar
+                        time:   [8.5306 ms 8.5470 ms 8.5647 ms]
+                        change: [+10.204% +10.565% +10.892%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Collecting 10 samples in estimated 3.1828 s (550 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q30/x86-64-v3-auto
+                        time:   [5.7962 ms 5.8187 ms 5.8537 ms]
+                        change: [−0.1694% +0.2943% +0.8433%] (p = 0.28 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1165 s (605 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q30/x86-64-v3-intrinsics
+                        time:   [5.0031 ms 5.0099 ms 5.0193 ms]
+                        change: [−0.1146% +0.3391% +0.8349%] (p = 0.19 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Collecting 10 samples in estimated 3.2923 s (605 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q30/x86-64-v4-auto
+                        time:   [5.4557 ms 5.4697 ms 5.4860 ms]
+                        change: [+0.1291% +0.4543% +0.7915%] (p = 0.02 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1105 s (715 iterations)
+Benchmarking acceptance/clickbench/q30/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q30/x86-64-v4-intrinsics
+                        time:   [4.3351 ms 4.3434 ms 4.3539 ms]
+                        change: [+3.4228% +3.7734% +4.1411%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking acceptance/clickbench/q31/scalar
+Benchmarking acceptance/clickbench/q31/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/scalar: Collecting 10 samples in estimated 3.1046 s (330 iterations)
+Benchmarking acceptance/clickbench/q31/scalar: Analyzing
+acceptance/clickbench/q31/scalar
+                        time:   [9.3367 ms 9.3625 ms 9.3831 ms]
+                        change: [+12.270% +12.577% +12.862%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Collecting 10 samples in estimated 3.1731 s (495 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q31/x86-64-v3-auto
+                        time:   [6.3552 ms 6.3790 ms 6.4080 ms]
+                        change: [−1.1006% −0.5906% −0.0387%] (p = 0.05 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0801 s (550 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q31/x86-64-v3-intrinsics
+                        time:   [5.6012 ms 5.6318 ms 5.6485 ms]
+                        change: [−1.3264% −0.8720% −0.4122%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Collecting 10 samples in estimated 3.0983 s (495 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q31/x86-64-v4-auto
+                        time:   [6.2549 ms 6.2747 ms 6.2985 ms]
+                        change: [+2.5811% +3.1082% +3.6742%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1070 s (605 iterations)
+Benchmarking acceptance/clickbench/q31/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q31/x86-64-v4-intrinsics
+                        time:   [5.0885 ms 5.1100 ms 5.1256 ms]
+                        change: [+5.0290% +5.3619% +5.6942%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q32/scalar
+Benchmarking acceptance/clickbench/q32/scalar: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.3s or enable flat sampling.
+Benchmarking acceptance/clickbench/q32/scalar: Collecting 10 samples in estimated 4.2637 s (55 iterations)
+Benchmarking acceptance/clickbench/q32/scalar: Analyzing
+acceptance/clickbench/q32/scalar
+                        time:   [74.024 ms 74.878 ms 75.938 ms]
+                        change: [+4.7928% +6.0715% +7.4968%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q32/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q32/x86-64-v3-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.7s or enable flat sampling.
+Benchmarking acceptance/clickbench/q32/x86-64-v3-auto: Collecting 10 samples in estimated 3.7431 s (55 iterations)
+Benchmarking acceptance/clickbench/q32/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q32/x86-64-v3-auto
+                        time:   [67.047 ms 67.694 ms 68.257 ms]
+                        change: [−5.5796% −3.7348% −1.7100%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/clickbench/q32/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q32/x86-64-v3-intrinsics: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking acceptance/clickbench/q32/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.8805 s (55 iterations)
+Benchmarking acceptance/clickbench/q32/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q32/x86-64-v3-intrinsics
+                        time:   [70.318 ms 70.670 ms 70.938 ms]
+                        change: [−1.4880% −0.3408% +0.8069%] (p = 0.59 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q32/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q32/x86-64-v4-auto: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 4.0s or enable flat sampling.
+Benchmarking acceptance/clickbench/q32/x86-64-v4-auto: Collecting 10 samples in estimated 4.0029 s (55 iterations)
+Benchmarking acceptance/clickbench/q32/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q32/x86-64-v4-auto
+                        time:   [71.169 ms 71.550 ms 72.082 ms]
+                        change: [+4.7987% +6.5400% +8.6170%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q32/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q32/x86-64-v4-intrinsics: Warming up for 500.00 ms
+
+Warning: Unable to complete 10 samples in 3.0s. You may wish to increase target time to 3.9s or enable flat sampling.
+Benchmarking acceptance/clickbench/q32/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.9449 s (55 iterations)
+Benchmarking acceptance/clickbench/q32/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q32/x86-64-v4-intrinsics
+                        time:   [71.927 ms 72.314 ms 72.942 ms]
+                        change: [+5.5055% +6.2909% +7.1377%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q35/scalar
+Benchmarking acceptance/clickbench/q35/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/scalar: Collecting 10 samples in estimated 3.2745 s (275 iterations)
+Benchmarking acceptance/clickbench/q35/scalar: Analyzing
+acceptance/clickbench/q35/scalar
+                        time:   [11.800 ms 11.826 ms 11.886 ms]
+                        change: [+0.2992% +0.8743% +1.4704%] (p = 0.02 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q35/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q35/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/x86-64-v3-auto: Collecting 10 samples in estimated 3.4889 s (330 iterations)
+Benchmarking acceptance/clickbench/q35/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q35/x86-64-v3-auto
+                        time:   [10.561 ms 10.584 ms 10.620 ms]
+                        change: [−0.6397% −0.3261% −0.0143%] (p = 0.07 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q35/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q35/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.4922 s (330 iterations)
+Benchmarking acceptance/clickbench/q35/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q35/x86-64-v3-intrinsics
+                        time:   [10.588 ms 10.604 ms 10.636 ms]
+                        change: [−0.0668% +0.1895% +0.4629%] (p = 0.21 > 0.05)
+                        No change in performance detected.
+Benchmarking acceptance/clickbench/q35/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q35/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/x86-64-v4-auto: Collecting 10 samples in estimated 3.5162 s (330 iterations)
+Benchmarking acceptance/clickbench/q35/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q35/x86-64-v4-auto
+                        time:   [10.617 ms 10.640 ms 10.673 ms]
+                        change: [+2.9279% +3.1742% +3.3993%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q35/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q35/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.5205 s (330 iterations)
+Benchmarking acceptance/clickbench/q35/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q35/x86-64-v4-intrinsics
+                        time:   [10.668 ms 10.687 ms 10.721 ms]
+                        change: [+3.1390% +3.7654% +4.6597%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking acceptance/clickbench/q40/scalar
+Benchmarking acceptance/clickbench/q40/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/scalar: Collecting 10 samples in estimated 3.2701 s (605 iterations)
+Benchmarking acceptance/clickbench/q40/scalar: Analyzing
+acceptance/clickbench/q40/scalar
+                        time:   [5.3935 ms 5.4080 ms 5.4245 ms]
+                        change: [+7.1316% +7.4377% +7.7548%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q40/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q40/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/x86-64-v3-auto: Collecting 10 samples in estimated 3.0323 s (825 iterations)
+Benchmarking acceptance/clickbench/q40/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q40/x86-64-v3-auto
+                        time:   [3.6508 ms 3.6603 ms 3.6690 ms]
+                        change: [+0.4747% +0.8024% +1.1254%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q40/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q40/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0175 s (935 iterations)
+Benchmarking acceptance/clickbench/q40/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q40/x86-64-v3-intrinsics
+                        time:   [3.2182 ms 3.2217 ms 3.2253 ms]
+                        change: [−0.0398% +0.2356% +0.5366%] (p = 0.15 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking acceptance/clickbench/q40/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q40/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/x86-64-v4-auto: Collecting 10 samples in estimated 3.1373 s (935 iterations)
+Benchmarking acceptance/clickbench/q40/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q40/x86-64-v4-auto
+                        time:   [3.3392 ms 3.3477 ms 3.3540 ms]
+                        change: [+0.7319% +1.0886% +1.4440%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q40/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q40/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.1209 s (1155 iterations)
+Benchmarking acceptance/clickbench/q40/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q40/x86-64-v4-intrinsics
+                        time:   [2.7077 ms 2.7155 ms 2.7218 ms]
+                        change: [+2.4945% +2.8000% +3.0978%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/clickbench/q41/scalar
+Benchmarking acceptance/clickbench/q41/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/scalar: Collecting 10 samples in estimated 3.0653 s (660 iterations)
+Benchmarking acceptance/clickbench/q41/scalar: Analyzing
+acceptance/clickbench/q41/scalar
+                        time:   [4.6553 ms 4.6606 ms 4.6686 ms]
+                        change: [+7.2561% +7.5500% +7.8851%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q41/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q41/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/x86-64-v3-auto: Collecting 10 samples in estimated 3.0085 s (990 iterations)
+Benchmarking acceptance/clickbench/q41/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q41/x86-64-v3-auto
+                        time:   [3.0458 ms 3.0503 ms 3.0535 ms]
+                        change: [−0.5037% −0.3343% −0.1543%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q41/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q41/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0659 s (1155 iterations)
+Benchmarking acceptance/clickbench/q41/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q41/x86-64-v3-intrinsics
+                        time:   [2.6490 ms 2.6547 ms 2.6611 ms]
+                        change: [−1.1833% −0.6863% −0.2739%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/clickbench/q41/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q41/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/x86-64-v4-auto: Collecting 10 samples in estimated 3.0338 s (1100 iterations)
+Benchmarking acceptance/clickbench/q41/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q41/x86-64-v4-auto
+                        time:   [2.7513 ms 2.7604 ms 2.7709 ms]
+                        change: [−0.4247% +0.1239% +0.7017%] (p = 0.69 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q41/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q41/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0724 s (1375 iterations)
+Benchmarking acceptance/clickbench/q41/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q41/x86-64-v4-intrinsics
+                        time:   [2.2477 ms 2.2511 ms 2.2561 ms]
+                        change: [+5.1747% +5.8852% +6.4753%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+
+Benchmarking acceptance/clickbench/q42/scalar
+Benchmarking acceptance/clickbench/q42/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/scalar: Collecting 10 samples in estimated 3.1569 s (880 iterations)
+Benchmarking acceptance/clickbench/q42/scalar: Analyzing
+acceptance/clickbench/q42/scalar
+                        time:   [3.5554 ms 3.5623 ms 3.5702 ms]
+                        change: [+6.5145% +6.7727% +7.0333%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q42/x86-64-v3-auto
+Benchmarking acceptance/clickbench/q42/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/x86-64-v3-auto: Collecting 10 samples in estimated 3.0412 s (1375 iterations)
+Benchmarking acceptance/clickbench/q42/x86-64-v3-auto: Analyzing
+acceptance/clickbench/q42/x86-64-v3-auto
+                        time:   [2.2049 ms 2.2265 ms 2.2433 ms]
+                        change: [+2.8324% +3.7462% +4.7109%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q42/x86-64-v3-intrinsics
+Benchmarking acceptance/clickbench/q42/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0846 s (1540 iterations)
+Benchmarking acceptance/clickbench/q42/x86-64-v3-intrinsics: Analyzing
+acceptance/clickbench/q42/x86-64-v3-intrinsics
+                        time:   [1.9998 ms 2.0079 ms 2.0145 ms]
+                        change: [+1.9106% +2.3733% +2.7885%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q42/x86-64-v4-auto
+Benchmarking acceptance/clickbench/q42/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/x86-64-v4-auto: Collecting 10 samples in estimated 3.0240 s (1485 iterations)
+Benchmarking acceptance/clickbench/q42/x86-64-v4-auto: Analyzing
+acceptance/clickbench/q42/x86-64-v4-auto
+                        time:   [1.9803 ms 1.9925 ms 2.0157 ms]
+                        change: [+4.9149% +5.7311% +6.3777%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/clickbench/q42/x86-64-v4-intrinsics
+Benchmarking acceptance/clickbench/q42/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0726 s (1815 iterations)
+Benchmarking acceptance/clickbench/q42/x86-64-v4-intrinsics: Analyzing
+acceptance/clickbench/q42/x86-64-v4-intrinsics
+                        time:   [1.6594 ms 1.6682 ms 1.6765 ms]
+                        change: [+0.9363% +1.8140% +2.7778%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking acceptance/tpch/q01/scalar
+Benchmarking acceptance/tpch/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/scalar: Collecting 10 samples in estimated 4.1116 s (165 iterations)
+Benchmarking acceptance/tpch/q01/scalar: Analyzing
+acceptance/tpch/q01/scalar
+                        time:   [24.516 ms 24.542 ms 24.567 ms]
+                        change: [−7.4138% −6.6611% −5.6936%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Collecting 10 samples in estimated 3.4358 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v3-auto: Analyzing
+acceptance/tpch/q01/x86-64-v3-auto
+                        time:   [20.778 ms 20.799 ms 20.816 ms]
+                        change: [+1.8339% +2.1471% +2.4532%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.1573 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v3-intrinsics: Analyzing
+acceptance/tpch/q01/x86-64-v3-intrinsics
+                        time:   [18.883 ms 18.989 ms 19.153 ms]
+                        change: [−2.8076% −1.7609% −0.8174%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Collecting 10 samples in estimated 3.1838 s (165 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v4-auto: Analyzing
+acceptance/tpch/q01/x86-64-v4-auto
+                        time:   [18.968 ms 19.015 ms 19.075 ms]
+                        change: [−4.5408% −3.6695% −2.9387%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low severe
+  1 (10.00%) low mild
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.6103 s (220 iterations)
+Benchmarking acceptance/tpch/q01/x86-64-v4-intrinsics: Analyzing
+acceptance/tpch/q01/x86-64-v4-intrinsics
+                        time:   [16.442 ms 16.624 ms 16.747 ms]
+                        change: [−0.1211% +0.7019% +1.5799%] (p = 0.14 > 0.05)
+                        No change in performance detected.
+
+Benchmarking acceptance/tpch/q06/scalar
+Benchmarking acceptance/tpch/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/scalar: Collecting 10 samples in estimated 3.0249 s (495 iterations)
+Benchmarking acceptance/tpch/q06/scalar: Analyzing
+acceptance/tpch/q06/scalar
+                        time:   [6.1053 ms 6.1155 ms 6.1286 ms]
+                        change: [−0.5352% −0.3105% −0.0319%] (p = 0.03 < 0.05)
+                        Change within noise threshold.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Collecting 10 samples in estimated 3.0791 s (1045 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v3-auto: Analyzing
+acceptance/tpch/q06/x86-64-v3-auto
+                        time:   [2.9431 ms 2.9500 ms 2.9602 ms]
+                        change: [−0.8137% +0.2834% +0.9978%] (p = 0.65 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Collecting 10 samples in estimated 3.0278 s (1210 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v3-intrinsics: Analyzing
+acceptance/tpch/q06/x86-64-v3-intrinsics
+                        time:   [2.4709 ms 2.5059 ms 2.5363 ms]
+                        change: [−0.9153% −0.1702% +0.7198%] (p = 0.73 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Collecting 10 samples in estimated 3.0954 s (1320 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v4-auto: Analyzing
+acceptance/tpch/q06/x86-64-v4-auto
+                        time:   [2.3367 ms 2.3490 ms 2.3566 ms]
+                        change: [−1.8999% −1.5129% −1.1451%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Collecting 10 samples in estimated 3.0693 s (1815 iterations)
+Benchmarking acceptance/tpch/q06/x86-64-v4-intrinsics: Analyzing
+acceptance/tpch/q06/x86-64-v4-intrinsics
+                        time:   [1.6600 ms 1.6648 ms 1.6708 ms]
+                        change: [−2.5603% −1.4623% −0.2027%] (p = 0.03 < 0.05)
+                        Change within noise threshold.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+
+load end: 5.94 5.00 5.41

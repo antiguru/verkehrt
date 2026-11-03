@@ -234,7 +234,31 @@ pub(super) fn eval_selective(
     tiling: Tiling,
     selective: bool,
 ) -> (Slot, u64, u64) {
+    let e = eval_with(reg, node, leaves, variant, tiling, selective, true);
+    (e.result, e.regions, e.narrowed)
+}
+
+/// What `eval_with` gave.
+pub(super) struct Evaluated {
+    pub(super) result: Slot,
+    pub(super) regions: u64,
+    pub(super) narrowed: u64,
+    /// The fused region runs that completed tiled, over all roots.
+    pub(super) fused: u64,
+}
+
+/// `eval_selective` with or without fused reductions, also returning the fused run count.
+pub(super) fn eval_with(
+    reg: &Registry,
+    node: &Built,
+    leaves: &[Leaf],
+    variant: (Isa, Backend),
+    tiling: Tiling,
+    selective: bool,
+    fuse_reductions: bool,
+) -> Evaluated {
     let dispatch = reg.resolve(variant.0, variant.1, FeatureSet::EMPTY);
+    let fused: Vec<AtomicU64> = reg.iter().map(|_| AtomicU64::new(0)).collect();
     let tiled = AtomicU64::new(0);
     let narrowed = AtomicU64::new(0);
     let hits = AtomicU64::new(0);
@@ -252,18 +276,21 @@ pub(super) fn eval_selective(
         stats: None,
         tiling,
         selective,
+        fuse_reductions,
         tiled_regions: &tiled,
+        fused_reductions: &fused,
         narrowed_tiles: &narrowed,
         shared: &shared,
         memo: &mut memo,
         shared_hits: &hits,
     }
     .eval(node.root);
-    (
+    Evaluated {
         result,
-        tiled.load(Ordering::Relaxed),
-        narrowed.load(Ordering::Relaxed),
-    )
+        regions: tiled.load(Ordering::Relaxed),
+        narrowed: narrowed.load(Ordering::Relaxed),
+        fused: fused.iter().map(|c| c.load(Ordering::Relaxed)).sum(),
+    }
 }
 
 /// What a run with statistics gave: the outcome with the rows of the names asked for, the

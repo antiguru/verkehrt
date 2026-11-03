@@ -1,0 +1,52 @@
+reduction fusion: on (VERKEHRT_REDUCTION_FUSION unset), default tiling
+load start: 2.35 6.95 10.42
+== probe-a x86-64-v3
+query probe-a total kernel time 1066.6 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=664.6
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=169.3
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=83.4
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=149.3
+== probe-a x86-64-v4
+query probe-a total kernel time 958.8 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=657.6
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=91.3
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=76.1
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=133.8
+== probe-b x86-64-v3
+query probe-b total kernel time 735.7 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=659.3
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=76.4
+== probe-b x86-64-v4
+query probe-b total kernel time 745.3 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats div_const_i64 calls=1 bytes=16000000 read=8000000 time=671.2
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=74.1
+== probe-c x86-64-v3
+query probe-c total kernel time 646.0 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=429.2
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=78.6
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=138.2
+== probe-c x86-64-v4
+query probe-c total kernel time 531.7 us
+tiled_regions 1
+narrowed_tiles 0
+fused_reductions reduce_add_i64=1
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=314.8
+stats reduce_add_i64 calls=1 bytes=8000000 read=8000000 time=76.5
+stats sub_i64 calls=1 bytes=24000000 read=16000000 time=140.4
+
+load end: 2.35 6.95 10.42

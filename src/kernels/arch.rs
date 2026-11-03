@@ -7,7 +7,7 @@ use crate::kernels::aarch64;
 #[cfg(target_arch = "x86_64")]
 use crate::kernels::x86;
 use crate::kernels::{
-    ElementwiseBody, KernelTable, ReductionBody, ScanBody, SelectionBody, WholeBody,
+    ElementwiseBody, KernelTable, ReductionBody, ScanBody, SelectionBody, Split, WholeBody,
 };
 use crate::value::Elem;
 
@@ -21,14 +21,14 @@ pub(crate) fn add_elementwise<B: ElementwiseBody>(impls: &mut KernelTable) {
     let _ = impls;
 }
 
-/// Adds the ISA variants of a reduction body to its table.
-pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut KernelTable) {
+/// Adds the ISA variants of a reduction body to its table, each with `split`.
+pub(crate) fn add_reduction<R: ReductionBody>(impls: &mut KernelTable, split: Split) {
     #[cfg(target_arch = "x86_64")]
-    x86::add_reduction::<R>(impls);
+    x86::add_reduction::<R>(impls, split);
     #[cfg(target_arch = "aarch64")]
-    aarch64::add_reduction::<R>(impls);
+    aarch64::add_reduction::<R>(impls, split);
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    let _ = impls;
+    let _ = (impls, split);
 }
 
 /// Adds the ISA variants of a selection body to its table.
