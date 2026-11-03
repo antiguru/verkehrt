@@ -1,0 +1,7 @@
+   Compiling corgi v0.1.0 (/tmp/verkehrt-m5-acceptance.07nXWb/corgi-wip/corgi)
+    Finished `bench` profile [optimized] target(s) in 0.32s
+     Running benches/tpch/main.rs (target/corgi-m5/release/deps/tpch-139c88f6b7904c91)
+query    corgi ms duckdb 1t ms    ratio duckdb all ms
+q01         19.75        18.79    1.05x         3.13
+q01b        16.89        18.51    0.91x         3.15
+q06          1.35         1.70    0.79x         0.59

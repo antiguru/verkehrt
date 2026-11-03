@@ -1,0 +1,384 @@
+   Compiling verkehrt v0.1.0 (/Users/moritz/dev/repos/verkehrt/.claude/worktrees/m5-tier2-benchmarks)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 17s
+────────────
+ Nextest run ID e920ccf1-a767-4355-bfc8-c88b89267ba3 with nextest profile: default
+    Starting 377 tests across 8 binaries (1 test skipped)
+        PASS [   0.012s] (  1/377) verkehrt check::tests::function_scope_and_shadowing
+        PASS [   0.012s] (  2/377) verkehrt exec::region::fused::tests::a_failing_update_after_earlier_tiles_raises_the_untiled_error
+        PASS [   0.013s] (  3/377) verkehrt error::tests::display_with_and_without_span
+        PASS [   0.013s] (  4/377) verkehrt exec::region::fused::tests::a_kernel_failing_in_a_later_tile_raises_the_untiled_error
+        PASS [   0.013s] (  5/377) verkehrt check::tests::globals_persist_and_declare
+        PASS [   0.017s] (  6/377) verkehrt exec::region::fused::tests::a_split_bound_reduction_runs_unfused
+        PASS [   0.016s] (  7/377) verkehrt exec::region::fused::tests::an_input_after_a_region_kernel_is_never_evaluated_first
+        PASS [   0.032s] (  8/377) verkehrt columns::tests::load_inputs_strips_the_ends_suffix_once
+        PASS [   0.032s] (  9/377) verkehrt columns::tests::load_inputs_rejects_other_input_types
+        PASS [   0.032s] ( 10/377) verkehrt columns::tests::load_inputs_never_flips_ends
+        PASS [   0.033s] ( 11/377) verkehrt columns::tests::load_inputs_reads_u64_and_bytes
+        PASS [   0.034s] ( 12/377) verkehrt columns::tests::load_inputs_rejects_multibyte_strings
+        PASS [   0.035s] ( 13/377) verkehrt columns::tests::load_inputs_strips_the_bytes_suffix_once
+        PASS [   0.035s] ( 14/377) verkehrt columns::tests::load_inputs_ends_takes_precedence_over_a_u64_file
+        PASS [   0.035s] ( 15/377) verkehrt columns::tests::load_inputs_flips_only_listed_columns
+        PASS [   0.036s] ( 16/377) verkehrt check::tests::datadriven_types
+        PASS [   0.016s] ( 17/377) verkehrt exec::region::fused::tests::fused_tile_rows_round_to_the_reduce_block
+        PASS [   0.026s] ( 18/377) verkehrt exec::region::fused::tests::float_reductions_keep_their_bits
+        PASS [   0.049s] ( 19/377) verkehrt exec::region::fused::tests::prepared_execute_counts_fused_reductions
+        PASS [   0.467s] ( 20/377) verkehrt exec::region::fused::tests::narrowed_tiles_count_the_same_with_fusion
+        PASS [   1.541s] ( 21/377) verkehrt exec::region::fused::tests::the_minimum_of_an_empty_chain_fails_in_finish_like_untiled
+        PASS [   0.365s] ( 22/377) verkehrt exec::region::tests::a_failed_global_of_an_earlier_program_raises_like_untiled
+        PASS [   0.012s] ( 23/377) verkehrt exec::region::tests::a_kernel_reached_twice_runs_once_outside_any_region
+        PASS [   2.314s] ( 24/377) verkehrt exec::region::fused::tests::a_zero_divisor_under_a_guard_fails_like_untiled
+        PASS [   2.316s] ( 25/377) verkehrt exec::region::fused::tests::dot_over_arrays_of_different_lengths_fails_like_untiled
+        PASS [   0.021s] ( 26/377) verkehrt exec::region::tests::a_shared_input_after_a_region_kernel_runs_whole
+        PASS [   0.035s] ( 27/377) verkehrt exec::region::tests::a_mask_chain_over_leaves_tiles
+        PASS [   0.026s] ( 28/377) verkehrt exec::region::tests::a_shared_input_reached_again_in_its_region_tiles
+        PASS [   0.022s] ( 29/377) verkehrt exec::region::tests::an_input_after_a_failing_kernel_is_never_evaluated
+        PASS [   0.040s] ( 30/377) verkehrt exec::region::tests::an_input_before_the_first_region_kernel_tiles
+        PASS [   3.294s] ( 31/377) verkehrt exec::region::fused::tests::sum_over_a_chain
+        PASS [   3.356s] ( 32/377) verkehrt exec::region::fused::tests::sum_over_an_empty_array
+        PASS [   3.404s] ( 33/377) verkehrt exec::region::fused::tests::a_reduction_over_a_leaf_runs_whole
+        PASS [   3.409s] ( 34/377) verkehrt exec::region::fused::tests::a_root_with_a_scalar_argument
+        PASS [   3.387s] ( 35/377) verkehrt exec::region::fused::tests::sum_over_one_elementwise_kernel
+        PASS [   3.433s] ( 36/377) verkehrt exec::region::fused::tests::sum_over_a_view
+        PASS [   3.558s] ( 37/377) verkehrt exec::region::fused::tests::sum_over_a_multiple_of_the_tile_rows
+        PASS [   2.196s] ( 38/377) verkehrt exec::region::tests::arithmetic_chain_with_broadcast_scalars
+        PASS [   0.015s] ( 39/377) verkehrt exec::region::tests::kernel_failing_in_a_later_tile_raises_the_untiled_error
+        PASS [   1.492s] ( 40/377) verkehrt exec::region::tests::chain_over_a_multiple_of_the_tile_rows
+        PASS [   0.029s] ( 41/377) verkehrt exec::region::tests::prepared_execute_counts_tiled_regions
+        PASS [   5.200s] ( 42/377) verkehrt exec::region::fused::tests::a_reduction_over_a_shared_elementwise_node_runs_whole
+        PASS [   2.800s] ( 43/377) verkehrt exec::region::tests::chain_between_other_kernels
+        PASS [   5.229s] ( 44/377) verkehrt exec::region::fused::tests::a_shared_root_fuses_on_its_first_evaluation
+        PASS [   2.192s] ( 45/377) verkehrt exec::region::tests::chain_over_an_empty_array
+        PASS [   0.027s] ( 46/377) verkehrt exec::region::tiles::tests::a_kernel_failing_after_narrowed_tiles_raises_the_untiled_error
+        PASS [   2.261s] ( 47/377) verkehrt exec::region::tests::chain_over_a_view
+        PASS [   5.269s] ( 48/377) verkehrt exec::region::fused::tests::trace_order_is_inputs_kernels_root
+        PASS [   2.866s] ( 49/377) verkehrt exec::region::tests::chain_in_the_taken_branch_tiles
+        PASS [   2.942s] ( 50/377) verkehrt exec::region::tests::chain_in_the_untaken_branch_does_not_run
+        PASS [   1.430s] ( 51/377) verkehrt exec::region::tiles::tests::a_guard_over_a_view_narrows
+        PASS [   6.897s] ( 52/377) verkehrt exec::region::fused::tests::dot_over_two_region_kernels_and_over_one
+        PASS [   7.032s] ( 53/377) verkehrt exec::region::fused::tests::integer_dot_and_float_product_over_chains
+        PASS [   5.084s] ( 54/377) verkehrt exec::region::tests::a_left_kernel_error_wins_over_a_right_input_error
+        PASS [   2.070s] ( 55/377) verkehrt exec::region::tiles::tests::a_guard_over_an_empty_array_narrows_nothing
+        PASS [   2.145s] ( 56/377) verkehrt exec::region::tiles::tests::a_guard_feeding_select_fills_its_tile_buffer
+        PASS [   2.899s] ( 57/377) verkehrt exec::region::tests::mask_chain
+        PASS [   0.012s] ( 58/377) verkehrt exec::region::tiles::tests::the_open_span_scan_matches_a_row_by_row_scan
+        PASS [   1.418s] ( 59/377) verkehrt exec::region::tiles::tests::and_narrows_a_tile_false_at_both_ends
+        PASS [   0.345s] ( 60/377) verkehrt exec::region::tiles::tests::selective_evaluation_without_tiles_changes_nothing
+        PASS [   0.796s] ( 61/377) verkehrt exec::region::tiles::tests::guards_over_tiles_longer_than_the_scan_blocks_narrow
+        PASS [   2.074s] ( 62/377) verkehrt exec::region::tiles::tests::a_region_input_array_guards_as_a_left_operand
+        PASS [   0.032s] ( 63/377) verkehrt exec::tests::a_shared_subgraph_with_a_load_runs_at_each_use
+        PASS [   0.049s] ( 64/377) verkehrt exec::tests::prepared_execute_counts_shared_hits
+        PASS [   1.458s] ( 65/377) verkehrt exec::region::tiles::tests::and_narrows_to_the_rows_its_left_operand_keeps
+        PASS [   0.060s] ( 66/377) verkehrt exec::tests::repl_inputs_never_share
+        PASS [   0.258s] ( 67/377) verkehrt exec::tests::a_shared_node_only_in_untaken_branches_never_runs
+        PASS [   0.108s] ( 68/377) verkehrt interp::tests::a_memoized_plan_reports_its_sum_rewrites
+        PASS [   0.178s] ( 69/377) verkehrt exec::tests::statements_sharing_a_failing_subtree_report_their_own_spans
+        PASS [   0.069s] ( 70/377) verkehrt interp::tests::a_subplan_that_only_planning_repeats_is_one_node
+        PASS [   0.030s] ( 71/377) verkehrt interp::tests::identical_statements_share_one_plan_root
+        PASS [   0.098s] ( 72/377) verkehrt interp::tests::block_let_chain_in_a_branch_prepares_to_a_linear_plan_graph
+        PASS [   0.227s] ( 73/377) verkehrt exec::tests::sums_over_one_column_run_one_reduction
+        PASS [   1.455s] ( 74/377) verkehrt exec::region::tiles::tests::and_with_a_left_operand_true_throughout_narrows_nothing
+        PASS [   0.037s] ( 75/377) verkehrt kernels::aarch64::compress::tests::prefix_table_counts_low_bits
+        PASS [   0.039s] ( 76/377) verkehrt kernels::aarch64::compress::tests::shuffle_tables_pack_kept_lanes
+        PASS [   0.152s] ( 77/377) verkehrt interp::tests::shared_flags_count_uses_along_paths
+        PASS [   0.023s] ( 78/377) verkehrt kernels::dispatch::tests::call_checks_lengths
+        PASS [   0.019s] ( 79/377) verkehrt kernels::dispatch::tests::call_panics_on_wrong_arity
+        PASS [   0.011s] ( 80/377) verkehrt kernels::dispatch::tests::call_panics_on_wrong_kinds
+        PASS [   0.013s] ( 81/377) verkehrt kernels::dispatch::tests::call_rejects_another_registry
+        PASS [   0.012s] ( 82/377) verkehrt kernels::dispatch::tests::dispatch_is_send_sync
+        PASS [   0.013s] ( 83/377) verkehrt kernels::dispatch::tests::elementwise_tile_checks_its_arguments
+        PASS [   0.011s] ( 84/377) verkehrt kernels::dispatch::tests::resolve_falls_back_to_scalar
+        PASS [   0.011s] ( 85/377) verkehrt kernels::dispatch::tests::scanner_rejects_a_kernel_of_another_class
+        PASS [   0.011s] ( 86/377) verkehrt kernels::dispatch::tests::scanner_tiles_match_whole_call
+        PASS [   0.011s] ( 87/377) verkehrt kernels::dispatch::tests::select_tile_rejects_a_builder_of_another_type
+        PASS [   0.011s] ( 88/377) verkehrt kernels::dispatch::tests::tiled_elementwise_matches_whole
+        PASS [   0.010s] ( 89/377) verkehrt kernels::dispatch::tests::tiled_narrow_integer_sums_widen_across_tiles
+        PASS [   0.013s] ( 90/377) verkehrt kernels::dispatch::tests::tiled_reductions_keep_nan_tie_and_zero_rules_across_tiles
+        PASS [   0.012s] ( 91/377) verkehrt kernels::dispatch::tests::tiled_reductions_match_whole
+        PASS [   0.013s] ( 92/377) verkehrt kernels::dispatch::tests::tiled_selections_match_whole
+        PASS [   0.010s] ( 93/377) verkehrt kernels::features::tests::declared_features_gate_runnable
+        PASS [   0.011s] ( 94/377) verkehrt kernels::features::tests::detect_is_architecture_specific
+        PASS [   0.011s] ( 95/377) verkehrt kernels::features::tests::dropping_a_level_feature_drops_the_level
+        PASS [   0.011s] ( 96/377) verkehrt kernels::features::tests::levels_match_constraint_strings
+        PASS [   0.012s] ( 97/377) verkehrt kernels::features::tests::names_round_trip
+        PASS [   0.011s] ( 98/377) verkehrt kernels::features::tests::parse_reads_comma_separated_names
+        PASS [   3.395s] ( 99/377) verkehrt exec::region::tests::region_lines_follow_their_inputs_in_post_order
+        PASS [   0.015s] (100/377) verkehrt kernels::features::tests::v4_contains_v3
+        PASS [   0.028s] (101/377) verkehrt kernels::features::tests::target_feature_strings_match_levels
+        PASS [   0.021s] (102/377) verkehrt kernels::features::tests::v4_without_vbmi2_is_v4
+        PASS [   0.031s] (103/377) verkehrt kernels::scalar::group::tests::degenerate_hashes
+        PASS [   0.046s] (104/377) verkehrt kernels::scalar::group::tests::colliding_keys_under_the_real_hash
+        PASS [   0.054s] (105/377) verkehrt kernels::scalar::group::tests::distinct_prefix_then_repeats
+        PASS [   0.033s] (106/377) verkehrt kernels::scalar::group::tests::doubling_growth_keeps_first_occurrence_order
+        PASS [   0.027s] (107/377) verkehrt kernels::scalar::group::tests::empty_and_single_row
+        PASS [   0.403s] (108/377) verkehrt interp::tests::same_plans_agrees_with_the_plan_lines
+        PASS [   0.473s] (109/377) verkehrt interp::tests::nested_lazy_calls_prepare_to_a_linear_plan_graph
+        PASS [   0.070s] (110/377) verkehrt kernels::scalar::group::tests::group_id2_matches_reference_i32
+        PASS [   0.092s] (111/377) verkehrt kernels::scalar::group::tests::doubling_growth_to_a_large_table
+        PASS [   0.067s] (112/377) verkehrt kernels::scalar::group::tests::group_id2_matches_reference_i64
+        PASS [   0.075s] (113/377) verkehrt kernels::scalar::group::tests::group_id2_matches_reference_u64
+        PASS [   0.060s] (114/377) verkehrt kernels::scalar::group::tests::group_id_matches_reference_i64
+        PASS [   2.864s] (115/377) verkehrt exec::region::tiles::tests::a_right_operand_that_can_fail_is_not_skipped
+        PASS [   0.066s] (116/377) verkehrt kernels::scalar::group::tests::group_id_matches_reference_i32
+        PASS [   0.067s] (117/377) verkehrt kernels::scalar::group::tests::group_id2_matches_reference_u8
+        PASS [   0.060s] (118/377) verkehrt kernels::scalar::group::tests::group_id_matches_reference_u64
+        PASS [   0.059s] (119/377) verkehrt kernels::scalar::group::tests::group_id_matches_reference_u8
+        PASS [   0.027s] (120/377) verkehrt kernels::scalar::group::tests::ids_count_the_groups
+        PASS [   0.033s] (121/377) verkehrt kernels::scalar::group::tests::length_mismatch
+        PASS [   0.041s] (122/377) verkehrt kernels::scalar::group::tests::growth_thresholds_keep_first_occurrence_order
+        PASS [   0.020s] (123/377) verkehrt kernels::scalar::group::tests::pairs_with_equal_full_hashes
+        PASS [   0.017s] (124/377) verkehrt kernels::scalar::group::tests::signed_keys_by_value
+        PASS [   0.018s] (125/377) verkehrt kernels::scalar::group::tests::swapped_pairs_are_distinct
+        PASS [   0.018s] (126/377) verkehrt kernels::scalar::group::tests::table_allocation_failure_is_an_error
+        PASS [   0.020s] (127/377) verkehrt kernels::scalar::group::tests::u8_every_value_twice
+        PASS [   0.029s] (128/377) verkehrt kernels::scalar::group::tests::wrong_arguments
+        PASS [   1.292s] (129/377) verkehrt exec::region::tiles::tests::statistics_count_the_rows_a_narrowed_kernel_ran_over
+        PASS [   1.561s] (130/377) verkehrt exec::region::tiles::tests::or_narrows_to_the_rows_its_left_operand_leaves_false
+        PASS [   0.117s] (131/377) verkehrt kernels::scalar::group::tests::jump_thresholds_keep_first_occurrence_order
+        PASS [   0.075s] (132/377) verkehrt kernels::scalar::index::tests::argsort_matches_reference_i32
+        PASS [   0.077s] (133/377) verkehrt kernels::scalar::index::tests::argsort_matches_reference_i64
+        PASS [   0.026s] (134/377) verkehrt kernels::scalar::index::tests::argsort_scratch_allocation_failure_is_an_error
+        PASS [   0.038s] (135/377) verkehrt kernels::scalar::index::tests::argsort_of_all_equal_rows_is_the_identity
+        PASS [   0.088s] (136/377) verkehrt kernels::scalar::index::tests::argsort_matches_reference_u64
+        PASS [   0.030s] (137/377) verkehrt kernels::scalar::index::tests::argsort_signed_extremes_sort_in_signed_order
+        PASS [   0.026s] (138/377) verkehrt kernels::scalar::index::tests::argsort_with_two_active_passes_matches_reference
+        PASS [   0.084s] (139/377) verkehrt kernels::scalar::index::tests::argsort_matches_reference_u8
+        PASS [   0.016s] (140/377) verkehrt kernels::tests::add_broadcasts_scalars
+        PASS [   0.019s] (141/377) verkehrt kernels::tests::add_rejects_entries_of_another_class
+        PASS [   0.016s] (142/377) verkehrt kernels::tests::append_chunks_keeps_a_vector_of_room_past_the_survivors
+        PASS [   0.017s] (143/377) verkehrt kernels::tests::argsort_is_stable
+        PASS [   0.020s] (144/377) verkehrt kernels::tests::array_kernels_exist_for_v1_types_only
+        PASS [   0.024s] (145/377) verkehrt kernels::tests::argmin_argmax_tie_and_nan_rules
+        PASS [   0.020s] (146/377) verkehrt kernels::tests::bitwise_kernels_on_integers
+        PASS [   0.016s] (147/377) verkehrt kernels::tests::bitwise_reductions_have_identities
+        PASS [   0.016s] (148/377) verkehrt kernels::tests::bool_reductions
+        PASS [   0.016s] (149/377) verkehrt kernels::tests::bucket_keys_are_range_checked
+        PASS [   0.023s] (150/377) verkehrt kernels::tests::canonical_empty_is_the_identity
+        PASS [   0.024s] (151/377) verkehrt kernels::tests::canonical_state_update_finish_matches_one_shot
+        PASS [   0.025s] (152/377) verkehrt kernels::tests::canonical_sum_f32_accumulates_in_f32
+        PASS [   0.026s] (153/377) verkehrt kernels::tests::canonical_sum_follows_the_spec_order
+        PASS [   0.020s] (154/377) verkehrt kernels::tests::canonical_update_rejects_partial_blocks
+        PASS [   0.029s] (155/377) verkehrt kernels::tests::canonical_sum_golden_values
+        PASS [   0.084s] (156/377) verkehrt kernels::scalar::index::tests::radix_paths_match_reference
+        PASS [   0.018s] (157/377) verkehrt kernels::tests::comparisons_and_select
+        PASS [   0.019s] (158/377) verkehrt kernels::tests::compress_and_where
+        PASS [   0.026s] (159/377) verkehrt kernels::tests::casts_follow_rust_as
+        PASS [   0.021s] (160/377) verkehrt kernels::tests::costs_count_bytes_per_element
+        PASS [   0.018s] (161/377) verkehrt kernels::tests::div_const_by_zero_is_an_error
+        PASS [   0.023s] (162/377) verkehrt kernels::tests::detected_level_is_available
+        PASS [   0.016s] (163/377) verkehrt kernels::tests::div_const_truncates_toward_zero
+        PASS [   0.018s] (164/377) verkehrt kernels::tests::div_const_matches_rust_division
+        PASS [   0.013s] (165/377) verkehrt kernels::tests::div_const_wraps_at_min
+        PASS [   0.015s] (166/377) verkehrt kernels::tests::every_i64_kernel_has_a_u64_twin
+        PASS [   0.017s] (167/377) verkehrt kernels::tests::float_min_max_follow_ieee_minimum_maximum
+        PASS [   0.017s] (168/377) verkehrt kernels::tests::float_min_max_reductions_follow_ieee_minimum
+        PASS [   0.016s] (169/377) verkehrt kernels::tests::float_only_ops
+        PASS [   0.015s] (170/377) verkehrt kernels::tests::float_reduce_kernels_use_the_canonical_order
+        PASS [   0.022s] (171/377) verkehrt kernels::tests::gather_picks_rows
+        PASS [   0.022s] (172/377) verkehrt kernels::tests::histogram_counts_keys
+        PASS [   0.025s] (173/377) verkehrt kernels::tests::gather_rejects_out_of_range
+        PASS [   0.018s] (174/377) verkehrt kernels::tests::huge_bucket_count_is_an_error
+        PASS [   0.017s] (175/377) verkehrt kernels::tests::iota_fill_and_negative_counts
+        PASS [   0.021s] (176/377) verkehrt kernels::tests::integer_arithmetic_wraps
+        PASS [   0.023s] (177/377) verkehrt kernels::tests::integer_reductions_widen_and_wrap
+        PASS [   0.016s] (178/377) verkehrt kernels::tests::isa_names_round_trip
+        PASS [   0.018s] (179/377) verkehrt kernels::tests::kernel_names_are_unique_valid_identifiers
+        PASS [   0.019s] (180/377) verkehrt kernels::tests::length_mismatch_is_an_error
+        PASS [   0.017s] (181/377) verkehrt kernels::tests::load_reads_little_endian_files
+        PASS [   0.015s] (182/377) verkehrt kernels::tests::lookup_lifted_matches_the_reference_selection
+        PASS [   0.019s] (183/377) verkehrt kernels::tests::lookup_is_exact_for_non_elementwise_kernels
+        PASS [   0.018s] (184/377) verkehrt kernels::tests::lookup_resolves_array_and_scalar_kernels
+        PASS [   0.017s] (185/377) verkehrt kernels::tests::new_isa_names_parse
+        PASS [   0.014s] (186/377) verkehrt kernels::tests::new_kernels_resolve_through_lookup_with_classes_and_costs
+        PASS [   0.852s] (187/377) verkehrt interp::tests::nested_calls_prepare_to_a_linear_plan_graph
+        PASS [   0.014s] (188/377) verkehrt kernels::tests::only_div_const_kernels_are_elementwise_and_not_total
+        PASS [   0.014s] (189/377) verkehrt kernels::tests::prev_shifts_rows_and_fills_row_zero
+        PASS [   0.015s] (190/377) verkehrt kernels::tests::reduce_into_checks_lengths
+        PASS [   0.013s] (191/377) verkehrt kernels::tests::reduce_into_sums_per_bucket
+        PASS [   0.016s] (192/377) verkehrt kernels::tests::reduce_into_empty_buckets_hold_identity
+        PASS [   0.010s] (193/377) verkehrt kernels::tests::resolve_falls_back_to_scalar_without_variants
+        PASS [   0.014s] (194/377) verkehrt kernels::tests::reduce_into_with_one_key_matches_reduce
+        PASS [   0.012s] (195/377) verkehrt kernels::tests::scalar_kernels_return_scalars
+        PASS [   0.014s] (196/377) verkehrt kernels::tests::scan_add_i32_widens
+        PASS [   0.014s] (197/377) verkehrt kernels::tests::scan_add_i64_is_a_prefix_sum
+        PASS [   0.012s] (198/377) verkehrt kernels::tests::scan_add_u8_widens
+        PASS [   0.012s] (199/377) verkehrt kernels::tests::scan_bool_and_bitwise_kernels
+        PASS [   0.010s] (200/377) verkehrt kernels::tests::scan_by_restarts_at_starts
+        PASS [   0.011s] (201/377) verkehrt kernels::tests::scan_last_equals_sum
+        PASS [   0.011s] (202/377) verkehrt kernels::tests::scan_max_f64_propagates_nan
+        PASS [   0.012s] (203/377) verkehrt kernels::tests::scan_mul_keeps_the_element_type
+        PASS [   0.010s] (204/377) verkehrt kernels::tests::selection_retains_at_most_one_vector_of_slack
+        PASS [   0.012s] (205/377) verkehrt kernels::tests::select_falls_back_by_declared_feature
+        PASS [   0.013s] (206/377) verkehrt kernels::tests::selections_span_chunks
+        PASS [   0.012s] (207/377) verkehrt kernels::tests::selections_with_a_dense_prefix_and_an_empty_suffix
+        PASS [   0.013s] (208/377) verkehrt kernels::tests::slice_is_a_view
+        PASS [   0.012s] (209/377) verkehrt kernels::tests::slice_rejects_bad_bounds
+        PASS [   0.011s] (210/377) verkehrt kernels::tests::splitmix_and_rand
+        PASS [   0.011s] (211/377) verkehrt kernels::tests::tiled_calls_match_one_call
+        PASS [   0.010s] (212/377) verkehrt kernels::tests::total_elementwise_kernels_accept_extreme_values
+        PASS [   0.011s] (213/377) verkehrt kernels::tests::u64_casts_follow_as
+        PASS [   0.009s] (214/377) verkehrt kernels::tests::u64_compares_unsigned
+        PASS [   0.009s] (215/377) verkehrt kernels::tests::u64_sum_and_extremes
+        PASS [   0.011s] (216/377) verkehrt kernels::tests::whole_tables_have_scalar_and_auto_entries
+        PASS [   0.013s] (217/377) verkehrt kernels::tests::variant_entry_counts_are_stable
+        PASS [   0.013s] (218/377) verkehrt kernels::tests::variant_index_and_display
+        PASS [   0.012s] (219/377) verkehrt kernels::tests::wrong_argument_types_panic
+        PASS [   0.012s] (220/377) verkehrt lower::tests::block_let_chain_lowers_in_linear_steps
+        PASS [   0.014s] (221/377) verkehrt lower::tests::equal_terms_intern_to_one_node
+        PASS [   0.013s] (222/377) verkehrt lower::tests::input_and_export
+        PASS [   0.015s] (223/377) verkehrt lower::tests::exports_and_repl_lets_are_outputs
+        PASS [   0.014s] (224/377) verkehrt lower::tests::nested_calls_lower_in_linear_steps
+        PASS [   0.013s] (225/377) verkehrt lower::tests::no_kernel_error_for_a_scalar_input_names_the_operands_as_given
+        PASS [   0.013s] (226/377) verkehrt lower::tests::repeated_calls_intern_to_a_linear_graph
+        PASS [   0.023s] (227/377) verkehrt lower::tests::datadriven_lowering
+        PASS [   0.011s] (228/377) verkehrt plan::sexpr::tests::maps_heads_only
+        PASS [   0.012s] (229/377) verkehrt plan::sexpr::tests::rejects_malformed
+        PASS [   0.011s] (230/377) verkehrt plan::sexpr::tests::round_trips
+        PASS [   0.012s] (231/377) verkehrt plan::tests::egglog_smoke
+        PASS [   0.013s] (232/377) verkehrt plan::tests::lazy_branch_nesting_emits_linearly
+        PASS [   0.012s] (233/377) verkehrt syntax::tests::array_literal_and_comments
+        PASS [   0.013s] (234/377) verkehrt syntax::tests::bad_literals
+        PASS [   0.011s] (235/377) verkehrt syntax::tests::binary_node_span_is_operator_span
+        PASS [   0.011s] (236/377) verkehrt syntax::tests::block_with_lets
+        PASS [   0.012s] (237/377) verkehrt syntax::tests::byte_strings_rejected
+        PASS [   0.009s] (238/377) verkehrt syntax::tests::comparison_chains_need_parentheses
+        PASS [   0.010s] (239/377) verkehrt syntax::tests::if_expression
+        PASS [   0.010s] (240/377) verkehrt syntax::tests::input_and_export
+        PASS [   0.025s] (241/377) verkehrt syntax::tests::lambda_call
+        PASS [   0.022s] (242/377) verkehrt syntax::tests::missing_semicolon_reports_next_token
+        PASS [   0.025s] (243/377) verkehrt syntax::tests::mixed_operators_need_parentheses
+        PASS [   0.025s] (244/377) verkehrt syntax::tests::negative_literals
+        PASS [   0.030s] (245/377) verkehrt syntax::tests::parenthesized_mix_parses
+        PASS [   0.046s] (246/377) verkehrt syntax::tests::same_operator_folds_left
+        PASS [   0.051s] (247/377) verkehrt syntax::tests::suffixed_literals
+        PASS [   0.037s] (248/377) verkehrt syntax::tests::typed_let_with_string
+        PASS [   0.189s] (249/377) verkehrt plan::tests::repeated_conditional_in_a_branch_is_one_hole
+        PASS [   0.011s] (250/377) verkehrt syntax::tests::whole_program
+        PASS [   0.014s] (251/377) verkehrt value::tests::array_builder_commit_is_bounded_by_the_spare_rows
+        PASS [   0.010s] (252/377) verkehrt value::tests::array_builder_extend_ends_the_reservation
+        PASS [   0.012s] (253/377) verkehrt value::tests::array_builder_is_aligned_and_typed
+        PASS [   0.010s] (254/377) verkehrt value::tests::array_builder_rejects_other_types
+        PASS [   0.013s] (255/377) verkehrt value::tests::array_builder_spare_rows_commit_a_prefix
+        PASS [   0.011s] (256/377) verkehrt value::tests::array_builder_spare_rows_of_bool_take_u8
+        PASS [   0.008s] (257/377) verkehrt value::tests::bools_are_bytes
+        PASS [   0.008s] (258/377) verkehrt value::tests::buffers_are_64_byte_aligned
+        PASS [   0.009s] (259/377) verkehrt value::tests::byte_size_is_capped_at_isize_max
+        PASS [   0.011s] (260/377) verkehrt value::tests::scalar_type_helpers
+        PASS [   0.014s] (261/377) verkehrt value::tests::display_formats
+        PASS [   0.008s] (262/377) verkehrt value::tests::slice_is_zero_copy_view
+        PASS [   0.008s] (263/377) verkehrt value::tests::value_is_send_sync
+        PASS [   0.053s] (264/377) verkehrt::acceptance harness_flips_signed_columns_back
+        PASS [   0.011s] (265/377) verkehrt::acceptance harness_formats_g_like_prepare_py
+        PASS [   0.036s] (266/377) verkehrt::acceptance harness_formats_like_prepare_py
+        PASS [   0.154s] (267/377) verkehrt::acceptance harness_empty_filter_gives_empty_output
+        PASS [   0.064s] (268/377) verkehrt::acceptance harness_reads_ends_inputs
+        PASS [   0.724s] (269/377) verkehrt kernels::scalar::index::tests::argsort_matches_reference_across_lengths
+        PASS [   0.039s] (270/377) verkehrt::acceptance harness_rejects_non_finite_g
+        PASS [   0.436s] (271/377) verkehrt plan::tests::lazy_branch_nesting_plans_in_linear_steps
+        PASS [   0.488s] (272/377) verkehrt lower::tests::checked_lambdas_lower
+        PASS [   2.326s] (273/377) verkehrt exec::region::tiles::tests::nested_guards_narrow_within_their_parent_range
+        PASS [   5.927s] (274/377) verkehrt exec::region::tests::chains_with_unaligned_tiles_and_vector_tails
+        PASS [   0.116s] (275/377) verkehrt::acceptance harness_runs_a_synthetic_query
+        PASS [   5.906s] (276/377) verkehrt exec::region::tests::failing_regions_raise_the_untiled_error
+        PASS [   0.108s] (277/377) verkehrt::acceptance q19_finds_the_constant_user_id
+        PASS [   0.221s] (278/377) verkehrt::acceptance q04_counts_distinct_ids
+        PASS [   0.031s] (279/377) verkehrt::cli disabling_a_level_feature_rejects_the_forced_level
+        PASS [   0.795s] (280/377) verkehrt plan::tests::deep_lazy_branch_nesting_plans_in_linear_steps
+        PASS [   0.509s] (281/377) verkehrt::acceptance q15_breaks_count_ties_by_signed_id
+        PASS [   0.320s] (282/377) verkehrt::cli neon_auto_runs_the_scalar_entry
+        PASS [   0.230s] (283/377) verkehrt::cli no_reduction_fusion_prints_and_traces_the_same
+        PASS [   0.455s] (284/377) verkehrt::acceptance q41_pages_past_ten_thousand_groups
+        PASS [   0.109s] (285/377) verkehrt::cli no_selective_prints_the_same_output
+        PASS [   0.017s] (286/377) verkehrt::cli old_isa_names_are_rejected
+        PASS [   0.102s] (287/377) verkehrt::cli no_sharing_traces_each_use
+        PASS [   0.016s] (288/377) verkehrt::cli program_error_exits_1
+        PASS [   0.099s] (289/377) verkehrt::cli no_tiling_traces_the_same_kernels
+        PASS [   0.033s] (290/377) verkehrt::cli repl_continues_after_error
+        PASS [   0.701s] (291/377) verkehrt::acceptance q08_counts_distinct_users_per_region
+        PASS [   0.014s] (292/377) verkehrt::cli unknown_backend_is_usage_error
+        PASS [   0.050s] (293/377) verkehrt::cli repl_reads_stdin
+        PASS [   0.082s] (294/377) verkehrt::cli plan_goes_to_stderr
+        PASS [   0.017s] (295/377) verkehrt::cli unknown_feature_is_usage_error
+        PASS [   0.017s] (296/377) verkehrt::cli unknown_isa_is_usage_error
+        PASS [   0.010s] (297/377) verkehrt::fused_oracle at_least_five_families_have_patterns
+        PASS [   0.010s] (298/377) verkehrt::fused_oracle classes_and_costs_follow_the_brief
+        PASS [   0.072s] (299/377) verkehrt::cli undetected_disable_prints_a_note
+        PASS [   0.078s] (300/377) verkehrt::cli run_prints_result
+        PASS [   0.584s] (301/377) verkehrt::acceptance tpch_matches_duckdb
+        PASS [   0.062s] (302/377) verkehrt::generated eval::prims::tests::canonical_order_matches_hand_computed_sums
+        PASS [   0.096s] (303/377) verkehrt::fused_oracle dot_matches_oracle
+        PASS [   0.023s] (304/377) verkehrt::generated eval::scalar::tests::ieee_extremes_order_zeros_and_propagate_nan
+        PASS [   0.758s] (305/377) verkehrt::acceptance q35_computes_offsets_without_overflow
+        PASS [   0.028s] (306/377) verkehrt::generated eval::tests::call_ignoring_a_dependent_argument_is_uniform
+        PASS [   0.022s] (307/377) verkehrt::generated oracles::error_categories_ignore_wording_only
+        PASS [   2.583s] (308/377) verkehrt exec::tests::a_shared_input_computed_by_an_earlier_statement_is_trivial
+        PASS [   0.018s] (309/377) verkehrt::generated oracles::exports_compare_by_bits_and_nans_alike
+        PASS [   0.136s] (310/377) verkehrt::fused_oracle sumsq_matches_oracle
+        PASS [   0.011s] (311/377) verkehrt::generated oracles::unread_failing_bindings_fail_alone
+        PASS [   2.745s] (312/377) verkehrt exec::tests::a_shared_elementwise_kernel_feeding_two_regions_runs_once
+        PASS [   0.929s] (313/377) verkehrt::acceptance q09_aggregates_per_region
+        PASS [   0.012s] (314/377) verkehrt::generated rewrites::expected_lists_both_wrapping_integer_types
+        PASS [   0.031s] (315/377) verkehrt::generated rewrites::rewritten_shape_counts_only_the_rewrite_that_ran
+        PASS [   0.010s] (316/377) verkehrt::isa_variants every_array_kernel_has_auto_variants
+        PASS [   0.119s] (317/377) verkehrt::generated oracles::oracle_3_accepts_lines_on_the_chain
+        PASS [   0.011s] (318/377) verkehrt::isa_variants neon_auto_resolves_to_scalar
+        PASS [   0.937s] (319/377) verkehrt::acceptance q32_breaks_count_ties_by_signed_key
+        PASS [   0.013s] (320/377) verkehrt::isa_variants neon_extreme_reducers_reject_bad_arguments
+        PASS [   0.290s] (321/377) verkehrt::fused_oracle count_matches_oracle
+        PASS [   0.091s] (322/377) verkehrt::generated rewrites::unfused_plans_report_no_rewrite
+        PASS [   0.022s] (323/377) verkehrt::isa_variants neon_extremes_keep_the_first_index_on_ties
+        PASS [   0.014s] (324/377) verkehrt::isa_variants neon_extremes_of_empty_rows_fail_like_scalar
+        PASS [   0.018s] (325/377) verkehrt::isa_variants neon_extremes_of_all_nan_rows
+        PASS [   0.024s] (326/377) verkehrt::isa_variants neon_extremes_order_signed_zeros
+        PASS [   0.014s] (327/377) verkehrt::isa_variants neon_extremes_take_the_first_nan_across_tiles
+        PASS [   0.013s] (328/377) verkehrt::isa_variants neon_intrinsics_resolve_for_float_extremes
+        PASS [   0.010s] (329/377) verkehrt::isa_variants neon_intrinsics_resolve_for_selections
+        PASS [   0.011s] (330/377) verkehrt::isa_variants resolve_picks_auto_and_intrinsics_falls_back_to_it
+        PASS [   0.011s] (331/377) verkehrt::programs disable_vbmi2_keeps_v4
+        PASS [   0.173s] (332/377) verkehrt::generated rewrites::each_rewrite_reports_itself_only
+        PASS [   0.035s] (333/377) verkehrt::programs bound_arrays_are_not_copied
+        PASS [   0.034s] (334/377) verkehrt::programs execute_checks_inputs
+        PASS [   0.032s] (335/377) verkehrt::programs execute_rejects_undeclared_and_duplicate_inputs
+        PASS [   0.030s] (336/377) verkehrt::programs exports_behave_like_let_in_run
+        PASS [   4.687s] (337/377) verkehrt exec::region::tiles::tests::a_right_operand_that_is_a_region_input_is_not_narrowed
+        PASS [   0.048s] (338/377) verkehrt::programs failed_load_is_an_io_error_at_once
+        PASS [   0.454s] (339/377) verkehrt::fused_oracle filter_matches_oracle
+        PASS [   0.101s] (340/377) verkehrt::programs failed_binding_keeps_its_error_after_a_read
+        PASS [   0.096s] (341/377) verkehrt::programs failed_repl_input_keeps_old_bindings
+        PASS [   0.089s] (342/377) verkehrt::programs failing_export_stops_execute_at_its_statement
+        PASS [   0.068s] (343/377) verkehrt::programs failing_export_stops_run_at_its_statement
+        PASS [   0.011s] (344/377) verkehrt::programs handles_are_thread_safe
+        PASS [   0.032s] (345/377) verkehrt::programs if_with_mask_condition_in_export
+        PASS [   0.065s] (346/377) verkehrt::programs failing_repl_let_raises_at_its_line
+        PASS [   0.069s] (347/377) verkehrt::programs get_of_failed_binding_is_none
+        PASS [   0.065s] (348/377) verkehrt::programs input_must_be_bound_in_run
+        PASS [   0.047s] (349/377) verkehrt::programs io_error_in_unread_binding_fails_at_once
+        PASS [   0.030s] (350/377) verkehrt::programs prepare_once_execute_many
+        PASS [   0.097s] (351/377) verkehrt::programs input_of_failed_binding_is_a_usage_error
+        PASS [   0.069s] (352/377) verkehrt::programs prepare_rejects_undeclared_names_and_returns_exports_in_order
+        PASS [   0.052s] (353/377) verkehrt::programs repl_expression_prints_its_value
+        PASS [   0.541s] (354/377) verkehrt::generated oracles::plans_may_report_different_failing_lets
+        PASS [   0.074s] (355/377) verkehrt::programs scalar_condition_if_plans_only_the_taken_branch
+        PASS [   0.061s] (356/377) verkehrt::programs show_plan_prints_fused_kernel
+        PASS [   0.137s] (357/377) verkehrt::programs read_of_failed_binding_is_a_usage_error
+        PASS [   0.575s] (358/377) verkehrt::generated oracles::plans_may_report_different_categories
+        PASS [   0.009s] (359/377) verkehrt::programs unavailable_isa_is_a_usage_error
+        PASS [   0.044s] (360/377) verkehrt::programs stats_count_a_shared_kernel_once
+        PASS [   0.028s] (361/377) verkehrt::programs xor_on_bool_exports_bool_bytes
+        PASS [   0.045s] (362/377) verkehrt::programs stats_total_per_kernel
+        PASS [   0.062s] (363/377) verkehrt::programs trace_reports_isa_and_bytes
+        PASS [   0.216s] (364/377) verkehrt::programs read_of_failed_binding_in_untaken_branch_is_fine
+        PASS [   0.060s] (365/377) verkehrt::programs zip_map_length_checks_do_not_prevent_fusion
+        PASS [   0.245s] (366/377) verkehrt::programs no_fusion_matches_fused_output
+        PASS [   0.826s] (367/377) verkehrt::fused_oracle condsum_matches_oracle
+        PASS [   0.618s] (368/377) verkehrt::isa_variants isa_variants_match_scalar
+        PASS [   2.133s] (369/377) verkehrt plan::tests::datadriven_plans
+        PASS [   1.567s] (370/377) verkehrt::isa_variants neon_extremes_match_scalar_for_short_lengths
+        PASS [   3.742s] (371/377) verkehrt plan::tests::fusion_off_plans_use_single_op_kernels_only
+        PASS [  14.487s] (372/377) verkehrt exec::region::fused::tests::extremes_with_ties_in_later_tiles
+        PASS [  14.571s] (373/377) verkehrt exec::region::fused::tests::bool_reductions_over_a_guard
+        PASS [  14.572s] (374/377) verkehrt exec::region::fused::tests::extremes_with_a_nan_in_a_later_tile
+        PASS [   6.180s] (375/377) verkehrt::acceptance clickbench_matches_duckdb
+        PASS [   7.443s] (376/377) verkehrt::programs datadriven_programs
+        PASS [   7.858s] (377/377) verkehrt::generated generated_programs
+────────────
+     Summary [  18.030s] 377 tests run: 377 passed, 1 skipped

@@ -1,0 +1,73 @@
+   Compiling verkehrt v0.1.0 (/Users/moritz/dev/repos/verkehrt/.claude/worktrees/m5-tier2-benchmarks)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 1m 06s
+     Running benches/tier1.rs (target/release/deps/tier1-3ca1b5e0776d3a4d)
+Gnuplot not found, using plotters backend
+Usage: tier1-3ca1b5e0776d3a4d [OPTIONS] [FILTER]
+
+Arguments:
+  [FILTER]  Skip benchmarks whose names do not contain FILTER.
+
+Options:
+  -c, --color <color>
+          Configure coloring of output. always = always colorize output, never = never colorize output, auto = colorize output if output is a tty and compiled for unix. [default: auto] [possible values: auto, always, never]
+  -v, --verbose
+          Print additional statistical information.
+      --quiet
+          Print only the benchmark results.
+  -n, --noplot
+          Disable plot and HTML generation.
+  -s, --save-baseline <save-baseline>
+          Save results under a named baseline. [default: base]
+      --discard-baseline
+          Discard benchmark results.
+  -b, --baseline <baseline>
+          Compare to a named baseline. If any benchmarks do not have the specified baseline this command fails.
+      --baseline-lenient <baseline-lenient>
+          Compare to a named baseline. If any benchmarks do not have the specified baseline then just those benchmarks are not compared against the baseline while every other benchmark is compared against the baseline.
+      --list
+          List all benchmarks
+      --format <format>
+          Output formatting [default: pretty] [possible values: pretty, terse]
+      --ignored
+          List or run ignored benchmarks (currently means skip all benchmarks)
+      --exact
+          Run benchmarks that exactly match the provided filter
+      --profile-time <profile-time>
+          Iterate each benchmark for approximately the given number of seconds, doing no analysis and without storing the results. Useful for running the benchmarks in a profiler.
+      --load-baseline <load-baseline>
+          Load a previous baseline instead of sampling new data.
+      --sample-size <sample-size>
+          Changes the default size of the sample for this run. [default: 100]
+      --warm-up-time <warm-up-time>
+          Changes the default warm up time for this run. [default: 3]
+      --measurement-time <measurement-time>
+          Changes the default measurement time for this run. [default: 5]
+      --nresamples <nresamples>
+          Changes the default number of resamples for this run. [default: 100000]
+      --noise-threshold <noise-threshold>
+          Changes the default noise threshold for this run. [default: 0.01]
+      --confidence-level <confidence-level>
+          Changes the default confidence level for this run. [default: 0.95]
+      --significance-level <significance-level>
+          Changes the default significance level for this run. [default: 0.05]
+      --quick
+          Benchmark only until the significance level has been reached [default: false]
+      --plotting-backend <plotting-backend>
+          Set the plotting backend. By default, Criterion.rs will use the gnuplot backend if gnuplot is available, or the plotters backend if it isn't. [possible values: gnuplot, plotters]
+      --output-format <output-format>
+          Change the CLI output format. By default, Criterion.rs will use its own format. If output format is set to 'bencher', Criterion.rs will print output in a format that resembles the 'bencher' crate. [default: criterion] [possible values: criterion, bencher]
+  -h, --help
+          Print help
+
+
+This executable is a Criterion.rs benchmark.
+See https://github.com/criterion-rs/criterion.rs for more details.
+
+To enable debug output, define the environment variable CRITERION_DEBUG.
+Criterion.rs will output more debug information and will save the gnuplot
+scripts alongside the generated plots.
+
+To test that the benchmarks work, run `cargo test --benches`
+
+NOTE: If you see an 'unrecognized option' error using any of the options above, see:
+https://criterion-rs.github.io/book/faq.html

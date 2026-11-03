@@ -1,0 +1,291 @@
+   Compiling verkehrt v0.1.0 (/Users/moritz/dev/repos/verkehrt/.claude/worktrees/m5-tier2-benchmarks)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 51.21s
+     Running benches/acceptance.rs (target/release/deps/acceptance-67466d6703ccaebe)
+Gnuplot not found, using plotters backend
+Benchmarking acceptance/clickbench/q00/scalar
+Benchmarking acceptance/clickbench/q00/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/scalar: Collecting 10 samples in estimated 3.0000 s (32M iterations)
+Benchmarking acceptance/clickbench/q00/scalar: Analyzing
+acceptance/clickbench/q00/scalar
+                        time:   [93.251 ns 93.524 ns 93.835 ns]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q00/neon-intrinsics
+Benchmarking acceptance/clickbench/q00/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q00/neon-intrinsics: Collecting 10 samples in estimated 3.0000 s (32M iterations)
+Benchmarking acceptance/clickbench/q00/neon-intrinsics: Analyzing
+acceptance/clickbench/q00/neon-intrinsics
+                        time:   [93.130 ns 93.823 ns 94.702 ns]
+
+Benchmarking acceptance/clickbench/q01/scalar
+Benchmarking acceptance/clickbench/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/scalar: Collecting 10 samples in estimated 3.0033 s (34k iterations)
+Benchmarking acceptance/clickbench/q01/scalar: Analyzing
+acceptance/clickbench/q01/scalar
+                        time:   [86.800 µs 86.957 µs 87.064 µs]
+Benchmarking acceptance/clickbench/q01/neon-intrinsics
+Benchmarking acceptance/clickbench/q01/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q01/neon-intrinsics: Collecting 10 samples in estimated 3.0048 s (34k iterations)
+Benchmarking acceptance/clickbench/q01/neon-intrinsics: Analyzing
+acceptance/clickbench/q01/neon-intrinsics
+                        time:   [86.938 µs 87.127 µs 87.431 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking acceptance/clickbench/q02/scalar
+Benchmarking acceptance/clickbench/q02/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/scalar: Collecting 10 samples in estimated 3.0009 s (20k iterations)
+Benchmarking acceptance/clickbench/q02/scalar: Analyzing
+acceptance/clickbench/q02/scalar
+                        time:   [148.02 µs 148.37 µs 148.56 µs]
+Benchmarking acceptance/clickbench/q02/neon-intrinsics
+Benchmarking acceptance/clickbench/q02/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q02/neon-intrinsics: Collecting 10 samples in estimated 3.0003 s (20k iterations)
+Benchmarking acceptance/clickbench/q02/neon-intrinsics: Analyzing
+acceptance/clickbench/q02/neon-intrinsics
+                        time:   [147.51 µs 147.79 µs 148.15 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking acceptance/clickbench/q03/scalar
+Benchmarking acceptance/clickbench/q03/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/scalar: Collecting 10 samples in estimated 3.0435 s (3080 iterations)
+Benchmarking acceptance/clickbench/q03/scalar: Analyzing
+acceptance/clickbench/q03/scalar
+                        time:   [988.45 µs 989.15 µs 989.74 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q03/neon-intrinsics
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Collecting 10 samples in estimated 3.0024 s (3025 iterations)
+Benchmarking acceptance/clickbench/q03/neon-intrinsics: Analyzing
+acceptance/clickbench/q03/neon-intrinsics
+                        time:   [990.00 µs 990.59 µs 991.07 µs]
+
+Benchmarking acceptance/clickbench/q04/scalar
+Benchmarking acceptance/clickbench/q04/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/scalar: Collecting 10 samples in estimated 3.0120 s (1045 iterations)
+Benchmarking acceptance/clickbench/q04/scalar: Analyzing
+acceptance/clickbench/q04/scalar
+                        time:   [2.8657 ms 2.8754 ms 2.8892 ms]
+Benchmarking acceptance/clickbench/q04/neon-intrinsics
+Benchmarking acceptance/clickbench/q04/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q04/neon-intrinsics: Collecting 10 samples in estimated 3.1450 s (1100 iterations)
+Benchmarking acceptance/clickbench/q04/neon-intrinsics: Analyzing
+acceptance/clickbench/q04/neon-intrinsics
+                        time:   [2.8641 ms 2.8682 ms 2.8710 ms]
+
+Benchmarking acceptance/clickbench/q06/scalar
+Benchmarking acceptance/clickbench/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/scalar: Collecting 10 samples in estimated 3.0027 s (13k iterations)
+Benchmarking acceptance/clickbench/q06/scalar: Analyzing
+acceptance/clickbench/q06/scalar
+                        time:   [230.70 µs 232.04 µs 232.98 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q06/neon-intrinsics
+Benchmarking acceptance/clickbench/q06/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q06/neon-intrinsics: Collecting 10 samples in estimated 3.0102 s (13k iterations)
+Benchmarking acceptance/clickbench/q06/neon-intrinsics: Analyzing
+acceptance/clickbench/q06/neon-intrinsics
+                        time:   [231.57 µs 232.10 µs 232.84 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking acceptance/clickbench/q07/scalar
+Benchmarking acceptance/clickbench/q07/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/scalar: Collecting 10 samples in estimated 3.0025 s (7920 iterations)
+Benchmarking acceptance/clickbench/q07/scalar: Analyzing
+acceptance/clickbench/q07/scalar
+                        time:   [381.12 µs 383.50 µs 388.44 µs]
+Benchmarking acceptance/clickbench/q07/neon-intrinsics
+Benchmarking acceptance/clickbench/q07/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q07/neon-intrinsics: Collecting 10 samples in estimated 3.0162 s (9405 iterations)
+Benchmarking acceptance/clickbench/q07/neon-intrinsics: Analyzing
+acceptance/clickbench/q07/neon-intrinsics
+                        time:   [320.63 µs 320.79 µs 321.02 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+Benchmarking acceptance/clickbench/q08/scalar
+Benchmarking acceptance/clickbench/q08/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/scalar: Collecting 10 samples in estimated 3.0980 s (385 iterations)
+Benchmarking acceptance/clickbench/q08/scalar: Analyzing
+acceptance/clickbench/q08/scalar
+                        time:   [8.0731 ms 8.1256 ms 8.1617 ms]
+Benchmarking acceptance/clickbench/q08/neon-intrinsics
+Benchmarking acceptance/clickbench/q08/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q08/neon-intrinsics: Collecting 10 samples in estimated 3.0969 s (385 iterations)
+Benchmarking acceptance/clickbench/q08/neon-intrinsics: Analyzing
+acceptance/clickbench/q08/neon-intrinsics
+                        time:   [8.0336 ms 8.0752 ms 8.1389 ms]
+
+Benchmarking acceptance/clickbench/q09/scalar
+Benchmarking acceptance/clickbench/q09/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/scalar: Collecting 10 samples in estimated 3.5202 s (275 iterations)
+Benchmarking acceptance/clickbench/q09/scalar: Analyzing
+acceptance/clickbench/q09/scalar
+                        time:   [12.828 ms 12.842 ms 12.859 ms]
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q09/neon-intrinsics
+Benchmarking acceptance/clickbench/q09/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q09/neon-intrinsics: Collecting 10 samples in estimated 3.5357 s (275 iterations)
+Benchmarking acceptance/clickbench/q09/neon-intrinsics: Analyzing
+acceptance/clickbench/q09/neon-intrinsics
+                        time:   [12.805 ms 12.828 ms 12.853 ms]
+
+Benchmarking acceptance/clickbench/q15/scalar
+Benchmarking acceptance/clickbench/q15/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/scalar: Collecting 10 samples in estimated 3.1421 s (440 iterations)
+Benchmarking acceptance/clickbench/q15/scalar: Analyzing
+acceptance/clickbench/q15/scalar
+                        time:   [7.1365 ms 7.1483 ms 7.1648 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking acceptance/clickbench/q15/neon-intrinsics
+Benchmarking acceptance/clickbench/q15/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q15/neon-intrinsics: Collecting 10 samples in estimated 3.1521 s (440 iterations)
+Benchmarking acceptance/clickbench/q15/neon-intrinsics: Analyzing
+acceptance/clickbench/q15/neon-intrinsics
+                        time:   [7.1878 ms 7.2416 ms 7.3604 ms]
+
+Benchmarking acceptance/clickbench/q19/scalar
+Benchmarking acceptance/clickbench/q19/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/scalar: Collecting 10 samples in estimated 3.0096 s (8910 iterations)
+Benchmarking acceptance/clickbench/q19/scalar: Analyzing
+acceptance/clickbench/q19/scalar
+                        time:   [338.20 µs 338.99 µs 339.42 µs]
+Benchmarking acceptance/clickbench/q19/neon-intrinsics
+Benchmarking acceptance/clickbench/q19/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q19/neon-intrinsics: Collecting 10 samples in estimated 3.0070 s (11k iterations)
+Benchmarking acceptance/clickbench/q19/neon-intrinsics: Analyzing
+acceptance/clickbench/q19/neon-intrinsics
+                        time:   [276.65 µs 278.03 µs 278.93 µs]
+
+Benchmarking acceptance/clickbench/q27/scalar
+Benchmarking acceptance/clickbench/q27/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/scalar: Collecting 10 samples in estimated 3.0065 s (715 iterations)
+Benchmarking acceptance/clickbench/q27/scalar: Analyzing
+acceptance/clickbench/q27/scalar
+                        time:   [4.1150 ms 4.1353 ms 4.1495 ms]
+Benchmarking acceptance/clickbench/q27/neon-intrinsics
+Benchmarking acceptance/clickbench/q27/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q27/neon-intrinsics: Collecting 10 samples in estimated 3.1947 s (825 iterations)
+Benchmarking acceptance/clickbench/q27/neon-intrinsics: Analyzing
+acceptance/clickbench/q27/neon-intrinsics
+                        time:   [3.8466 ms 3.8695 ms 3.8960 ms]
+
+Benchmarking acceptance/clickbench/q29/scalar
+Benchmarking acceptance/clickbench/q29/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/scalar: Collecting 10 samples in estimated 3.0040 s (36k iterations)
+Benchmarking acceptance/clickbench/q29/scalar: Analyzing
+acceptance/clickbench/q29/scalar
+                        time:   [83.062 µs 83.301 µs 83.874 µs]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking acceptance/clickbench/q29/neon-intrinsics
+Benchmarking acceptance/clickbench/q29/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q29/neon-intrinsics: Collecting 10 samples in estimated 3.0004 s (36k iterations)
+Benchmarking acceptance/clickbench/q29/neon-intrinsics: Analyzing
+acceptance/clickbench/q29/neon-intrinsics
+                        time:   [83.759 µs 84.131 µs 84.516 µs]
+
+Benchmarking acceptance/clickbench/q30/scalar
+Benchmarking acceptance/clickbench/q30/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/scalar: Collecting 10 samples in estimated 3.0047 s (715 iterations)
+Benchmarking acceptance/clickbench/q30/scalar: Analyzing
+acceptance/clickbench/q30/scalar
+                        time:   [4.1779 ms 4.1938 ms 4.2030 ms]
+Benchmarking acceptance/clickbench/q30/neon-intrinsics
+Benchmarking acceptance/clickbench/q30/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q30/neon-intrinsics: Collecting 10 samples in estimated 3.0796 s (825 iterations)
+Benchmarking acceptance/clickbench/q30/neon-intrinsics: Analyzing
+acceptance/clickbench/q30/neon-intrinsics
+                        time:   [3.6541 ms 3.6679 ms 3.6817 ms]
+
+Benchmarking acceptance/clickbench/q31/scalar
+Benchmarking acceptance/clickbench/q31/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/scalar: Collecting 10 samples in estimated 3.1148 s (715 iterations)
+Benchmarking acceptance/clickbench/q31/scalar: Analyzing
+acceptance/clickbench/q31/scalar
+                        time:   [4.3350 ms 4.3585 ms 4.3727 ms]
+Benchmarking acceptance/clickbench/q31/neon-intrinsics
+Benchmarking acceptance/clickbench/q31/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q31/neon-intrinsics: Collecting 10 samples in estimated 3.1947 s (825 iterations)
+Benchmarking acceptance/clickbench/q31/neon-intrinsics: Analyzing
+acceptance/clickbench/q31/neon-intrinsics
+                        time:   [3.8741 ms 3.8863 ms 3.8979 ms]
+
+Benchmarking acceptance/clickbench/q32/scalar
+Benchmarking acceptance/clickbench/q32/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q32/scalar: Collecting 10 samples in estimated 4.1234 s (110 iterations)
+Benchmarking acceptance/clickbench/q32/scalar: Analyzing
+acceptance/clickbench/q32/scalar
+                        time:   [37.442 ms 37.568 ms 37.695 ms]
+Benchmarking acceptance/clickbench/q32/neon-intrinsics
+Benchmarking acceptance/clickbench/q32/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q32/neon-intrinsics: Collecting 10 samples in estimated 4.1547 s (110 iterations)
+Benchmarking acceptance/clickbench/q32/neon-intrinsics: Analyzing
+acceptance/clickbench/q32/neon-intrinsics
+                        time:   [37.482 ms 37.631 ms 37.780 ms]
+
+Benchmarking acceptance/clickbench/q35/scalar
+Benchmarking acceptance/clickbench/q35/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/scalar: Collecting 10 samples in estimated 3.2007 s (440 iterations)
+Benchmarking acceptance/clickbench/q35/scalar: Analyzing
+acceptance/clickbench/q35/scalar
+                        time:   [7.2316 ms 7.2552 ms 7.2707 ms]
+Benchmarking acceptance/clickbench/q35/neon-intrinsics
+Benchmarking acceptance/clickbench/q35/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q35/neon-intrinsics: Collecting 10 samples in estimated 3.1908 s (440 iterations)
+Benchmarking acceptance/clickbench/q35/neon-intrinsics: Analyzing
+acceptance/clickbench/q35/neon-intrinsics
+                        time:   [7.2175 ms 7.2391 ms 7.2595 ms]
+
+Benchmarking acceptance/clickbench/q40/scalar
+Benchmarking acceptance/clickbench/q40/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/scalar: Collecting 10 samples in estimated 3.0344 s (1155 iterations)
+Benchmarking acceptance/clickbench/q40/scalar: Analyzing
+acceptance/clickbench/q40/scalar
+                        time:   [2.6331 ms 2.6436 ms 2.6599 ms]
+Benchmarking acceptance/clickbench/q40/neon-intrinsics
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Collecting 10 samples in estimated 3.0823 s (1265 iterations)
+Benchmarking acceptance/clickbench/q40/neon-intrinsics: Analyzing
+acceptance/clickbench/q40/neon-intrinsics
+                        time:   [2.4116 ms 2.4237 ms 2.4363 ms]
+
+Benchmarking acceptance/clickbench/q41/scalar
+Benchmarking acceptance/clickbench/q41/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/scalar: Collecting 10 samples in estimated 3.0161 s (1485 iterations)
+Benchmarking acceptance/clickbench/q41/scalar: Analyzing
+acceptance/clickbench/q41/scalar
+                        time:   [2.0300 ms 2.0373 ms 2.0462 ms]
+Benchmarking acceptance/clickbench/q41/neon-intrinsics
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Collecting 10 samples in estimated 3.0123 s (1650 iterations)
+Benchmarking acceptance/clickbench/q41/neon-intrinsics: Analyzing
+acceptance/clickbench/q41/neon-intrinsics
+                        time:   [1.7954 ms 1.8075 ms 1.8218 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking acceptance/clickbench/q42/scalar
+Benchmarking acceptance/clickbench/q42/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/scalar: Collecting 10 samples in estimated 3.0092 s (1980 iterations)
+Benchmarking acceptance/clickbench/q42/scalar: Analyzing
+acceptance/clickbench/q42/scalar
+                        time:   [1.5169 ms 1.5244 ms 1.5328 ms]
+Benchmarking acceptance/clickbench/q42/neon-intrinsics
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Collecting 10 samples in estimated 3.0277 s (2090 iterations)
+Benchmarking acceptance/clickbench/q42/neon-intrinsics: Analyzing
+acceptance/clickbench/q42/neon-intrinsics
+                        time:   [1.4205 ms 1.4267 ms 1.4389 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set

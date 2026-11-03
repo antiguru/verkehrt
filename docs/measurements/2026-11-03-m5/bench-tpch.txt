@@ -1,0 +1,39 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.07s
+     Running benches/acceptance.rs (target/release/deps/acceptance-67466d6703ccaebe)
+Gnuplot not found, using plotters backend
+acceptance/clickbench: skipped, VERKEHRT_CLICKBENCH is not set
+Benchmarking acceptance/tpch/q01/scalar
+Benchmarking acceptance/tpch/q01/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/scalar: Collecting 10 samples in estimated 3.0747 s (220 iterations)
+Benchmarking acceptance/tpch/q01/scalar: Analyzing
+acceptance/tpch/q01/scalar
+                        time:   [13.971 ms 14.013 ms 14.052 ms]
+                        change: [+3.6595% +4.0529% +4.4344%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/tpch/q01/neon-intrinsics
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Collecting 10 samples in estimated 3.6294 s (275 iterations)
+Benchmarking acceptance/tpch/q01/neon-intrinsics: Analyzing
+acceptance/tpch/q01/neon-intrinsics
+                        time:   [13.093 ms 13.126 ms 13.174 ms]
+                        change: [+3.9036% +4.5061% +5.0580%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+Benchmarking acceptance/tpch/q06/scalar
+Benchmarking acceptance/tpch/q06/scalar: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/scalar: Collecting 10 samples in estimated 3.0015 s (1870 iterations)
+Benchmarking acceptance/tpch/q06/scalar: Analyzing
+acceptance/tpch/q06/scalar
+                        time:   [1.5765 ms 1.5843 ms 1.5956 ms]
+                        change: [+2.5147% +3.0683% +3.6514%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking acceptance/tpch/q06/neon-intrinsics
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Warming up for 500.00 ms
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Collecting 10 samples in estimated 3.0572 s (2255 iterations)
+Benchmarking acceptance/tpch/q06/neon-intrinsics: Analyzing
+acceptance/tpch/q06/neon-intrinsics
+                        time:   [1.3495 ms 1.3543 ms 1.3575 ms]
+                        change: [+2.9856% +3.5064% +4.0053%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe

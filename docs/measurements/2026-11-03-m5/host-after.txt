@@ -1,0 +1,8 @@
+2026-11-03 06:10:56 EST
+Apple M5 Max
+{ 4.14 3.83 4.02 }
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=23855203)	99%; finishing charge; 0:10 remaining present: true
+rustc 1.99.1 (58cf8f9c3 2026-10-13) (Homebrew)
+487M	/tmp/verkehrt-m5-acceptance.07nXWb/clickbench
+167M	/tmp/verkehrt-m5-acceptance.07nXWb/tpch
