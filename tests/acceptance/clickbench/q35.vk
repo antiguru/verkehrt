@@ -11,10 +11,9 @@ let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
 let counts = histogram(ids, ng);
 // Every row of a group has the same address, so the minimum recovers it.
 let gk = reduce_into(ids, ClientIP, ng, min);
-// Sorting the groups by address and then stably by descending count breaks ties by address.
-let ko = argsort(gk);
-let co = argsort(0 - gather(counts, ko));
-let top = gather(ko, slice(co, 0, min(ng, 10)));
+// The top ten groups by descending count, ties broken by ascending address. The slice of the
+// two-column sort fuses into a top-k kernel.
+let top = slice(argsort(0 - counts, gk), 0, min(ng, 10));
 let ip = gather(gk, top);
 export ClientIP = ip;
 export ClientIP_1 = ip - 1;

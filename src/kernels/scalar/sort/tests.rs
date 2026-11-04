@@ -12,12 +12,12 @@ use crate::kernels::{Backend, FeatureSet, Isa, Registry, Variant};
 use crate::value::{Array, Elem, ScalarType, Value};
 
 /// Longest generated array, past the sizes where a small-input path would hand over.
-const MAX_LEN: usize = 5000;
+pub(super) const MAX_LEN: usize = 5000;
 /// Proptest cases per element type, each drawn from every input class.
 const CASES: u32 = 256;
 
 /// A sortable key type that tests can build from the low bits of a `u64`.
-trait Key: Elem + Ord + std::fmt::Debug + 'static {
+pub(super) trait Key: Elem + Ord + std::fmt::Debug + 'static {
     const TY: ScalarType;
     const BYTES: usize;
     const SIGNED: bool;
@@ -66,7 +66,7 @@ fn check<T: Key>(xs: &[T]) -> Result<(), TestCaseError> {
 
 /// Values at and around every digit boundary: `2^(8k)` and `2^(8k) - 1` for each byte `k`,
 /// `2^(11k) +- 1` for 11-bit digits, and the negatives of all of them for signed types.
-fn boundary_pool<T: Key>() -> Vec<T> {
+pub(super) fn boundary_pool<T: Key>() -> Vec<T> {
     let bits = 8 * T::BYTES;
     let mut raw = vec![0u64, 1];
     for k in 0..T::BYTES {
@@ -83,7 +83,7 @@ fn boundary_pool<T: Key>() -> Vec<T> {
     raw.into_iter().map(T::from_bits).collect()
 }
 
-fn pick<T: Clone>(pool: Vec<T>, picks: Vec<Index>) -> Vec<T> {
+pub(super) fn pick<T: Clone>(pool: Vec<T>, picks: Vec<Index>) -> Vec<T> {
     picks.into_iter().map(|p| p.get(&pool).clone()).collect()
 }
 
@@ -196,7 +196,7 @@ fn argsort_matches_reference_u8() {
 
 /// Every length around the places where a small-input path or a pass structure could change
 /// behavior: `0..=300` and `2^k +- 1` up to `MAX_LEN`.
-fn sweep_lengths() -> Vec<usize> {
+pub(super) fn sweep_lengths() -> Vec<usize> {
     let mut lens: Vec<usize> = (0..=300).collect();
     for k in 0..13 {
         for len in [(1usize << k) - 1, 1 << k, (1 << k) + 1] {

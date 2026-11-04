@@ -277,3 +277,18 @@ fn neon_auto_runs_the_scalar_entry() {
     let line = err.lines().find(|l| l.contains("dot_f64")).expect(&err);
     assert!(line.contains("isa=scalar"), "{line}");
 }
+
+#[test]
+fn no_composite_sort_prints_the_same() {
+    let run = |flags: &[&str]| {
+        let a = verkehrt()
+            .arg("run")
+            .args(flags)
+            .arg("tests/cli/argsort2.vk")
+            .assert()
+            .success();
+        String::from_utf8(a.get_output().stdout.clone()).unwrap()
+    };
+    assert_eq!(run(&[]), "[3, 1, 5, 4, 0, 2, 6]\n");
+    assert_eq!(run(&["--no-composite-sort"]), run(&[]));
+}

@@ -130,7 +130,7 @@ pub fn shared_flags(reg: &Registry, graph: &PlanGraph, roots: &[PlanId]) -> Vec<
 }
 
 /// Calls `f` on every child of `node`, once per edge, in order.
-fn for_each_child(node: &PlanNode, mut f: impl FnMut(PlanId)) {
+pub(crate) fn for_each_child(node: &PlanNode, mut f: impl FnMut(PlanId)) {
     match node {
         PlanNode::Kernel(_, args) => args.iter().copied().for_each(f),
         PlanNode::Leaf(_) => {}

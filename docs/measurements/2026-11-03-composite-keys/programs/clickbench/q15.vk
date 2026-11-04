@@ -1,0 +1,16 @@
+// sql: SELECT UserID, COUNT(*) AS c FROM hits GROUP BY UserID ORDER BY c DESC, UserID LIMIT 10
+// output: [i,u]
+input UserID: i64[];
+
+// Group by hashing. `group_id` gives each row the dense id of its key, numbered by first
+// occurrence. An empty column gives no groups and empty outputs.
+let ids = group_id(UserID);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
+let counts = histogram(ids, ng);
+// Every row of a group has the same key, so the minimum recovers it.
+let gk = reduce_into(ids, UserID, ng, min);
+// The top ten groups by descending count, ties broken by ascending UserID. The slice of the
+// two-column sort fuses into a top-k kernel.
+let top = slice(argsort(0 - counts, gk), 0, min(ng, 10));
+export UserID = gather(gk, top);
+export c = gather(counts, top);

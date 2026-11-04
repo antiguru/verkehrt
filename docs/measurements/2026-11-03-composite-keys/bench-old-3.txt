@@ -1,0 +1,232 @@
+start 19:04:33 load 5.60 9.88 19.31 5/4131 471255
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling autocfg v1.5.1
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling crossbeam-utils v0.8.23
+   Compiling memchr v2.8.3
+   Compiling serde_core v1.0.229
+   Compiling zerocopy v0.8.63
+   Compiling crossbeam-epoch v0.9.21
+   Compiling zerocopy-derive v0.8.63
+   Compiling crossbeam-deque v0.8.8
+   Compiling utf8parse v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling anstyle-parse v1.0.0
+   Compiling serde_derive v1.0.229
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.5
+   Compiling once_cell v1.21.4
+   Compiling anstyle-query v1.1.5
+   Compiling getrandom v0.3.4
+   Compiling rustversion v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling anstream v1.0.0
+   Compiling num-integer v0.1.47
+   Compiling strsim v0.11.1
+   Compiling heck v0.5.0
+   Compiling clap_lex v1.1.1
+   Compiling equivalent v1.0.3
+   Compiling smallvec v1.16.4
+   Compiling clap_builder v4.6.7
+   Compiling clap_derive v4.6.7
+   Compiling crossbeam-queue v0.3.14
+   Compiling crossbeam-channel v0.5.17
+   Compiling hashbrown v0.17.1
+   Compiling parking_lot_core v0.9.12
+   Compiling bitflags v2.13.2
+   Compiling crossbeam v0.8.5
+   Compiling clap v4.6.7
+   Compiling arc-swap v1.9.3
+   Compiling indexmap v2.14.2
+   Compiling rand_core v0.9.5
+   Compiling ppv-lite86 v0.2.21
+   Compiling num-bigint v0.4.8
+   Compiling egglog-numeric-id v3.0.0
+   Compiling bumpalo v3.20.3
+   Compiling foldhash v0.2.0
+   Compiling scopeguard v1.2.0
+   Compiling rand_core v0.10.1
+   Compiling anyhow v1.0.104
+   Compiling thiserror v2.0.21
+   Compiling allocator-api2 v0.2.21
+   Compiling hashbrown v0.16.1
+   Compiling num-rational v0.4.2
+   Compiling lock_api v0.4.14
+   Compiling egglog-concurrency v3.0.0
+   Compiling rand_chacha v0.9.0
+   Compiling num-iter v0.1.46
+   Compiling thiserror-impl v2.0.21
+   Compiling ordered-float v5.5.1
+   Compiling num-complex v0.4.6
+   Compiling version_check v0.9.5
+   Compiling getrandom v0.4.3
+   Compiling log v0.4.34
+   Compiling web-time v1.1.0
+   Compiling rustc-hash v2.1.3
+   Compiling hashbrown v0.14.5
+   Compiling regex-syntax v0.8.11
+   Compiling typenum v1.20.1
+   Compiling cfg_aliases v0.2.2
+   Compiling nix v0.31.3
+   Compiling bitmaps v2.1.0
+   Compiling dashmap v6.2.1
+   Compiling egglog-reports v3.0.0
+   Compiling im-rc v15.1.0
+   Compiling num v0.4.3
+   Compiling egglog-union-find v3.0.0
+   Compiling rand v0.9.5
+   Compiling futures-core v0.3.34
+   Compiling rustix v1.1.6
+   Compiling fixedbitset v0.5.7
+   Compiling shlex v2.0.1
+   Compiling dyn-clone v1.0.20
+   Compiling futures-sink v0.3.34
+   Compiling find-msvc-tools v0.1.15
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling cc v1.10.0
+   Compiling futures-channel v0.3.34
+   Compiling egglog-core-relations v3.0.0
+   Compiling regex-automata v0.4.18
+   Compiling sized-chunks v0.6.5
+   Compiling futures-macro v0.3.34
+   Compiling enum-map-derive v0.17.0
+   Compiling csv-core v0.1.13
+   Compiling egglog v3.0.0
+   Compiling linux-raw-sys v0.12.1
+   Compiling ryu v1.0.23
+   Compiling futures-task v0.3.34
+   Compiling either v1.19.0
+   Compiling slab v0.4.12
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-io v0.3.34
+   Compiling rayon-core v1.13.0
+   Compiling futures-util v0.3.34
+   Compiling egglog-bridge v3.0.0
+   Compiling csv v1.4.0
+   Compiling enum-map v2.7.3
+   Compiling alloca v0.4.0
+   Compiling egglog-ast v3.0.0
+   Compiling egraph-serialize v0.3.0
+   Compiling half v2.7.1
+   Compiling bytemuck_derive v1.12.1
+   Compiling egglog-add-primitive v3.0.0
+   Compiling wait-timeout v0.2.1
+   Compiling thiserror v1.0.69
+   Compiling unicode-segmentation v1.13.3
+   Compiling predicates-core v1.0.10
+   Compiling fastrand v2.5.0
+   Compiling plotters-backend v0.3.7
+   Compiling unicode-width v0.2.3
+   Compiling ciborium-io v0.2.2
+   Compiling ciborium-ll v0.2.2
+   Compiling rustyline v19.0.0
+   Compiling plotters-svg v0.3.7
+   Compiling tempfile v3.27.0
+   Compiling bytemuck v1.25.2
+   Compiling futures-executor v0.3.34
+   Compiling itertools v0.13.0
+   Compiling thiserror-impl v1.0.69
+   Compiling cast v0.3.0
+   Compiling difflib v0.4.0
+   Compiling same-file v1.0.6
+   Compiling fnv v1.0.7
+   Compiling termtree v0.5.1
+   Compiling assert_cmd v2.2.2
+   Compiling cpufeatures v0.3.1
+   Compiling bit-vec v0.10.1
+   Compiling quick-error v1.2.3
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.11.1
+   Compiling chacha20 v0.10.2
+   Compiling predicates-tree v1.0.13
+   Compiling walkdir v2.5.0
+   Compiling verkehrt v0.1.0 (/home/moritz/dev/repos/verkehrt/.claude/worktrees/isa-levels)
+   Compiling predicates v3.1.4
+   Compiling criterion-plot v0.8.2
+   Compiling rayon v1.12.0
+   Compiling futures v0.3.34
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling bstr v1.13.1
+   Compiling regex v1.13.1
+   Compiling rand v0.10.3
+   Compiling rand_xorshift v0.5.0
+   Compiling tinytemplate v1.2.1
+   Compiling page_size v0.6.0
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling core_detect v1.0.0
+   Compiling oorandom v11.1.5
+   Compiling criterion v0.8.2
+   Compiling proptest v1.12.0
+   Compiling datadriven v0.9.0
+   Compiling corgi v0.1.0 (https://github.com/frankmcsherry/WIP?rev=2751e04e8501d47b33219be23049bf4afa7a4428#2751e04e)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 3m 36s
+     Running benches/acceptance.rs (target/release/deps/acceptance-244f0e7085fa31c0)
+acceptance/clickbench/q15/scalar
+                        time:   [12.091 ms 12.143 ms 12.192 ms]
+acceptance/clickbench/q15/x86-64-v3-auto
+                        time:   [10.753 ms 10.793 ms 10.830 ms]
+acceptance/clickbench/q15/x86-64-v3-intrinsics
+                        time:   [10.760 ms 10.792 ms 10.820 ms]
+acceptance/clickbench/q15/x86-64-v4-auto
+                        time:   [10.594 ms 10.625 ms 10.658 ms]
+acceptance/clickbench/q15/x86-64-v4-intrinsics
+                        time:   [10.621 ms 10.651 ms 10.681 ms]
+
+acceptance/clickbench/q30/scalar
+                        time:   [7.8141 ms 7.8487 ms 7.8838 ms]
+acceptance/clickbench/q30/x86-64-v3-auto
+                        time:   [6.6988 ms 6.7294 ms 6.7621 ms]
+acceptance/clickbench/q30/x86-64-v3-intrinsics
+                        time:   [5.1684 ms 5.2152 ms 5.2641 ms]
+acceptance/clickbench/q30/x86-64-v4-auto
+                        time:   [5.6287 ms 5.6632 ms 5.6960 ms]
+acceptance/clickbench/q30/x86-64-v4-intrinsics
+                        time:   [4.3576 ms 4.3893 ms 4.4298 ms]
+
+acceptance/clickbench/q31/scalar
+                        time:   [8.4597 ms 8.4976 ms 8.5421 ms]
+acceptance/clickbench/q31/x86-64-v3-auto
+                        time:   [7.2675 ms 7.2903 ms 7.3171 ms]
+acceptance/clickbench/q31/x86-64-v3-intrinsics
+                        time:   [5.7460 ms 5.7848 ms 5.8240 ms]
+acceptance/clickbench/q31/x86-64-v4-auto
+                        time:   [6.2402 ms 6.2746 ms 6.3083 ms]
+acceptance/clickbench/q31/x86-64-v4-intrinsics
+                        time:   [5.0247 ms 5.0599 ms 5.0973 ms]
+
+acceptance/clickbench/q32/scalar
+                        time:   [70.971 ms 71.471 ms 71.956 ms]
+acceptance/clickbench/q32/x86-64-v3-auto
+                        time:   [68.733 ms 69.525 ms 70.368 ms]
+acceptance/clickbench/q32/x86-64-v3-intrinsics
+                        time:   [69.390 ms 69.946 ms 70.496 ms]
+acceptance/clickbench/q32/x86-64-v4-auto
+                        time:   [68.941 ms 69.552 ms 70.197 ms]
+acceptance/clickbench/q32/x86-64-v4-intrinsics
+                        time:   [68.282 ms 68.898 ms 69.534 ms]
+
+acceptance/clickbench/q35/scalar
+                        time:   [11.600 ms 11.635 ms 11.669 ms]
+acceptance/clickbench/q35/x86-64-v3-auto
+                        time:   [10.494 ms 10.532 ms 10.580 ms]
+acceptance/clickbench/q35/x86-64-v3-intrinsics
+                        time:   [10.526 ms 10.555 ms 10.587 ms]
+acceptance/clickbench/q35/x86-64-v4-auto
+                        time:   [10.352 ms 10.384 ms 10.419 ms]
+acceptance/clickbench/q35/x86-64-v4-intrinsics
+                        time:   [10.283 ms 10.311 ms 10.339 ms]
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set
+end 19:13:45 load 4.00 5.54 12.91 1/4080 474432

@@ -629,11 +629,14 @@ fn isa_variants_match_scalar() {
 /// Name prefixes of the whole kernels that loop over their arguments, so they have auto
 /// entries. The list is kept here and not derived from the impls tables, so that a kernel
 /// registered with `scalar_only()` by mistake fails the test.
-const WHOLE_AUTO_PREFIXES: [&str; 5] = [
+const WHOLE_AUTO_PREFIXES: [&str; 8] = [
     "gather_",
     "histogram",
     "reduce_into_",
     "argsort_",
+    "argsort2_",
+    "topk_",
+    "topk2_",
     "group_id",
 ];
 

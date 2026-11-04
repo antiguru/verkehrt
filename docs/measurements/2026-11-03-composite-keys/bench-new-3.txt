@@ -1,0 +1,110 @@
+start 19:13:49 load 3.76 5.46 12.84 3/4064 474489
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.50s
+     Running benches/acceptance.rs (target/release/deps/acceptance-244f0e7085fa31c0)
+acceptance/clickbench/q15/scalar
+                        time:   [11.117 ms 11.140 ms 11.166 ms]
+                        change: [−8.7048% −8.2152% −7.6804%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q15/x86-64-v3-auto
+                        time:   [9.8468 ms 9.8765 ms 9.9084 ms]
+                        change: [−9.0397% −8.5884% −8.1222%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q15/x86-64-v3-intrinsics
+                        time:   [9.8308 ms 9.8635 ms 9.8954 ms]
+                        change: [−9.0733% −8.2846% −7.4507%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q15/x86-64-v4-auto
+                        time:   [9.6187 ms 9.6519 ms 9.6858 ms]
+                        change: [−9.5888% −9.0724% −8.5691%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q15/x86-64-v4-intrinsics
+                        time:   [9.6296 ms 9.6598 ms 9.6991 ms]
+                        change: [−9.8966% −9.3572% −8.8430%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+acceptance/clickbench/q30/scalar
+                        time:   [7.6275 ms 7.6591 ms 7.6955 ms]
+                        change: [−2.4681% −1.8246% −1.1665%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q30/x86-64-v3-auto
+                        time:   [6.4840 ms 6.5129 ms 6.5421 ms]
+                        change: [−3.6329% −2.9543% −2.2510%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q30/x86-64-v3-intrinsics
+                        time:   [4.9192 ms 4.9428 ms 4.9672 ms]
+                        change: [−6.4579% −5.4366% −4.4649%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q30/x86-64-v4-auto
+                        time:   [5.4611 ms 5.4916 ms 5.5222 ms]
+                        change: [−3.8348% −3.0665% −2.1891%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q30/x86-64-v4-intrinsics
+                        time:   [4.2460 ms 4.2718 ms 4.2999 ms]
+                        change: [−3.6445% −2.2685% −0.8989%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+
+acceptance/clickbench/q31/scalar
+                        time:   [8.5793 ms 8.6152 ms 8.6471 ms]
+                        change: [−0.4915% +0.3068% +1.0629%] (p = 0.44 > 0.05)
+                        No change in performance detected.
+acceptance/clickbench/q31/x86-64-v3-auto
+                        time:   [7.4474 ms 7.4839 ms 7.5176 ms]
+                        change: [+1.9610% +2.7830% +3.6616%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+acceptance/clickbench/q31/x86-64-v3-intrinsics
+                        time:   [5.8920 ms 5.9281 ms 5.9714 ms]
+                        change: [+1.7219% +2.6339% +3.5558%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+acceptance/clickbench/q31/x86-64-v4-auto
+                        time:   [6.4842 ms 6.5142 ms 6.5457 ms]
+                        change: [+2.8425% +3.7542% +4.6454%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+acceptance/clickbench/q31/x86-64-v4-intrinsics
+                        time:   [5.3277 ms 5.3768 ms 5.4272 ms]
+                        change: [+4.4681% +5.7869% +7.1582%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+acceptance/clickbench/q32/scalar
+                        time:   [69.645 ms 71.236 ms 73.205 ms]
+                        change: [−2.5430% −0.3297% +2.7806%] (p = 0.82 > 0.05)
+                        No change in performance detected.
+acceptance/clickbench/q32/x86-64-v3-auto
+                        time:   [65.447 ms 66.106 ms 66.796 ms]
+                        change: [−6.3508% −4.9177% −3.3968%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q32/x86-64-v3-intrinsics
+                        time:   [63.039 ms 63.741 ms 64.624 ms]
+                        change: [−10.113% −8.8711% −7.4048%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q32/x86-64-v4-auto
+                        time:   [66.909 ms 67.423 ms 67.962 ms]
+                        change: [−4.2134% −3.0623% −1.9411%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q32/x86-64-v4-intrinsics
+                        time:   [64.207 ms 64.870 ms 65.547 ms]
+                        change: [−7.0872% −5.8463% −4.5755%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+acceptance/clickbench/q35/scalar
+                        time:   [10.884 ms 10.923 ms 10.962 ms]
+                        change: [−7.0269% −6.4169% −5.7592%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q35/x86-64-v3-auto
+                        time:   [9.7810 ms 9.8307 ms 9.8832 ms]
+                        change: [−7.1566% −6.3693% −5.5839%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q35/x86-64-v3-intrinsics
+                        time:   [9.7594 ms 9.7944 ms 9.8310 ms]
+                        change: [−8.4774% −7.6568% −7.0093%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q35/x86-64-v4-auto
+                        time:   [9.5648 ms 9.6059 ms 9.6443 ms]
+                        change: [−7.8788% −7.3220% −6.7077%] (p = 0.00 < 0.05)
+                        Performance has improved.
+acceptance/clickbench/q35/x86-64-v4-intrinsics
+                        time:   [9.5647 ms 9.5904 ms 9.6195 ms]
+                        change: [−7.5432% −7.1056% −6.6572%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+acceptance/tpch: skipped, VERKEHRT_TPCH is not set
+end 19:19:38 load 5.62 5.19 10.35 2/4105 475082

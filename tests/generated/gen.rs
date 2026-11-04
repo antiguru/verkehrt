@@ -82,6 +82,21 @@ const INTS: [ScalarType; 4] = [
     ScalarType::U64,
 ];
 
+/// The weight of the two-key sort permutation among the `indices` options, whose other
+/// weights sum to 3 + 2 + 2 + 1.
+const INDICES_TWO_KEYS: usize = 8;
+
+/// The percentage of statements that `Gen::sorted_column` replaces by a column in the order of
+/// a two-key sort, printed or exported.
+const SORTED_COLUMN_PERCENT: usize = 8;
+
+/// The percentage of statements that `Gen::top_k` replaces by `slice(argsort(...), s, e)`,
+/// the shape that the top-k kernels fuse, printed or exported.
+const TOP_K_PERCENT: usize = 4;
+
+/// The percentage of generic `argsort` draws that take two key columns.
+const ARGSORT_TWO_KEYS: usize = 60;
+
 const CMPS: [Op; 6] = [Op::Lt, Op::Gt, Op::Le, Op::Ge, Op::Eq, Op::Ne];
 
 /// The nesting of bindings read more than once, see `Gen::share_depth`, beyond which a
@@ -452,6 +467,26 @@ impl<'a> Gen<'a, '_> {
                 e = chain;
                 reduce_chain = true;
             }
+            // A sort permutation that a reduction consumes hides the order of ties, so some
+            // statements print or export a column in the order of a two-key sort. A let could
+            // stay unread, so such a statement is never one.
+            let kind = if self.c.flip(SORTED_COLUMN_PERCENT)
+                && let Some(sorted) = self.sorted_column(&mut cx)
+            {
+                e = sorted;
+                if kind == "let" { "export" } else { kind }
+            } else {
+                kind
+            };
+            // The first positions of a sort are never a let for the same reason.
+            let kind = if self.c.flip(TOP_K_PERCENT)
+                && let Some(top) = self.top_k(&mut cx)
+            {
+                e = top;
+                if kind == "let" { "export" } else { kind }
+            } else {
+                kind
+            };
             // Bindings read more than once that nest deeply grow the term as a tree
             // exponentially. Lowering and planning share them in graphs (#39), and the
             // histogram counts the programs that exercise this.
@@ -936,6 +971,16 @@ impl<'a> Gen<'a, '_> {
         if sigs.is_empty() {
             return None;
         }
+        // `argsort` has 4 one-key and 16 two-key signatures, so the arity is picked first to
+        // keep one-key sorts common.
+        let sigs = if sigs.iter().any(|s| s.op == Op::ArgSort) {
+            let keys = if self.c.flip(ARGSORT_TWO_KEYS) { 2 } else { 1 };
+            sigs.into_iter()
+                .filter(|s| s.op != Op::ArgSort || s.inputs.len() == keys)
+                .collect()
+        } else {
+            sigs
+        };
         let sig = (*self.c.pick(&sigs)).clone();
         // Elementwise kernels with an array result take an array or a scalar at each `Either`
         // position, at least one an array.

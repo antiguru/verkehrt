@@ -59,6 +59,10 @@ struct Flags {
     /// instead of updating it with each tile of the chain
     #[arg(long)]
     no_reduction_fusion: bool,
+    /// Lower `argsort(a, b)` into two single-key sorts and gathers, instead of one kernel
+    /// that sorts on both keys
+    #[arg(long)]
+    no_composite_sort: bool,
     /// Print the plan of each statement to stderr
     #[arg(long)]
     plan: bool,
@@ -90,6 +94,7 @@ impl Flags {
             no_sharing: self.no_sharing,
             no_selective: self.no_selective,
             no_reduction_fusion: self.no_reduction_fusion,
+            no_composite_sort: self.no_composite_sort,
         }
     }
 

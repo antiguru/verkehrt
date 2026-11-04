@@ -474,6 +474,7 @@ impl Registry {
         scalar::reduce::register(&mut reg);
         scalar::select::register(&mut reg);
         scalar::scan::register(&mut reg);
+        scalar::sort::register(&mut reg);
         scalar::index::register(&mut reg);
         scalar::group::register(&mut reg);
         scalar::construct::register(&mut reg);

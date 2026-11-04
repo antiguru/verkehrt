@@ -969,6 +969,95 @@ fn tier2_group(c: &mut Criterion) {
     }
 }
 
+/// The cut sizes `e` of the `tier2/topk-*` groups, or the comma-separated list in
+/// `VERKEHRT_TOPK_E`, which the `TOPK_MAX` sweep uses.
+fn topk_cuts() -> Vec<usize> {
+    match std::env::var("VERKEHRT_TOPK_E") {
+        Ok(list) => list.split(',').map(|e| e.parse().unwrap()).collect(),
+        Err(_) => vec![10, 64],
+    }
+}
+
+/// The groups `tier2/topk-<cols>-<shape>-e<e>-<size>` and the matching `topk2` groups, the
+/// fused `slice(argsort(...), 0, e)` against the unfused plan, at 80,000 and 1M rows. The
+/// shapes are uniform keys and descending keys, the worst case of the selection, where every
+/// row enters the buffer. The second column of the pair is a full-range key under the first,
+/// which has ties. Throughput is the key bytes read.
+fn tier2_topk(c: &mut Criterion) {
+    let new = |no_fusion| {
+        Interpreter::new(Options {
+            no_fusion,
+            ..Options::default()
+        })
+        .unwrap()
+    };
+    let variants = [
+        Interp {
+            label: "topk".into(),
+            interp: new(false),
+            intrinsics: false,
+        },
+        Interp {
+            label: "argsort-slice".into(),
+            interp: new(true),
+            intrinsics: false,
+        },
+    ];
+    let both: Vec<&Interp> = variants.iter().collect();
+    for (size, n) in [("80k", 80_000usize), ("1M", 1_000_000)] {
+        let top = i64::try_from(n).unwrap();
+        // The first column, with 1,000 distinct values under `uniform`, and the second.
+        let shapes: [(&str, Vec<i64>, Vec<i64>); 2] = [
+            (
+                "uniform",
+                splitmix(n, 21, |r| (r % 1000) as i64),
+                splitmix(n, 22, u64::cast_signed),
+            ),
+            (
+                "descending",
+                (0..top).map(|i| (top - i) / 4).collect(),
+                (0..top).map(|i| -i).collect(),
+            ),
+        ];
+        for (shape, x, y) in &shapes {
+            let xv = Value::Array(Array::from_vec(x.clone()));
+            let yv = Value::Array(Array::from_vec(y.clone()));
+            let mut one: Vec<i64> = (0..top).collect();
+            one.sort_by_key(|&i| (x[i as usize], i));
+            let mut two: Vec<i64> = (0..top).collect();
+            two.sort_by_key(|&i| (x[i as usize], y[i as usize], i));
+            for e in topk_cuts() {
+                let cols = [
+                    (
+                        "topk",
+                        format!("input x: i64[]; export o = slice(argsort(x), 0, {e});"),
+                        vec![("x", xv.clone())],
+                        &one,
+                        8 * n,
+                    ),
+                    (
+                        "topk2",
+                        format!(
+                            "input x: i64[]; input y: i64[]; \
+                             export o = slice(argsort(x, y), 0, {e});"
+                        ),
+                        vec![("x", xv.clone()), ("y", yv.clone())],
+                        &two,
+                        16 * n,
+                    ),
+                ];
+                for (name, src, ins, sorted, bytes) in cols {
+                    let mut g = c.benchmark_group(format!("tier2/{name}-{shape}-e{e}-{size}"));
+                    configure(&mut g);
+                    g.throughput(Throughput::Bytes(u64::try_from(bytes).unwrap()));
+                    interp_variants(&mut g, &both, &src, &ins, &sorted[..e]);
+                    g.finish();
+                }
+            }
+        }
+    }
+}
+
 /// The tier 2 kernels at `N` rows. Each group has the scalar and auto variants, the
 /// intrinsics variants where the kernel has intrinsics entries, and, for the kernels the spec
 /// names, native loops per ISA. Throughput is input bytes read, as in `tier1`.
@@ -1342,5 +1431,5 @@ fn crossover(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, tier1, tier2, tier2_group, crossover);
+criterion_group!(benches, tier1, tier2, tier2_group, tier2_topk, crossover);
 criterion_main!(benches);

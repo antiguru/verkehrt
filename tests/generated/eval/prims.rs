@@ -1,6 +1,7 @@
 //! The primitives on evaluated operands: elementwise operations with broadcasting, the
 //! reductions in the canonical float order, the scans, and the tier 2 primitives.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -415,6 +416,27 @@ fn group_id(cols: &[Val]) -> Result<Val, Stop> {
     Ok(array(ScalarType::I64, result))
 }
 
+/// `argsort`: the positions of the rows in ascending order of the first column, ties broken by
+/// the next column, then by position. The columns must be equally long.
+fn argsort(cols: &[Val]) -> Result<Val, Stop> {
+    let cols: Vec<&[Scalar]> = cols.iter().map(rows).collect();
+    let n = cols[0].len();
+    if let Some(c) = cols.iter().find(|c| c.len() != n) {
+        return Err(mismatch(n, c.len()));
+    }
+    let mut order: Vec<usize> = (0..n).collect();
+    // A stable sort keeps equal keys in position order.
+    order.sort_by(|&a, &b| {
+        cols.iter()
+            .map(|c| compare(&c[a], &c[b]).expect("argsort keys are ordered"))
+            .fold(Ordering::Equal, Ordering::then)
+    });
+    Ok(array(
+        ScalarType::I64,
+        order.into_iter().map(index).collect(),
+    ))
+}
+
 /// Applies the primitive `op` to evaluated operands. `ty` is the type of the expression.
 pub fn apply(op: Op, args: &[Val], ty: ValueType) -> Result<Val, Stop> {
     let out = elem(ty);
@@ -514,16 +536,7 @@ pub fn apply(op: Op, args: &[Val], ty: ValueType) -> Result<Val, Stop> {
             Ok(array(out, xs[s..e].to_vec()))
         }
         Op::Histogram => histogram(&args[0], int(1)),
-        Op::ArgSort => {
-            let xs = rows(&args[0]);
-            let mut order: Vec<usize> = (0..xs.len()).collect();
-            // A stable sort keeps equal keys in position order.
-            order.sort_by(|&a, &b| compare(&xs[a], &xs[b]).expect("argsort keys are ordered"));
-            Ok(array(
-                ScalarType::I64,
-                order.into_iter().map(index).collect(),
-            ))
-        }
+        Op::ArgSort => argsort(args),
         Op::GroupId => group_id(args),
         Op::RandI64 | Op::RandF64 => rand(int(0), int(1), out),
         Op::Load(_) => Err(Stop::Unsupported("load".to_string())),

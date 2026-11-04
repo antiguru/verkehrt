@@ -277,3 +277,81 @@ fn classes_and_costs_follow_the_brief() {
         "(reduce_add_f64 (select_f64 (gt_f64 ?x (Bcast ?c)) ?x (Bcast ?e)))"
     );
 }
+
+/// Cut bounds that are in range most of the time, around the selection limit and the length.
+fn topk_bounds(n: usize) -> BoxedStrategy<(i64, i64)> {
+    let top = i64::try_from(n).expect("length fits");
+    prop_oneof![
+        8 => (0..=top.min(70)).prop_flat_map(|e| (0..=e, Just(e))),
+        2 => (0..=top).prop_flat_map(|e| (0..=e, Just(e))),
+        1 => (-2i64..top + 3, -2i64..top + 3),
+    ]
+    .boxed()
+}
+
+/// A column of `n` keys of type `ty`, drawn from a small range so that keys tie.
+fn topk_column(ty: ScalarType, n: usize) -> BoxedStrategy<Array> {
+    match ty {
+        ScalarType::I64 => vec(-4i64..4, n).prop_map(Array::from_vec).boxed(),
+        ScalarType::U64 => vec(0u64..6, n).prop_map(Array::from_vec).boxed(),
+        ScalarType::I32 => vec(-4i32..4, n).prop_map(Array::from_vec).boxed(),
+        ScalarType::U8 => vec(0u8..6, n).prop_map(Array::from_vec).boxed(),
+        other => panic!("no key column of {other:?}"),
+    }
+}
+
+#[test]
+fn topk_matches_oracle() {
+    let reg = Registry::new();
+    let ids: Vec<KernelId> = reg
+        .iter()
+        .filter(|(_, d)| d.pattern.is_some() && d.name.starts_with("topk"))
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        ids.len(),
+        20,
+        "four one-column and sixteen two-column kernels"
+    );
+    let dispatch = reg.resolve(Isa::Scalar, Backend::Auto, FeatureSet::EMPTY);
+    for id in ids {
+        let def = reg.get(id);
+        let keys: Vec<ScalarType> = def
+            .inputs
+            .iter()
+            .filter_map(|s| match s {
+                InputSpec::Array(t) => Some(*t),
+                _ => None,
+            })
+            .collect();
+        let strategy = prop_oneof![
+            1 => Just(0usize),
+            1 => Just(65usize),
+            6 => 0..=MAX_LEN,
+        ]
+        .prop_flat_map(move |n| {
+            let cols: Vec<_> = keys.iter().map(|&t| topk_column(t, n)).collect();
+            (cols, topk_bounds(n))
+        });
+        let mut runner = TestRunner::new(Config {
+            cases: CASES,
+            failure_persistence: None,
+            ..Config::default()
+        });
+        runner
+            .run(&strategy, |(cols, (s, e))| {
+                let mut args: Vec<Value> = cols.into_iter().map(Value::Array).collect();
+                args.push(Value::Scalar(Scalar::I64(s)));
+                args.push(Value::Scalar(Scalar::I64(e)));
+                let got = dispatch.call(&reg, id, &args);
+                let want = reference(&reg, id, &args);
+                match (&got, &want) {
+                    (Ok(g), Ok(w)) => prop_assert!(same(w, g), "{}: {s}..{e}", def.name),
+                    (Err(g), Err(w)) => prop_assert_eq!(g, w),
+                    _ => prop_assert!(false, "{}: {got:?} against {want:?}", def.name),
+                }
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{}: {e}", def.name));
+    }
+}

@@ -87,6 +87,7 @@ The `intrinsics` backend holds hand-written kernels and exists only where one wa
 `--no-sharing` evaluates a plan node every time a statement reaches it instead of once per run, which changes kernel call counts only.
 `--no-selective` runs the right operand of `and` and `or` over every row of a tile instead of only over the rows the left operand leaves open, and changes no value and no error.
 `--no-reduction-fusion` writes the elementwise argument of a reduction to a full array before reducing it, instead of feeding the reduction one tile at a time, and changes no value and no error.
+`--no-composite-sort` lowers `argsort(a, b)` into two single-key sorts and gathers instead of one kernel that sorts on both keys, and changes no value.
 `--disable FEATURE` treats a CPU feature such as `avx512vbmi2` as absent and can be repeated.
 Kernel entries that need a disabled feature are not selected, and `--isa` rejects a level that needs one.
 A feature this CPU does not report prints a note, because disabling it has no effect.

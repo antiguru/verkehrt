@@ -1,0 +1,48 @@
+// sql: SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits WHERE SearchPhrase <> ''
+// sql:   GROUP BY WatchID, ClientIP ORDER BY c DESC, WatchID, ClientIP LIMIT 10
+// output: [i,i,u,u,f]
+input WatchID: i64[];
+input ClientIP: i64[];
+input IsRefresh: i64[];
+input ResolutionWidth: i64[];
+input SearchPhrase_ends: i64[];
+
+// A row's phrase length is the difference of its end offset and the previous one, and
+// SearchPhrase <> '' means that length is nonzero.
+let keep = (SearchPhrase_ends - prev(SearchPhrase_ends, 0)) > 0;
+let k0 = compress(WatchID, keep);
+let ip0 = compress(ClientIP, keep);
+let r0 = compress(IsRefresh, keep);
+let w0 = compress(ResolutionWidth, keep);
+// Group by sorting. `argsort` is stable, so sorting by the minor key (ClientIP) first and the major
+// key second orders the rows by (WatchID, ClientIP).
+let o1 = argsort(ip0);
+let k1 = gather(k0, o1);
+let ip1 = gather(ip0, o1);
+let r1 = gather(r0, o1);
+let w1 = gather(w0, o1);
+let o2 = argsort(k1);
+let k = gather(k1, o2);
+let ip = gather(ip1, o2);
+let r = gather(r1, o2);
+let w = gather(w1, o2);
+// A row starts a group when either key differs from the previous row, or when it is the first row.
+// An empty filter gives no rows, no groups, and empty outputs.
+let n = length(k);
+let start = or(or(k != prev(k, 0), ip != prev(ip, 0)), iota(n) == 0);
+let ng = count(start);
+let gid = scan(cast_i64(start), add) - 1;
+let counts = reduce_into(gid, (gid * 0) + 1, ng, add);
+let refreshes = reduce_into(gid, r, ng, add);
+let widths = reduce_into(gid, w, ng, add);
+let gk = compress(k, start);
+let gip = compress(ip, start);
+// The groups are in (WatchID, ClientIP) order, so a stable sort on descending counts breaks ties by key.
+let order = argsort(0 - counts);
+let top = slice(order, 0, min(ng, 10));
+let tc = gather(counts, top);
+export WatchID = gather(gk, top);
+export ClientIP = gather(gip, top);
+export c = tc;
+export IsRefresh = gather(refreshes, top);
+export ResolutionWidth = cast_f64(gather(widths, top)) / cast_f64(tc);

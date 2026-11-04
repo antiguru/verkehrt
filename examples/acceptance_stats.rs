@@ -6,7 +6,9 @@
 //! `tpch/q06`, which reads `VERKEHRT_TPCH` instead. `VERKEHRT_TILE_ROWS` is `off` or a tile row
 //! count and replaces the default tiling, `VERKEHRT_SHARING=off` turns shared evaluation off,
 //! `VERKEHRT_SELECTIVE=off` turns selective evaluation off, and `VERKEHRT_REDUCTION_FUSION=off`
-//! turns fused reductions off. The columns load as the
+//! turns fused reductions off, and `VERKEHRT_COMPOSITE_SORT=off` lowers two-column `argsort` into
+//! two single-key sorts, and `VERKEHRT_PROGRAMS=DIR` reads the programs from `DIR/SUITE` instead of
+//! `tests/acceptance/SUITE`. The columns load as the
 //! acceptance bench loads them and are bound as interpreter globals, so `Interpreter::run`
 //! collects the statistics that `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
 //! with the least total kernel time prints, with the number of region runs that completed tiled
@@ -19,8 +21,8 @@ use std::io::sink;
 use std::path::Path;
 
 use verkehrt::columns::{
-    CLICKBENCH_SIGNED, load_inputs, reduction_fusion_from_env, selective_from_env,
-    sharing_from_env, tiling_from_env,
+    CLICKBENCH_SIGNED, composite_sort_from_env, load_inputs, reduction_fusion_from_env,
+    selective_from_env, sharing_from_env, tiling_from_env,
 };
 use verkehrt::kernels::Isa;
 use verkehrt::{Interpreter, Options};
@@ -42,10 +44,12 @@ fn main() {
         ),
     };
     let dir = std::env::var_os(var).unwrap_or_else(|| panic!("set {var}"));
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/acceptance")
-        .join(suite)
-        .join(format!("{program}.vk"));
+    // `VERKEHRT_PROGRAMS=DIR` reads `DIR/SUITE/PROGRAM.vk` instead, as the acceptance bench does.
+    let programs = std::env::var_os("VERKEHRT_PROGRAMS").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/acceptance"),
+        std::path::PathBuf::from,
+    );
+    let path = programs.join(suite).join(format!("{program}.vk"));
     let src = std::fs::read_to_string(&path).unwrap();
     let options = || Options {
         isa,
@@ -54,6 +58,7 @@ fn main() {
         no_sharing: !sharing_from_env(),
         no_selective: !selective_from_env(),
         no_reduction_fusion: !reduction_fusion_from_env(),
+        no_composite_sort: !composite_sort_from_env(),
         ..Options::default()
     };
     let prepared = Interpreter::new(options()).unwrap().prepare(&src).unwrap();

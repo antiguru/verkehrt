@@ -757,3 +757,49 @@ fn io_error_in_unread_binding_fails_at_once() {
     assert_eq!(e.kind, ErrorKind::Io);
     assert!(out.is_empty());
 }
+
+/// Runs the program with and without `no_composite_sort`, checks that both runs print and fail
+/// alike, and returns the output.
+fn composite_sort_both_ways(src: &str) -> String {
+    let run = |no_composite_sort| {
+        run_with(
+            Options {
+                no_composite_sort,
+                ..scalar_opts()
+            },
+            src,
+        )
+    };
+    let (on, off) = (run(false), run(true));
+    assert_eq!(on.1, off.1, "output of\n{src}");
+    let err = |r: &Result<(), verkehrt::error::Error>| {
+        r.as_ref()
+            .err()
+            .map(|e| (e.kind, e.message.clone(), e.span))
+    };
+    assert_eq!(err(&on.0), err(&off.0), "error of\n{src}");
+    off.1
+}
+
+#[test]
+fn no_composite_sort_matches_the_composite_kernel_on_ties() {
+    // Ties in the first key keep the order of the second, and ties in both keep row order.
+    let out = composite_sort_both_ways(
+        "let a = [2, 1, 2, 1, 2, 1, 2];\nlet b = [5, 9, 5, 3, 1, 9, 5];\nprint(argsort(a, b));\n",
+    );
+    assert_eq!(out, "[3, 1, 5, 4, 0, 2, 6]\n");
+}
+
+#[test]
+fn composite_sort_length_mismatch_is_the_same_in_both_modes() {
+    let src = "let a = [1, 2, 3];\nlet b = [1, 2];\nprint(argsort(a, b));\n";
+    let (r, _, _) = run_with(
+        Options {
+            no_composite_sort: true,
+            ..scalar_opts()
+        },
+        src,
+    );
+    assert_eq!(r.unwrap_err().message, "length mismatch: 3 vs 2");
+    assert_eq!(composite_sort_both_ways(src), "");
+}

@@ -10,7 +10,10 @@ use crate::error::Error;
 use crate::exec::{Env, Observe, Plan, Sinks, Stats, Strategy, Tiling, run_plan};
 use crate::kernels::{Backend, Dispatch, FeatureSet, Isa, Registry};
 use crate::lower::{Mode, lower};
-use crate::plan::{PlanContext, PlanShapes, Planner, SumRewrite, render, render_leaf};
+use crate::plan::{
+    PlanContext, PlanId, PlanNode, PlanShapes, Planner, SumRewrite, for_each_child, render,
+    render_leaf,
+};
 use crate::syntax::parse;
 use crate::value::{Value, ValueType};
 
@@ -52,6 +55,10 @@ pub struct Options {
     /// instead of updating it with each tile of the chain, see `Strategy::fuse_reductions`.
     /// It changes no value and no error.
     pub no_reduction_fusion: bool,
+    /// Lower `argsort(a, b)` into two single-key sorts and gathers instead of one composite
+    /// kernel. It changes no value, and no error except which operand's error surfaces when
+    /// both fail.
+    pub no_composite_sort: bool,
 }
 
 impl Options {
@@ -277,7 +284,13 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
-        let lowered = lower(&typed, globals, &self.reg, mode)?;
+        let lowered = lower(
+            &typed,
+            globals,
+            &self.reg,
+            mode,
+            !self.opts.no_composite_sort,
+        )?;
         // One context for the whole program, so a term repeated across statements is planned
         // once and its plan is one node of the plan graph.
         let mut cx = PlanContext::default();
@@ -436,6 +449,28 @@ impl Prepared {
             .iter()
             .zip(&b.roots)
             .all(|(ra, rb)| sa[ra.index()] == sb[rb.index()])
+    }
+
+    /// Whether a root of the plan reaches a kernel of `interp`'s registry whose name starts
+    /// with `prefix`. It walks the plan graph once, so it costs no planning. This is a test
+    /// hook.
+    pub fn plans_kernel(&self, interp: &Interpreter, prefix: &str) -> bool {
+        let graph = &self.plan.graph;
+        let mut seen = vec![false; graph.len()];
+        let mut stack: Vec<PlanId> = self.plan.roots.clone();
+        while let Some(id) = stack.pop() {
+            if std::mem::replace(&mut seen[id.index()], true) {
+                continue;
+            }
+            let node = graph.node(id);
+            if let PlanNode::Kernel(k, _) = node
+                && interp.reg.get(*k).name.starts_with(prefix)
+            {
+                return true;
+            }
+            for_each_child(node, |c| stack.push(c));
+        }
+        false
     }
 
     /// Runs the program on `inputs` and returns its exports in source order. Every declared

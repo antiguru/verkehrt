@@ -3,7 +3,7 @@
 use verkehrt::ops::Op;
 use verkehrt::value::{ScalarType, ValueType};
 
-use super::{Ctx, E, Gen, INTS, Len, Sig, spec_elem};
+use super::{Ctx, E, Gen, INDICES_TWO_KEYS, INTS, Len, Sig, spec_elem};
 
 /// Keys for `histogram` and `reduce_into`, see `Gen::keys`.
 pub(super) struct Keys {
@@ -119,11 +119,21 @@ impl Gen<'_, '_> {
     pub(super) fn indices(&mut self, cx: &mut Ctx, of: Len, len: Option<Len>) -> Option<E> {
         let i64a = ValueType::Array(ScalarType::I64);
         let fixed = len.is_some();
-        match self.c.weighted(&[3, 2, usize::from(!fixed) * 2, 1]) {
+        match self
+            .c
+            .weighted(&[3, 2, usize::from(!fixed) * 2, 1, INDICES_TWO_KEYS])
+        {
             0 => {
                 let k = *self.c.pick(&INTS);
                 let y = self.expr(cx, ValueType::Array(k), Some(of));
                 self.op(cx, Op::ArgSort, vec![y], None)
+            }
+            4 => {
+                // A sort permutation by two key columns of the class.
+                let (ka, kb) = (*self.c.pick(&INTS), *self.c.pick(&INTS));
+                let a = self.expr(cx, ValueType::Array(ka), Some(of));
+                let b = self.expr(cx, ValueType::Array(kb), Some(of));
+                self.op(cx, Op::ArgSort, vec![a, b], None)
             }
             1 => {
                 let n = self.length_of(cx, of)?;
@@ -149,6 +159,27 @@ impl Gen<'_, '_> {
                 self.op(cx, Op::Gather, vec![x, idx], l)
             })
             .filter(|e| len.is_none() || e.len == len);
+        self.finish(cx, binding, r)
+    }
+
+    /// `gather(x, argsort(a, b))` with keys of the class of `x`: a column in the order of a
+    /// two-key sort, which a statement prints or exports so that the order of ties is
+    /// observable, unlike a permutation that a reduction consumes. Outside lambdas only.
+    pub(super) fn sorted_column(&mut self, cx: &mut Ctx) -> Option<E> {
+        if cx.lambda {
+            return None;
+        }
+        let t = self.ty();
+        let x = self.expr(cx, ValueType::Array(t), None);
+        let (x, binding) = self.anchor(cx, x);
+        let of = x.len.expect("an array has a length");
+        let (ka, kb) = (*self.c.pick(&INTS), *self.c.pick(&INTS));
+        let a = self.expr(cx, ValueType::Array(ka), Some(of));
+        let b = self.expr(cx, ValueType::Array(kb), Some(of));
+        let r = self.op(cx, Op::ArgSort, vec![a, b], None).and_then(|idx| {
+            let l = idx.len;
+            self.op(cx, Op::Gather, vec![x, idx], l)
+        });
         self.finish(cx, binding, r)
     }
 
@@ -186,6 +217,42 @@ impl Gen<'_, '_> {
                 self.op(cx, Op::Slice, vec![x, a, b], Some(fresh))
             }
         };
+        self.finish(cx, binding, r)
+    }
+
+    /// `slice(argsort(...), s, e)` over one or two key columns, the shape that the top-k
+    /// kernels fuse, which a statement prints or exports. The bounds are usually in range and
+    /// the cut is short, so that the selection runs, and rarely out of range, an error.
+    /// Outside lambdas only.
+    pub(super) fn top_k(&mut self, cx: &mut Ctx) -> Option<E> {
+        if cx.lambda {
+            return None;
+        }
+        let ka = *self.c.pick(&INTS);
+        let a = self.expr(cx, ValueType::Array(ka), None);
+        let (a, binding) = self.anchor(cx, a);
+        let of = a.len.expect("an array has a length");
+        let sorted = if self.c.flip(50) {
+            let kb = *self.c.pick(&INTS);
+            let b = self.expr(cx, ValueType::Array(kb), Some(of));
+            self.op(cx, Op::ArgSort, vec![a, b], None)
+        } else {
+            self.op(cx, Op::ArgSort, vec![a], None)
+        };
+        let r = sorted.and_then(|sorted| match of {
+            Len::Known(n) => {
+                let e = self.c.below(n.min(70) + 1);
+                let s = self.c.below(e + 1);
+                let (ls, le) = (self.lit_i64(s), self.lit_i64(e));
+                self.op(cx, Op::Slice, vec![sorted, ls, le], Some(Len::Known(e - s)))
+            }
+            Len::Class(_) => {
+                let e = self.c.below(5);
+                let (ls, le) = (self.lit_i64(0), self.lit_i64(e));
+                let fresh = self.fresh_class();
+                self.op(cx, Op::Slice, vec![sorted, ls, le], Some(fresh))
+            }
+        });
         self.finish(cx, binding, r)
     }
 
