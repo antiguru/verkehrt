@@ -7,7 +7,8 @@
 //! count and replaces the default tiling, `VERKEHRT_SHARING=off` turns shared evaluation off,
 //! `VERKEHRT_SELECTIVE=off` turns selective evaluation off, and `VERKEHRT_REDUCTION_FUSION=off`
 //! turns fused reductions off, and `VERKEHRT_COMPOSITE_SORT=off` lowers two-column `argsort` into
-//! two single-key sorts. The columns load as the
+//! two single-key sorts, and `VERKEHRT_PROGRAMS=DIR` reads the programs from `DIR/SUITE` instead of
+//! `tests/acceptance/SUITE`. The columns load as the
 //! acceptance bench loads them and are bound as interpreter globals, so `Interpreter::run`
 //! collects the statistics that `Prepared::execute` does not. The query runs five times on fresh interpreters, and the run
 //! with the least total kernel time prints, with the number of region runs that completed tiled
@@ -43,10 +44,12 @@ fn main() {
         ),
     };
     let dir = std::env::var_os(var).unwrap_or_else(|| panic!("set {var}"));
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/acceptance")
-        .join(suite)
-        .join(format!("{program}.vk"));
+    // `VERKEHRT_PROGRAMS=DIR` reads `DIR/SUITE/PROGRAM.vk` instead, as the acceptance bench does.
+    let programs = std::env::var_os("VERKEHRT_PROGRAMS").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/acceptance"),
+        std::path::PathBuf::from,
+    );
+    let path = programs.join(suite).join(format!("{program}.vk"));
     let src = std::fs::read_to_string(&path).unwrap();
     let options = || Options {
         isa,
