@@ -14,7 +14,7 @@ Percentage changes are time reductions, 1 - new/old, with "new" the rewritten qu
 | CPU | AMD Ryzen AI MAX+ 395 (Zen 5, 32 logical CPUs), AVX2 and AVX-512 |
 | Frequency scaling | boost off, governor `powersave`, 2 to 3 GHz (user-reported, the sandbox cannot read cpufreq) |
 | Profile | release (LTO, `codegen-units = 4`), `CARGO_INCREMENTAL=0` |
-| Verkehrt | the composite-keys branch after the top-k kernels, one build for every run |
+| Verkehrt | the composite-keys branch after the top-k kernels, same source and configuration for every run, rebuilt once for `bench-old-3.txt` (same bench binary hash) |
 | Old programs | `2026-11-03-composite-keys/programs-before/clickbench/`, byte copies of the five files before the rewrite, read through `VERKEHRT_PROGRAMS` |
 | New programs | `2026-11-03-composite-keys/programs/clickbench/q15.vk` and `q35.vk` (kept) and `programs-rejected/clickbench/q30.vk`, `q31.vk`, `q32.vk` (reverted) |
 | corgi and DuckDB | the one-thread figures of `2026-11-01-group-id-queries.md`, taken on another day |
@@ -32,11 +32,12 @@ Other work shares the host, and its load swung between 2.5 and 60 during this ta
 The raw output is in `docs/measurements/2026-11-03-composite-keys/`.
 
 * `bench-old-1.txt`, `bench-new-1.txt`, `bench-new-2.txt`, `bench-old-2.txt`, `bench-old-3.txt`, `bench-new-3.txt`: criterion logs, in the order of the interleaved passes (old 1, new 1, new 2, old 2, old 3, new 3). Load at the start and end: old 1 2.14 to 2.62, new 1 2.57 to 5.48, new 2 3.64 to 4.04, old 2 2.70 to 7.80, old 3 5.60 to 4.00, new 3 3.76 to 5.62.
-* `discarded-bench-old-2-load-14.txt`, `discarded-bench-old-2-load-43.txt`, `discarded-bench-old-2-load-14b.txt`: three discarded attempts at old 2 that ended at load 14.33, 43.22 and 13.93, with q32 up to 147 ms against 62 to 73 ms in the kept passes. A fourth attempt (ended at load 11.12) and the first new 2 (ended at load 16.14) were overwritten by their repeats and are not kept, so `bench-new-2.txt` is the repeat.
+* `discarded-bench-old-2-load-11.txt`, `discarded-bench-old-2-load-14.txt`, `discarded-bench-old-2-load-43.txt`: three discarded attempts at old 2 that ended at load 11.12, 13.93 and 43.22, with q32 up to 147 ms against 62 to 73 ms in the kept passes. The file names carry the end load rounded to whole numbers. A fourth discarded attempt (ended at load 14.33) and the first new 2 (ended at load 16.14) were overwritten by their repeats and are not kept, so `bench-new-2.txt` is the repeat.
 * `stats-before.txt`, `stats-after.txt`, `stats-q32-composite-off.txt`: per-kernel totals, best of five runs. `stats-after.txt` holds all five rewrites, including the three reverted ones. Load 2.49 to 2.81 across the three files.
-* `plans-before.txt`, `plans-after.txt`: `acceptance_plans` output before and after the five rewrites. Load 1.95 and 8.18 at the start.
+* `plans-before.txt`, `plans-five-rewrites.txt`, `plans-after.txt`: `acceptance_plans` output before the rewrites, with all five rewrites, and on the final tree with only q15 and q35 rewritten. Load at the start 1.95, 8.18 and 17.37, and the plans do not depend on load.
 * `probe-q32-columns.txt`: extents, composite width, record layout and active radix passes of the two q32 sort columns. Load 6.59.
 * `probe-q32-sort-timing.txt`: kernel time of `argsort(WatchID, ClientIP)`, `argsort(WatchID)` and `argsort(ClientIP)` on the real columns, on uniform columns with the same extents, and on the real columns shuffled independently. Load 7.34 to 7.23.
+* `probe/`: the sources of both probes, run with `probe/run.sh DATA SCRATCH` from the repository root, where `DATA` is the ClickBench data directory of the earlier rounds. See "Reproducing the probes" below.
 
 ## Results
 
@@ -122,18 +123,26 @@ That saves 0.9 and 0.7 ms of kernel time, and the summed totals fall 1.1 and 0.7
 
 ### The `acceptance_plans` diff
 
-`plans-before.txt` and `plans-after.txt` differ only in the five rewritten queries.
+`plans-before.txt` and `plans-five-rewrites.txt` differ only in the five rewritten queries, and `plans-before.txt` and `plans-after.txt`, taken on the final tree, differ only in q15 and q35 and in the harness's timing and load lines (checked with `diff`).
 In q32, q31 and q30 the two `argsort_i64` and the second set of gathers become one `argsort2_i64_i64` and one gather set.
 In q15 and q35 the old `argsort_i64` of the keys and `topk_i64` over a gathered count vector become one `topk2_i64_i64` over `(0 - counts, gk)`.
 No other query's plan changes, which a per-query comparison of the two files confirms.
-`plans-after.txt` still shows the three reverted rewrites, because it was taken before the restore, and the committed programs of those queries are the old ones.
+`plans-five-rewrites.txt` still shows the three reverted rewrites, because it was taken before the restore, and the analysis of q32, q31 and q30 above reads it. `plans-after.txt` was produced on the final tree with `acceptance_plans -- --ignored --nocapture`, where the committed programs of those three queries are the old ones.
 
 ## Gaps
 
 * **The in-situ gap of q32.** The designer's probe, quoted from the spec's "Evidence" section, put the grouping stage of q32 at 48.0 to 53.0 ms for the two-sort form and 34.7 to 37.1 ms for a single sort over 16-byte records and four gathers, a saving of 13.1 to 17.4 ms, and the sort alone at 27.4 ms against 35.3 ms. The kernel measures 40.9 ms for the sort in situ and 32.9 ms for the two single-key sorts, and the statistics show the kernel 8.1 ms above the two sorts (40.9 against 32.9 ms) and the gathers 10.8 ms below (9.3 against 20.1 ms), so the net saving is 1.4 ms of kernel time. The measured facts are in `probe-q32-columns.txt` and `probe-q32-sort-timing.txt`. The probe columns are as the designer assumed: WatchID spans 62 bits and ClientIP 32 bits as radix images, so the composite image is 94 bits, the kernel picks the 16-byte record (`R16`), and the sort makes 12 active passes against 8 and 8 for the two single sorts. The kernel nevertheless takes 3.4 ms per pass in situ, against 2.0 ms per pass for `argsort(WatchID)` and 2.2 ms for `argsort(ClientIP)`, so each composite pass costs 1.5 to 1.7 times a single-key pass of the same record size.
 * **What the timing probe separates.** On uniform columns with the same extents the kernel takes 37.0 ms (3.1 ms per pass) and the single sorts 16.1 and 13.3 ms. On the real columns shuffled independently the kernel takes 40.2 ms and the single sorts 16.3 and 16.8 ms. The real ClientIP has 68,330 distinct values in 1M rows, and both the real and the shuffled column are slower than the uniform one, so skew costs 3.2 to 4.7 ms in either sort, against a gap of 6.8 ms between the kernel and the two sorts on the real columns, and does not explain it. The per-pass cost is high on uniform columns as well, so the cost is in the composite kernel, not in the data. The designer's copy of `radix_into` for 16-byte records was faster per pass than this kernel (27.4 ms for the sort alone), and the difference between the probe and the kernel is not measured.
-* **Hypothesis, not measured.** The kernel computes the 128-bit composite image per row with a shift and mask in the counting pass over all 12 digits and again in every scatter pass, and `R16::digit` branches on the shift to pick the low or high word. Either could cost per pass what the designer's probe, which kept a fixed record, did not. No per-pass profile of the kernel was taken, so this stays a hypothesis, and the gap goes to its own follow-up issue.
+* **Hypothesis, not measured.** The kernel computes the 128-bit composite image per row with a shift and mask in the counting pass over all 12 digits and again in the first scatter pass, since only the counting pass and the first scatter call `keys()` and later passes read the stored records. `R16::digit` also branches on the shift to pick the low or high word in every pass. Either could cost per pass what the designer's probe, which kept a fixed record, did not, and the branch is the likelier cost because it runs in every pass. No per-pass profile of the kernel was taken, so this stays a hypothesis, and the gap goes to its own follow-up issue.
 * **The #9 gap.** The spec's probe also reproduced the in-situ slowdown of `argsort_i64` on real UserID columns, and q32's `argsort(WatchID)` and `argsort(ClientIP)` on the real columns take 16.3 and 18.0 ms against 16.1 and 13.3 ms on uniform columns, so ClientIP shows it at 35% and WatchID, which is unique, does not. That agrees with the designer's inference about runs of equal digits and does not test it.
 * **q31 and q30 passes.** The plan's single pair for q31 and q30 became three passes, because every file covers all five queries, so the three-pass spread is the larger sample and no repeat was needed.
 * **Load.** Four runs of old 2 and two of new 2 ended at load 7 to 43 and are discarded, and the kept old 2 started at load 2.70 and ended at 7.80. Its q32 times run 3% to 12% above old 1 and old 3, the same direction as drift on the host, so the q32 spread across passes of up to 14% may be host load rather than the build, and the q32 decision rests on that.
 * **Unverified claims.** The corgi and DuckDB ratios divide this run's times by figures from another day.
+
+## Reproducing the probes
+
+`probe/q32-shape/` is a standalone crate with its own workspace that reads the `WatchID.u64` and `ClientIP.u64` columns of the ClickBench data directory, each file holding one little-endian radix-image word per row, and prints the extents, composite width, record layout and active radix passes (`probe-q32-columns.txt`).
+With two more arguments it also writes two directories of synthetic columns: uniform values over the extents of the real columns from an xorshift generator with seed `0x9E3779B97F4A7C15`, and the real columns each shuffled independently with a Fisher-Yates shuffle from the same generator.
+`probe/programs/clickbench/` holds `c2.vk` (`argsort(WatchID, ClientIP)`), `s1.vk` (`argsort(WatchID)`) and `s2.vk` (`argsort(ClientIP)`), which `VERKEHRT_PROGRAMS` makes `acceptance_stats` read.
+`probe/run.sh DATA SCRATCH` builds both, writes the synthetic columns under `SCRATCH`, and runs each program on the real, uniform and shuffled data with `VERKEHRT_CLICKBENCH` pointing at the matching directory, which produces `probe-q32-sort-timing.txt` apart from the build lines.
+The programs and the crate are evidence only and are not part of the build or the test suite.

@@ -1,5 +1,5 @@
-start 17:17:20 load 8.18 7.28 5.97 1/2542 436605
-    Finished `release` profile [optimized + debuginfo] target(s) in 0.08s
+start 19:42:02 load 17.37 13.24 11.47 3/4120 483452
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.24s
      Running tests/acceptance/main.rs (target/release/deps/acceptance-10a84ccda137036c)
 
 running 1 test
@@ -198,55 +198,59 @@ plan 94: (add_i64_s (reduce_add_i64 ResolutionWidth) (mul_i64_s (length_i64 Reso
 plan 95: (add_i64_s (reduce_add_i64 ResolutionWidth) (mul_i64_s (length_i64 ResolutionWidth) 89))
 == clickbench/q30
 plan 12: (lt_i64 0 (sub_i64 SearchPhrase_ends (prev_i64 SearchPhrase_ends 0)))
-plan 13: (compress_i64 SearchEngineID keep)
 plan 14: (compress_i64 ClientIP keep)
-plan 19: (argsort2_i64_i64 k0 ip0)
-plan 20: (gather_i64 k0 o)
-plan 21: (gather_i64 ip0 o)
-plan 27: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
-plan 28: (count start)
-plan 29: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
-plan 30: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
-plan 37: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
-plan 38: (gather_i64 counts top)
-plan 39: (gather_i64 (compress_i64 k start) top)
-plan 40: (gather_i64 (compress_i64 ip start) top)
-plan 41: tc
-plan 42: (gather_i64 (reduce_into_add_i64 gid (gather_i64 (compress_i64 IsRefresh keep) o) ng) top)
-plan 43: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 (compress_i64 ResolutionWidth keep) o) ng) top)) (cast_i64_f64 tc))
+plan 19: (argsort_i64 ip0)
+plan 20: (gather_i64 (compress_i64 SearchEngineID keep) o1)
+plan 24: (argsort_i64 k1)
+plan 25: (gather_i64 k1 o2)
+plan 26: (gather_i64 (gather_i64 ip0 o1) o2)
+plan 32: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
+plan 33: (count start)
+plan 34: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
+plan 35: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
+plan 42: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
+plan 43: (gather_i64 counts top)
+plan 44: (gather_i64 (compress_i64 k start) top)
+plan 45: (gather_i64 (compress_i64 ip start) top)
+plan 46: tc
+plan 47: (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 (compress_i64 IsRefresh keep) o1) o2) ng) top)
+plan 48: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 (compress_i64 ResolutionWidth keep) o1) o2) ng) top)) (cast_i64_f64 tc))
 == clickbench/q31
 plan 12: (lt_i64 0 (sub_i64 SearchPhrase_ends (prev_i64 SearchPhrase_ends 0)))
-plan 13: (compress_i64 WatchID keep)
 plan 14: (compress_i64 ClientIP keep)
-plan 19: (argsort2_i64_i64 k0 ip0)
-plan 20: (gather_i64 k0 o)
-plan 21: (gather_i64 ip0 o)
-plan 27: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
-plan 28: (count start)
-plan 29: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
-plan 30: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
-plan 37: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
-plan 38: (gather_i64 counts top)
-plan 39: (gather_i64 (compress_i64 k start) top)
-plan 40: (gather_i64 (compress_i64 ip start) top)
-plan 41: tc
-plan 42: (gather_i64 (reduce_into_add_i64 gid (gather_i64 (compress_i64 IsRefresh keep) o) ng) top)
-plan 43: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 (compress_i64 ResolutionWidth keep) o) ng) top)) (cast_i64_f64 tc))
+plan 19: (argsort_i64 ip0)
+plan 20: (gather_i64 (compress_i64 WatchID keep) o1)
+plan 24: (argsort_i64 k1)
+plan 25: (gather_i64 k1 o2)
+plan 26: (gather_i64 (gather_i64 ip0 o1) o2)
+plan 32: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
+plan 33: (count start)
+plan 34: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
+plan 35: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
+plan 42: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
+plan 43: (gather_i64 counts top)
+plan 44: (gather_i64 (compress_i64 k start) top)
+plan 45: (gather_i64 (compress_i64 ip start) top)
+plan 46: tc
+plan 47: (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 (compress_i64 IsRefresh keep) o1) o2) ng) top)
+plan 48: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 (compress_i64 ResolutionWidth keep) o1) o2) ng) top)) (cast_i64_f64 tc))
 == clickbench/q32
-plan 11: (argsort2_i64_i64 WatchID ClientIP)
-plan 12: (gather_i64 WatchID o)
-plan 13: (gather_i64 ClientIP o)
-plan 19: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
-plan 20: (count start)
-plan 21: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
-plan 22: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
-plan 29: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
-plan 30: (gather_i64 counts top)
-plan 31: (gather_i64 (compress_i64 k start) top)
-plan 32: (gather_i64 (compress_i64 ip start) top)
-plan 33: tc
-plan 34: (gather_i64 (reduce_into_add_i64 gid (gather_i64 IsRefresh o) ng) top)
-plan 35: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 ResolutionWidth o) ng) top)) (cast_i64_f64 tc))
+plan 11: (argsort_i64 ClientIP)
+plan 12: (gather_i64 WatchID o1)
+plan 16: (argsort_i64 k1)
+plan 17: (gather_i64 k1 o2)
+plan 18: (gather_i64 (gather_i64 ClientIP o1) o2)
+plan 24: (or_bool (or_bool (ne_i64 k (prev_i64 k 0)) (ne_i64 ip (prev_i64 ip 0))) (eq_i64 (iota (length_i64 k)) 0))
+plan 25: (count start)
+plan 26: (sub_i64 (scan_add_i64 (cast_bool_i64 start)) 1)
+plan 27: (reduce_into_add_i64 gid (add_i64 (mul_i64 gid 0) 1) ng)
+plan 34: (topk_i64 (sub_i64 0 counts) 0 (min_i64_s ng 10))
+plan 35: (gather_i64 counts top)
+plan 36: (gather_i64 (compress_i64 k start) top)
+plan 37: (gather_i64 (compress_i64 ip start) top)
+plan 38: tc
+plan 39: (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 IsRefresh o1) o2) ng) top)
+plan 40: (div_f64 (cast_i64_f64 (gather_i64 (reduce_into_add_i64 gid (gather_i64 (gather_i64 ResolutionWidth o1) o2) ng) top)) (cast_i64_f64 tc))
 == clickbench/q35
 plan 9: (group_id_i64 ClientIP)
 plan 10: (if (lt_i64_s 0 (length_i64 ids)) then (add_i64_s (reduce_max_i64 ids) 1) else 0)
@@ -303,6 +307,6 @@ plan 23: (mul_i64 (add_i64 (slice_i64 groups lo hi) base) 60)
 plan 24: (slice_i64 (gather_i64 counts groups) lo hi)
 test acceptance_plans ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 11.60s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 14.23s
 
-end 17:17:32 load 7.23 7.10 5.93 2/2544 436635
+end 19:42:16 load 17.88 13.56 11.60 17/4091 483481

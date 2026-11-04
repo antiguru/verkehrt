@@ -51,7 +51,8 @@
 //!   exports of the plan made with `Options::no_composite_sort`, which expands `argsort(a, b)`
 //!   into two single-key sorts, and fails at the same output with the same error kind. Which
 //!   error surfaces may differ, as in oracle 2, because the expansion evaluates the keys in
-//!   another order and words a length mismatch its own way, so only the kind is compared.
+//!   another order, so only the kind is compared. A length mismatch gets the same message in
+//!   both modes.
 //!   The second run is skipped when the two plans are equal, which holds for every program
 //!   without a two-key sort. Oracles 1 to 7 run with the composite kernel.
 //!
