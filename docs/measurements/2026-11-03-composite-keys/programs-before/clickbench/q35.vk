@@ -1,0 +1,23 @@
+// sql: SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, COUNT(*) AS c FROM hits
+// sql:   GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY c DESC, ClientIP LIMIT 10
+// output: [i,i,i,i,u]
+input ClientIP: i64[];
+
+// The offsets are functions of ClientIP, so grouping by ClientIP alone gives the same groups. They
+// are computed after the top 10 is picked, in i64 where no ClientIP can overflow.
+// An empty column gives no groups and empty outputs.
+let ids = group_id(ClientIP);
+let ng = if length(ids) > 0 { reduce(ids, max) + 1 } else { 0 };
+let counts = histogram(ids, ng);
+// Every row of a group has the same address, so the minimum recovers it.
+let gk = reduce_into(ids, ClientIP, ng, min);
+// Sorting the groups by address and then stably by descending count breaks ties by address.
+let ko = argsort(gk);
+let co = argsort(0 - gather(counts, ko));
+let top = gather(ko, slice(co, 0, min(ng, 10)));
+let ip = gather(gk, top);
+export ClientIP = ip;
+export ClientIP_1 = ip - 1;
+export ClientIP_2 = ip - 2;
+export ClientIP_3 = ip - 3;
+export c = gather(counts, top);

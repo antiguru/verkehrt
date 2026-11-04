@@ -1,0 +1,33 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 2m 02s
+start 19:23:26 load 7.34 5.63 9.36 7/4114 476086
+##### data: real
+=== c2
+query c2 total kernel time 41084.9 us
+stats argsort2_i64_i64 calls=1 bytes=24000000 read=16000000 time=41084.9
+=== s1
+query s1 total kernel time 16278.2 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=16278.2
+=== s2
+query s2 total kernel time 17997.4 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=17997.4
+##### data: uniform
+=== c2
+query c2 total kernel time 36987.7 us
+stats argsort2_i64_i64 calls=1 bytes=24000000 read=16000000 time=36987.7
+=== s1
+query s1 total kernel time 16120.3 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=16120.3
+=== s2
+query s2 total kernel time 13343.3 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=13343.3
+##### data: shuffled
+=== c2
+query c2 total kernel time 40211.2 us
+stats argsort2_i64_i64 calls=1 bytes=24000000 read=16000000 time=40211.2
+=== s1
+query s1 total kernel time 16327.1 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=16327.1
+=== s2
+query s2 total kernel time 16798.1 us
+stats argsort_i64 calls=1 bytes=16000000 read=8000000 time=16798.1
+end 19:23:29 load 7.23 5.64 9.35 3/4121 476106

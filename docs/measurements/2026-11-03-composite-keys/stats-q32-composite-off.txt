@@ -1,0 +1,28 @@
+start 17:20:02 load 2.53 5.12 5.34 1/2538 436821
+=== q32
+query q32 total kernel time 61041.4 us
+tiled_regions 2
+narrowed_tiles 0
+fused_reductions
+stats add_i64 calls=1 bytes=16000000 read=8000000 time=325.4
+stats argsort_i64 calls=2 bytes=32000000 read=16000000 time=34689.5
+stats cast_bool_i64 calls=1 bytes=9000000 read=1000000 time=197.5
+stats cast_i64_f64 calls=2 bytes=320 read=160 time=1.4
+stats compress_i64 calls=2 bytes=34000000 read=18000000 time=954.3
+stats count calls=1 bytes=1000000 read=1000000 time=43.5
+stats div_f64 calls=1 bytes=240 read=160 time=5.8
+stats eq_i64 calls=1 bytes=9000000 read=8000000 time=113.7
+stats gather_i64 calls=11 bytes=184000800 read=136000400 time=15051.0
+stats iota calls=1 bytes=8000000 read=0 time=222.5
+stats length_i64 calls=2 bytes=16000000 read=16000000 time=1.7
+stats min_i64_s calls=1 bytes=0 read=0 time=1.9
+stats mul_i64 calls=1 bytes=16000000 read=8000000 time=181.7
+stats ne_i64 calls=2 bytes=34000000 read=32000000 time=503.4
+stats or_bool calls=2 bytes=6000000 read=4000000 time=128.7
+stats prev_i64 calls=2 bytes=32000000 read=16000000 time=1205.8
+stats reduce_into_add_i64 calls=3 bytes=72000000 read=48000000 time=4517.1
+stats same_len_i64 calls=1 bytes=16000000 read=8000000 time=0.9
+stats scan_add_i64 calls=1 bytes=16000000 read=8000000 time=1374.5
+stats sub_i64 calls=2 bytes=32000000 read=16000000 time=1151.0
+stats topk_i64 calls=1 bytes=8000080 read=8000000 time=370.1
+end 17:20:05 load 2.49 5.07 5.33 1/2540 436825

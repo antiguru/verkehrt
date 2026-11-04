@@ -51,6 +51,12 @@ Per pass, uniform keys take 1.1 ms and UserID 2.0 to 2.3 ms, and the bucket-offs
 The designer infers that runs of equal digits serialize the offset increment through one counter, and a two-way interleaved scatter with separate offsets did not help (2.3 to 2.4 ms per pass).
 After #34 no target query sorts a long column with such runs except q32's ClientIP passes (about 3 ms over uniform passes, about 5% of q32), so the gap is below the 10% gate here and goes to its own issue.
 
+**Outcome.** `docs/measurements/2026-11-03-composite-keys.md` measures the rewrites against this section's estimates.
+q15 and q35 with top-k are 8.2% and 7.8% faster in three interleaved passes and keep the rewrite, in line with the 12.6% and 10.7% estimates, which sat at the edge of the noise band.
+q32 does not reproduce the probe: the kernel sorts the columns in 41.1 ms against 34.3 ms for the two single-key sorts, with the 16-byte record and 12 passes the probe assumed, so the kernel costs 8.1 ms more than the two sorts in the statistics and the gathers it removes save 10.8 ms, a net 1.4 ms of kernel time against the estimated 13 to 17 ms.
+The criterion gain of q32 is 3.7% to 10.3% on the means of three passes and does not meet the keep rule in every pass, and q31 is slower and q30 level, so q32, q31 and q30 keep their programs from before the rewrite.
+The cause of the slower composite pass is not measured, and the record states a hypothesis and leaves it to a follow-up.
+
 ## Scope and order
 
 Designer's call: this layer builds the two-column `argsort`, then fused top-k kernels on top of it, and rewrites q32, q31, q30, q15 and q35 where the measurement keeps the new form.

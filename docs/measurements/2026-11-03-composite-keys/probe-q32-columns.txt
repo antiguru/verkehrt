@@ -1,0 +1,12 @@
+start load 6.59 5.53 10.06 2/4101 475835
+rows 1000000
+WatchID (major) image min 13835059250867616347 max 18446743514863861597 range bits 62
+ClientIP (minor) image min 9223372034707359350 max 9223372039002258409 range bits 32
+composite width 94 bits, record R16, 16 bytes (16-byte holds up to 96)
+composite: 12 digits, 12 active passes [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+argsort(ClientIP): active passes 8 [0, 1, 2, 3, 4, 5, 6, 7], 16-byte (u64,u32) pairs
+argsort(WatchID): active passes 8 [0, 1, 2, 3, 4, 5, 6, 7], 16-byte (u64,u32) pairs
+two single sorts: 16 passes in total, composite: 12 passes
+distinct WatchID 1000000
+distinct ClientIP 68330
+end load 6.59 5.53 10.06 2/4101 475837
